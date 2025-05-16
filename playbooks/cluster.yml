@@ -1,0 +1,93 @@
+---
+- name: Deploy RKE2 cluster
+  hosts: "{{ rke2_server_group }}:{{ rke2_agent_group }}"
+  vars_files:
+    - main.yml
+  tasks:
+    - name: Verify required params
+      ansible.builtin.assert:
+        that: rke2_token is defined
+        fail_msg: "rke2_token must be defined"
+
+    - name: Add nodes to cluster group
+      ansible.builtin.add_host:
+        name: "{{ item }}"
+        groups: "{{ rke2_cluster_group }}"
+      loop: "{{ ansible_play_hosts }}"
+      changed_when: false
+      run_once: true
+
+    - name: Set RKE2 version default facts
+      ansible.builtin.set_fact:
+        rke2_version: "{{ rke2_defaults_version }}"
+      when: rke2_version is not defined
+
+    - name: Debug RKE2 install target
+      ansible.builtin.debug:
+        msg: "Installing RKE2 version {{ rke2_version }}"
+
+    - name: Install RKE2
+      ansible.builtin.include_role:
+        name: lablabs.rke2
+        apply:
+          become: true
+      when: _rke2_install | bool
+
+- name: Configure RKE2 cluster servers
+  hosts: "{{ rke2_server_group }}"
+  vars_files:
+    - main.yml
+  tasks:
+    - name: Configure user kubeconfig
+      block:
+        - name: Query user id
+          ansible.builtin.command: id -un
+          register: user_query
+          changed_when: false
+
+        - name: Create user kubeconfig directory
+          ansible.builtin.file:
+            path: "~/.kube"
+            state: directory
+            mode: "u=rwx,go="
+
+        - name: Slurp cluster kubeconfig
+          ansible.builtin.slurp:
+            src: "{{ _rke2_config_path }}/rke2.yaml"
+          register: _rke2_kubeconfig_slurp
+          become: true
+
+        - name: Prepare cluster kubeconfig
+          ansible.builtin.set_fact:
+            _rke2_kubeconfig_user: "{{ _kubeconfig_data | combine(_kubeconfig_override) }}"
+          vars:
+            _kubeconfig_data: "{{ _rke2_kubeconfig_slurp.content | b64decode | from_yaml }}"
+            _kubeconfig_cluster: "{{ _kubeconfig_data.clusters[0] }}"
+            _kubeconfig_override:
+              clusters:
+                - name: "{{ _kubeconfig_cluster.name }}"
+                  cluster:
+                    server: "{{ rke2_api_url }}"
+                    certificate-authority-data: "{{ _kubeconfig_cluster.cluster['certificate-authority-data'] }}"
+
+        - name: Create user kubeconfig
+          ansible.builtin.copy:
+            dest: "{{ _rke2_kubeconfig }}"
+            content: "{{ _rke2_kubeconfig_user }}"
+            owner: "{{ user_query.stdout }}"
+            group: "{{ user_query.stdout }}"
+            mode: "u=rw,go="
+            remote_src: true
+
+    - name: Configure user profile
+      ansible.builtin.copy:
+        dest: /etc/profile.d/rke2.sh
+        content: |
+          rke2_bin_path="{{ _rke2_bin_path }}"
+          if [ -n "${PATH##*${rke2_bin_path}}" ] && [ -n "${PATH##*${rke2_bin_path}:*}" ]; then
+              export PATH="$PATH:${rke2_bin_path}"
+          fi
+        owner: root
+        group: root
+        mode: "u=rw,go=r"
+      become: true

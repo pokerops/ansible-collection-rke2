@@ -1,0 +1,10 @@
+# directories
+.venv/
+.ansible/
+.devbox/
+.python-version
+
+# globs
+pokerops-rke2-*.tar.gz
+*.ymle
+

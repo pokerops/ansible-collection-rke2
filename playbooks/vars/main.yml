@@ -1,0 +1,41 @@
+---
+# Defaults
+rke2_defaults_version: v1.33.0+rke2r1
+rke2_defaults_url_api: "https://api.{{ rke2_cluster_name }}"
+rke2_defaults_options:
+  - ""
+
+rke2_defaults_drain_pod_selectors:
+  - "longhorn.io/component!=instance-manager"
+  - "app!=csi-attacher"
+  - "app!=csi-provisioner"
+
+# Overridable values
+_rke2_install: "{{  lookup('ansible.builtin.env', 'RKE2_INSTALL', default=true) }}"
+_rke2_config_path: /etc/rancher/rke2
+_rke2_kubeconfig: "~/.kube/config"
+_rke2_bin_path: /var/lib/rancher/rke2/bin
+_rke2_api_host: "{{ rke2_api_url | urlsplit('hostname') }}"
+_rke2_server_options: "{{ rk2_server_options | default(rke2_defaults_options) }}"
+_rke2_agent_options: "{{ rk2_agent_options | default(rke2_defaults_options) }}"
+_rke2_limits_nofile: "{{ rke2_limits_nofile | default(1048576) }}"
+
+_rke2_evict_timeout: "{{ rke2_evict_timeout | default(300) }}"
+_rke2_drain_pod_selectors: "{{ rke2_drain_pod_selectors | default(rke2_defaults_drain_pod_selectors) }}"
+
+# Hardcoded values
+rke2_cluster_group: "{{ rke_cluster | default('rke2_cluster') }}"
+rke2_server_group: "{{ rke2_server | default('rke2_server') }}"
+rke2_agent_group: "{{ rke2_agent | default('rke2_agent') }}"
+rke2_cluster_group_name: "{{ rke2_cluster_group }}"
+rke2_servers_group_name: "{{ rke2_server_group }}"
+rke2_agents_group_name: "{{ rke2_agent_group }}"
+rke2_ha_mode: true
+rke2_ha_mode_keepalived: false
+rke2_cloud_provider_name: "external"
+rke2_cni:
+  - cilium
+rke2_additional_sans:
+  - "{{ _rke2_api_host }}"
+rke2_server_options: "{{ _rke2_server_options }}"
+rke2_agent_options: "{{ _rke2_agent_options }}"

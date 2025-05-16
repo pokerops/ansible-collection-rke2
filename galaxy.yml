@@ -1,0 +1,23 @@
+---
+namespace: pokerops
+name: rke2
+version: 0.0.0
+readme: README.md
+authors:
+  - Ted Cook <358176+teddyphreak@users.noreply.github.com>
+description: RKE2 deployment playbooks
+license:
+  - MIT
+tags:
+  - k8s
+  - rke2
+dependencies:
+  "nephelaiio.plugins": "*"
+  "nephelaiio.consul": "*"
+repository: http://github.com/pokerops/ansible-collection-rke2
+documentation: http://github.com/pokerops/ansible-collection-rke2
+homepage: http://github.com/pokerops/ansible-collection-rke2
+issues: http://github.com/pokerops/ansible-collection-rke2/issues
+build_ignore:
+  - .devbox
+  - .venv

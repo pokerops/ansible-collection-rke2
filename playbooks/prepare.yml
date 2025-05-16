@@ -1,0 +1,75 @@
+---
+- name: Prepare RKE2 cluster members
+  hosts: "{{ rke2_server_group }}:{{ rke2_agent_group }}"
+  become: true
+  vars_files:
+    - main.yml
+  tasks:
+    - name: Install deb package requirements
+      ansible.builtin.package:
+        name:
+          - open-iscsi
+          - rsync
+      when: ansible_os_family == "Debian"
+
+    - name: Install rpm package requirements
+      ansible.builtin.package:
+        name:
+          - iscsi-initiator-utils
+          - rsync
+      when: ansible_os_family == "RedHat"
+
+    - name: Check cluster api parameter
+      ansible.builtin.assert:
+        that: rke2_api_url is defined
+
+    - name: Add host entries for cluster members
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        regexp: ".*{{ item }}.*"
+        line: "{{ _entry | trim }}"
+      vars:
+        _member_address: "{{ hostvars[item]['ansible_default_ipv4']['address'] }}"
+        _fqdn: "{{ hostvars[item]['ansible_fqdn'] }}"
+        _hostname: "{{ hostvars[item]['ansible_hostname'] }}"
+        _api: "{{ _rke2_api_host if _hostname == inventory_hostname else '' }}"
+        _entry: "{{ _member_address }} {{ _fqdn }} {{ _hostname }} {{ _api }}"
+      loop: "{{ ansible_play_hosts }}"
+
+    - name: Query service facts
+      ansible.builtin.service_facts:
+
+    - name: Mask multipath daemon
+      ansible.builtin.systemd_service:
+        name: "{{ rke2_multipath_daemon }}"
+        state: stopped
+        enabled: false
+        masked: true
+      vars:
+        rke2_multipath_daemon: multipathd.service
+      when: rke2_multipath_daemon in services
+
+    - name: Disable swap
+      ansible.builtin.command:
+        cmd: swapoff -a
+      when: ansible_swaptotal_mb > 0
+
+    - name: Disable swap fstab entry
+      ansible.builtin.lineinfile:
+        path: /etc/fstab
+        regexp: '^([^#].*?\sswap\s+sw\s+.*)$'
+        state: absent
+
+    - name: Set root nofile limit
+      community.general.pam_limits:
+        domain: root
+        limit_type: "-"
+        limit_item: nofile
+        value: "{{ _rke2_limits_nofile }}"
+
+    - name: Set user nofile limit
+      community.general.pam_limits:
+        domain: "*"
+        limit_type: "-"
+        limit_item: nofile
+        value: "{{ _rke2_limits_nofile }}"
