@@ -33,7 +33,7 @@
           become: true
       when: _rke2_install | bool
 
-- name: Configure RKE2 cluster servers
+- name: Configure RKE2 cluster members
   hosts: "{{ rke2_server_group }}"
   vars_files:
     - main.yml

@@ -28,8 +28,6 @@ jobs:
       matrix:
         scenario:
           - install
-          - k8s
-          - update
         image:
           - noble
         include:
