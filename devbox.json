@@ -12,7 +12,7 @@
     "python@3.11"
   ],
   "shell": {
-    "init_hook": ["source .venv/bin/activate"],
-    "scripts":   {}
+    "init_hook": [],
+    "scripts": {}
   }
 }
