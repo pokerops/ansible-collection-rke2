@@ -19,7 +19,8 @@ _rke2_api_host: "{{ rke2_api_url | urlsplit('hostname') }}"
 _rke2_server_options: "{{ rk2_server_options | default(rke2_defaults_options) }}"
 _rke2_agent_options: "{{ rk2_agent_options | default(rke2_defaults_options) }}"
 _rke2_limits_nofile: "{{ rke2_limits_nofile | default(1048576) }}"
-
+_rke2_retry_delay: "{{ rke2_retry_delay | default(30) }}"
+_rke2_retry_num: "{{ rke2_retry_num | default(10) }}"
 _rke2_evict_timeout: "{{ rke2_evict_timeout | default(300) }}"
 _rke2_drain_pod_selectors: "{{ rke2_drain_pod_selectors | default(rke2_defaults_drain_pod_selectors) }}"
 
