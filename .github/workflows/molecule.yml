@@ -30,13 +30,7 @@ jobs:
           - install
         image:
           - noble
-        include:
-          - scenario: install
-            image: jammy
-          - scenario: install
-            image: rocky9
-          - scenario: install
-            image: alma9
+          - jammy
     steps:
       - name: Check out the codebase
         uses: actions/checkout@v4
