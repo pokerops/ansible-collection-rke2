@@ -1,0 +1,184 @@
+---
+- name: Verify multipath deactivation
+  hosts: rke2_server:rke2_agent
+  any_errors_fatal: true
+  vars:
+    _multipath_service: multipathd.service
+  tasks:
+    - name: Query service facts
+      ansible.builtin.service_facts:
+
+    - name: Check multipath service
+      ansible.builtin.assert:
+        that: _multipath_service in services
+
+    - name: Check multipath service status
+      ansible.builtin.assert:
+        that:
+          - _service.state == _stopped
+          - _service.status == _masked
+        fail_msg: "Expected service state {{ _stopped }} and status {{ _masked }}. Got {{ _service.state }}, {{ _service.status }}"
+      vars:
+        _service: "{{ services[_multipath_service] }}"
+        _stopped: "stopped"
+        _masked: "masked"
+
+    - name: Verify multipath service mask
+      block:
+        - name: Attempt multipath service start
+          ansible.builtin.command: >-
+            systemctl start {{ _multipath_service }}
+          register: _multipath_start
+          ignore_errors: true
+          become: true
+
+        - name: Verify service mask
+          ansible.builtin.assert:
+            that:
+              - _multipath_start is failed
+              - _multipath_start.stderr | regex_search('.* ' + _multipath_service + ' is masked.')
+            fail_msg: "Got service start error {{ _multipath_start.stderr }}"
+
+- name: Verify RKE2 install
+  hosts: rke2_server
+  any_errors_fatal: true
+  vars:
+    _servers: "{{ groups['rke2_server'] }}"
+    _agents: "{{ groups['rke2_agent'] }}"
+    _members: "{{ _servers + _agents }}"
+    _retry: 6
+    _delay: 20
+  tasks:
+    - name: Install JQ
+      ansible.builtin.package:
+        name: jq
+      become: true
+
+    - name: Slurp kubeconfig cluster file
+      ansible.builtin.slurp:
+        src: /etc/rancher/rke2/rke2.yaml
+      register: _kubeconfig_slurp
+      become: true
+
+    - name: Verify kubeconfig cluster api configuration
+      ansible.builtin.assert:
+        that: _kubeconfig_server == _kubeconfig_server_expected
+        fail_msg: "Failed cluster API verification, expected {{ _kubeconfig_server_expected }}, got {{ _kubeconfig_server }}"
+      vars:
+        _kubeconfig_content: "{{ _kubeconfig_slurp['content'] | b64decode | ansible.builtin.from_yaml }}"
+        _kubeconfig_server: "{{ _kubeconfig_content.clusters[0].cluster.server }}"
+        _kubeconfig_server_expected: "https://127.0.0.1:6443"
+
+    - name: Slurp kubeconfig cluster file
+      ansible.builtin.slurp:
+        src: "~/.kube/config"
+      register: _kubeconfig_slurp
+
+    - name: Verify kubeconfig user api configuration
+      ansible.builtin.assert:
+        that: _kubeconfig_server == _kubeconfig_server_expected
+        fail_msg: "Failed cluster API verification, expected {{ _kubeconfig_server_expected }}, got {{ _kubeconfig_server }}"
+      vars:
+        _kubeconfig_content: "{{ _kubeconfig_slurp['content'] | b64decode | ansible.builtin.from_yaml }}"
+        _kubeconfig_server: "{{ _kubeconfig_content.clusters[0].cluster.server }}"
+        _kubeconfig_server_expected: "https://api.rke2.pokerops.net:6443"
+
+    - name: Query cluster nodes
+      ansible.builtin.shell:
+        cmd: "/var/lib//rancher/rke2/bin/kubectl get node -o name | cut -d'/' -f2"
+        executable: /bin/bash
+      register: _kubectl_nodes
+      changed_when: false
+
+    - name: Set cluster facts
+      ansible.builtin.set_fact:
+        _nodes: "{{ _kubectl_nodes.stdout_lines }}"
+
+    - name: Debug cluster nodes
+      debug:
+        var: _nodes
+
+    - name: Debug cluster members
+      debug:
+        var: _members
+
+    - name: Verify cluster nodes
+      block:
+        - name: Check cluster node status
+          ansible.builtin.assert:
+            that: _members | difference(_nodes) | length == 0
+
+      rescue:
+        - name: Debug unregistered nodes
+          ansible.builtin.debug:
+            msg: "Nodes [{{ ', '.join(_members | difference(_nodes)) }}] are not registered to the cluster"
+
+        - name: Fail cluster node check
+          ansible.builtin.fail:
+
+    - name: Query cluster status
+      ansible.builtin.shell:
+        cmd: "kubectl get cs -o json | jq '.items | map(.conditions | map(.type) | .[])'"
+        executable: /bin/bash
+      register: _kubectl_status
+      changed_when: false
+
+    - name: Check cluster status
+      ansible.builtin.assert:
+        that: _kubectl_status.stdout | reject('equalto', 'Healthy') | length == 0
+
+    - name: Validate cluster components
+      run_once: true
+      block:
+        - name: Create local tempdir
+          ansible.builtin.tempfile:
+            state: directory
+            suffix: kubeconfig
+          register: _tempdir
+          delegate_to: localhost
+          changed_when: false
+
+        - name: Set kubeconfig facts
+          ansible.builtin.set_fact:
+            _config_path: "{{ _tempdir.path }}/config.yaml"
+            _config_data: "{{ _config_raw | combine(_config_override) | to_nice_json(indent=2) }}"
+          vars:
+            _config_raw: "{{ _kubeconfig_slurp['content'] | b64decode | from_yaml }}"
+            _config_cluster: "{{ _config_raw.clusters[0] }}"
+            _config_override:
+              clusters:
+                - name: "{{ _config_cluster.name }}"
+                  cluster:
+                    server: "https://{{ ansible_default_ipv4.address }}:6443"
+                    certificate-authority-data: "{{ _config_cluster.cluster['certificate-authority-data'] }}"
+
+        - name: Copy kubeconfig to local tempdir
+          ansible.builtin.copy:
+            dest: "{{ _config_path }}"
+            content: "{{ _config_data }}"
+            mode: "u=rw,go=r"
+          delegate_to: localhost
+
+        - name: Validate pod status
+          ansible.builtin.fail:
+            msg: "the following pods are in failed status [{{ pods_failed | map(attribute='metadata.name') | join(', ') }}]"
+          vars:
+            pods_status: "{{ pods_query | selectattr('status', 'defined') }}"
+            pods_phase: "{{ pods_status | selectattr('status.phase', 'defined') }}"
+            pods_completed: "{{ pods_phase | rejectattr('status.phase', 'equalto', 'Running') }}"
+            pods_failed: "{{ pods_completed | rejectattr('status.phase', 'equalto', 'Succeeded') }}"
+            pods_query: "{{ query('kubernetes.core.k8s', kind='Pod', kubeconfig=_config_path) }}"
+          retries: "{{ _retry }}"
+          delay: "{{ _delay }}"
+          until: pods_failed | length == 0
+          failed_when:
+            - (pods_status | length) != (pods_query | length)
+            - (pods_phase | length) != (pods_query | length)
+            - pods_failed | length > 0
+
+      always:
+        - name: Remove local tempdir
+          ansible.builtin.file:
+            path: "{{ _tempdir.path }}"
+            state: absent
+          changed_when: false
