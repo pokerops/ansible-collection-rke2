@@ -1,0 +1,274 @@
+---
+- name: Query cluster server status
+  hosts: "{{ rke2_server_group }}"
+  vars_files:
+    - main.yml
+  tasks:
+    - name: Build cluster metadata
+      run_once: true
+      block:
+        - name: Query cluster nodes
+          ansible.builtin.command: >-
+            {{ _rke2_bin_path }}/kubectl get nodes -o json
+          register: _rke2_node_info
+          changed_when: false
+
+        - name: Register cluster nodes
+          ansible.builtin.set_fact:
+            _rke2_cluster_nodes: "{{ _node_names }}"
+          vars:
+            _node_data: "{{ _rke2_node_info.stdout | from_json }}"
+            _node_names: "{{ _node_data['items'] | map(attribute='metadata.name') | list }}"
+          delegate_to: localhost
+          delegate_facts: true
+
+        - name: Query cluster servers
+          ansible.builtin.command: >-
+            {{ _rke2_bin_path }}/kubectl get nodes -l metadata.labels.node-role.kubernetes.io/control-plane=true -o json
+          register: _rke2_server_info
+          changed_when: false
+
+        - name: Register cluster servers
+          ansible.builtin.set_fact:
+            _rke2_cluster_servers: "{{ _rke2_node_info.stdout | from_json }}"
+
+        - name: Create healthy cluster master group
+          ansible.builtin.add_host:
+            hostname: "{{ item }}"
+            groups:
+              - rke2_play_master_hosts
+          vars:
+            _rke2_node: "{{ _rke2_cluster_servers['items'] | selectattr('metadata.name', 'equalto', item) | list }}"
+            _rke2_node_conditions: "{{ _rke2_node | map(attribute='status.conditions') | flatten }}"
+            _rke2_node_ready: "{{ _rke2_node_conditions | selectattr('type', 'equalto', 'Ready') }}"
+            _rke2_node_healthy: "{{ _rke2_node_ready | selectattr('status', 'equalto', 'True') | length > 0 }}"
+          loop: "{{ ansible_play_hosts }}"
+          when: _rke2_node_healthy | bool
+          changed_when: false
+
+        - name: Slurp kubeconfig cluster file
+          ansible.builtin.slurp:
+            src: /etc/rancher/rke2/rke2.yaml
+          register: _rke2_kubeconfig_slurp
+          become: true
+
+        - name: Set configuration facts
+          ansible.builtin.set_fact:
+            _rke2_kubeconfig: "{{ _rke2_kubeconfig_slurp.content | b64decode | from_yaml }}"
+          delegate_to: localhost
+          delegate_facts: true
+
+- name: Update OS on cluster members
+  hosts: "{{ rke2_server_group }}:{{ rke2_agent_group }}"
+  serial: 1
+  vars_files:
+    - main.yml
+  vars:
+    _rke2_cluster_nodes: "{{ hostvars['localhost']['_rke2_cluster_nodes'] }}"
+    _rke2_play_master: "{{ groups['rke2_play_master_hosts'] | last }}"
+    _rke2_play_standby: "{{ groups['rke2_play_master_hosts'] | first }}"
+  tasks:
+    - name: Skip unregistered host
+      ansible.builtin.meta: end_host
+      when: inventory_hostname not in _rke2_cluster_nodes
+
+    - name: Update host
+      block:
+        - name: Create local tempdir
+          ansible.builtin.tempfile:
+            state: directory
+            suffix: kubeconfig
+          register: _tempdir
+          delegate_to: localhost
+          changed_when: false
+
+        - name: Set kubeconfig facts
+          ansible.builtin.set_fact:
+            _kubeconfig_path: "{{ _tempdir.path }}/kubeconfig"
+            _kubeconfig_data: "{{ _config_data | combine(_config_override) }}"
+          vars:
+            _config_data: "{{ hostvars['localhost']['_rke2_kubeconfig'] }}"
+            _config_cluster: "{{ _config_data.clusters[0] }}"
+            _config_override:
+              clusters:
+                - name: "{{ _config_cluster.name }}"
+                  cluster:
+                    server: "https://{{ _rke2_play_master }}:6443"
+                    certificate-authority-data: "{{ _config_cluster.cluster['certificate-authority-data'] }}"
+
+        - name: Copy kubeconfig to local tempdir
+          ansible.builtin.copy:
+            dest: "{{ _kubeconfig_path }}"
+            content: "{{ _kubeconfig_data | to_nice_json(indent=2) }}"
+            mode: "u=rw,go="
+          delegate_to: localhost
+          changed_when: false
+
+        - name: Cordon cluster node
+          block:
+            - name: Query pod state
+              kubernetes.core.k8s_info:
+                kind: Pod
+                kubeconfig: "{{ _kubeconfig_path }}"
+              register: _pod_info
+              delegate_to: localhost
+
+            - name: Wait for pods to be in a running state
+              kubernetes.core.k8s_info:
+                kind: Pod
+                kubeconfig: "{{ _kubeconfig_path }}"
+              vars:
+                _pod_resources: "{{ _pod_info.resources | list }}"
+                _pod_status: "{{ _pod_resources | map(attribute='status') }}"
+                _pod_phases: "{{ _pod_status | selectattr('phase', 'defined') }}"
+                _pod_running: "{{ _pod_phases | selectattr('phase', 'equalto', 'Running') }}"
+                _pod_conditions: "{{ _pod_running | map(attribute='conditions') | flatten }}"
+                _pod_containers: "{{ _pod_conditions | selectattr('type', 'equalto', 'ContainersReady') }}"
+                _pod_falsestatus: "{{ _pod_containers | selectattr('status', 'equalto', 'False') }}"
+                _pod_reasons: "{{ _pod_falsestatus | selectattr('reason', 'defined') }}"
+                _pod_filter: "{{ _pod_reasons | selectattr('reason', 'equalto', 'ContainersNotReady') }}"
+              register: _pod_info
+              retries: "{{ _rke2_retry_num }}"
+              delay: "{{ _rke2_retry_delay }}"
+              until:
+                - _pod_info is succeeded
+                - _pod_filter | length == 0
+              delegate_to: localhost
+
+            - name: Drain cluster node
+              block:
+                - name: Attempt safe cluster node drain
+                  kubernetes.core.k8s_drain:
+                    name: "{{ inventory_hostname }}"
+                    state: drain
+                    kubeconfig: "{{ _kubeconfig_path }}"
+                    delete_options:
+                      delete_emptydir_data: true
+                      ignore_daemonsets: true
+                      force: true
+                      wait_sleep: 10
+                      wait_timeout: "{{ _rke2_evict_timeout }}"
+                  delegate_to: localhost
+
+              rescue:
+                - name: Force cluster node drain
+                  ansible.builtin.shell: |
+                    kubectl drain {{ inventory_hostname }} \
+                      --delete-emptydir-data=true \
+                      --force=true \
+                      --ignore-daemonsets=true \
+                      --timeout={{ _rke2_evict_timeout }}s \
+                      --pod-selector={{ _rke2_drain_pod_selectors | join(',') }}
+                  delegate_to: "{{ _rke2_play_master if _rke2_play_master != inventory_hostname else _rke2_play_standby }}"
+
+            - name: Query cluster node status
+              kubernetes.core.k8s_info:
+                kind: Node
+                kubeconfig: "{{ _kubeconfig_path }}"
+              register: _node_info
+              delegate_to: localhost
+
+            - name: Verify cluster node cordon status
+              ansible.builtin.fail:
+                msg: "cluster node is not cordoned"
+              vars:
+                _node_resources: "{{ _node_info.resources | list }}"
+                _node_filter: "{{ _node_resources | selectattr('metadata.name', 'equalto', inventory_hostname) }}"
+                _node_spec: "{{ _node_filter | map(attribute='spec') | list }}"
+                _node_cordoned: "{{ _node_spec | selectattr('unschedulable', 'defined') }}"
+              when: _node_cordoned | length == 0
+
+        - name: Upgrade cluster member
+          become: true
+          block:
+            - name: Upgrade cluster node
+              ansible.builtin.include_role:
+                name: pokerops.rke2.update
+              vars:
+                update_reboot: false
+
+            - name: Flush handlers
+              ansible.builtin.meta: flush_handlers
+
+            - name: Reboot node
+              ansible.builtin.reboot:
+
+        - name: Uncordon cluster node
+          delegate_to: localhost
+          block:
+            - name: Wait for cluster node to be ready
+              kubernetes.core.k8s_info:
+                kind: Node
+                kubeconfig: "{{ _kubeconfig_path }}"
+              vars:
+                _node_data: "{{ [] if not 'resources' in _node_info else (_node_info.resources | list) }}"
+                _node_filter: "{{ _node_data | selectattr('metadata.name', 'equalto', inventory_hostname) }}"
+                _node_status: "{{ _node_filter | map(attribute='status') }}"
+                _node_conditions: "{{ _node_status | list | map(attribute='conditions') | flatten }}"
+              register: _node_info
+              retries: "{{ _rke2_retry_num }}"
+              delay: "{{ _rke2_retry_delay }}"
+              until:
+                - _node_info is succeeded
+                - _node_status | length > 0
+                - _node_conditions | selectattr('type', 'equalto', 'Ready') | length > 0
+              delegate_to: localhost
+
+            - name: Uncordon cluster node
+              kubernetes.core.k8s_drain:
+                name: "{{ inventory_hostname }}"
+                kubeconfig: "{{ _kubeconfig_path }}"
+                state: uncordon
+              delegate_to: localhost
+
+            - name: Wait for cluster node to be schedulable
+              kubernetes.core.k8s_info:
+                kind: Node
+                kubeconfig: "{{ _kubeconfig_path }}"
+              vars:
+                _hostname: "{{ inventory_hostname }}"
+                _node_resources: "{{ k8s_node_info.resources | list }}"
+                _node_filter: "{{ _node_resources | selectattr('metadata.name', 'equalto', _hostname) }}"
+                _node_spec: "{{ _node_filter | map(attribute='spec') | list }}"
+                _node_cordoned: "{{ _node_spec | selectattr('unschedulable', 'defined') }}"
+              register: k8s_node_info
+              retries: "{{ _rke2_retry_num }}"
+              delay: "{{ _rke2_retry_delay }}"
+              until:
+                - _node_spec | length > 0
+                - _node_cordoned | length == 0
+              delegate_to: localhost
+
+            - name: Wait for pods to be created
+              ansible.builtin.pause:
+                seconds: 60
+
+            - name: Wait for pods to be running
+              kubernetes.core.k8s_info:
+                kind: Pod
+                kubeconfig: "{{ _kubeconfig_path }}"
+              vars:
+                _hostname: "{{ inventory_hostname }}"
+                _pod_resources: "{{ k8s_pod_info.resources | list }}"
+                _node_resources: "{{ _pod_resources | selectattr('spec.nodeName', 'defined') }}"
+                _node_filter: "{{ _node_resources | selectattr('spec.nodeName', 'equalto', _hostname) }}"
+                _pod_node: "{{ _node_filter | list }}"
+                _pod_status: "{{ _pod_node | map(attribute='status') | selectattr('phase', 'defined') }}"
+                _pod_running: "{{ _pod_status | selectattr('phase', 'equalto', 'Running') }}"
+                _pod_containers: "{{ _pod_running | map(attribute='conditions') | flatten }}"
+                _pod_ready: "{{ _pod_containers | selectattr('type', 'equalto', 'ContainersReady') }}"
+                _pod_failed: "{{ _pod_containers | selectattr('status', 'equalto', 'False') }}"
+                _pod_failed_reason: "{{ _pod_failed | selectattr('reason', 'defined') }}"
+                _pod_noreason: "{{ _pod_failed | rejectattr('reason', 'defined') }}"
+                _pod_notready: "{{ _pod_failed_reason | selectattr('reason', 'equalto', 'ContainersNotReady') }}"
+              register: k8s_pod_info
+              retries: "{{ _rke2_retry_num }}"
+              delay: "{{ _rke2_retry_delay }}"
+              until: (_pod_noreason + _pod_notready) | length == 0
+
+      always:
+        - name: Remove local tempdir
+          ansible.builtin.file:
+            path: "{{ _tempdir.path }}"
+            state: absent
+          changed_when: false

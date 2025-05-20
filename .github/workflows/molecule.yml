@@ -28,6 +28,7 @@ jobs:
       matrix:
         scenario:
           - install
+          - update
         image:
           - noble
           - jammy

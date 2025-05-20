@@ -182,3 +182,15 @@
             path: "{{ _tempdir.path }}"
             state: absent
           changed_when: false
+
+- name: Verify RKE2 cluster update status
+  hosts: rke2_server:rke2_agent
+  any_errors_fatal: true
+  tasks:
+    - name: Verify node update count
+      ansible.builtin.command: apt list --upgradable | grep -v ^Listing | wc -l
+      become: true
+      changed_when: false
+      register: _update_query
+      failed_when: _update_query.stdout | int > 0
+      when: rke_update_check | default(False) | bool
