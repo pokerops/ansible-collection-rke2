@@ -259,11 +259,12 @@
                 _pod_ready: "{{ _pod_containers | selectattr('type', 'equalto', 'ContainersReady') }}"
                 _pod_failed: "{{ _pod_containers | selectattr('status', 'equalto', 'False') }}"
                 _pod_faled_reason: "{{ _pod_failed | selectattr('reason', 'defined') }}"
-                _pod_notready: "{{ _pod_failed | selectattr('reason', 'equalto', 'ContainersNotReady') }}"
+                _pod_noreason: "{{ _pod_failed | rejectattr('reason', 'defined') }}"
+                _pod_notready: "{{ _pod_failed_reason | selectattr('reason', 'equalto', 'ContainersNotReady') }}"
               register: k8s_pod_info
               retries: "{{ _rke2_retry_num }}"
               delay: "{{ _rke2_retry_delay }}"
-              until: _pod_notready | length == 0
+              until: (_pod_noreason + _pod_notready) | length == 0
 
       always:
         - name: Remove local tempdir

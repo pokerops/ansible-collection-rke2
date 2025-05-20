@@ -46,7 +46,6 @@ provisioner:
     side_effect: ../common/update.yml
     cleanup: ../common/cleanup.yml
     destroy: ../common/destroy.yml
-    verify: ../common/verify.yml
   config_options:
     defaults:
       callbacks_enabled: ansible.posix.profile_tasks
