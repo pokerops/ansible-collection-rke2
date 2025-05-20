@@ -258,7 +258,7 @@
                 _pod_containers: "{{ _pod_running | map(attribute='conditions') | flatten }}"
                 _pod_ready: "{{ _pod_containers | selectattr('type', 'equalto', 'ContainersReady') }}"
                 _pod_failed: "{{ _pod_containers | selectattr('status', 'equalto', 'False') }}"
-                _pod_faled_reason: "{{ _pod_failed | selectattr('reason', 'defined') }}"
+                _pod_failed_reason: "{{ _pod_failed | selectattr('reason', 'defined') }}"
                 _pod_noreason: "{{ _pod_failed | rejectattr('reason', 'defined') }}"
                 _pod_notready: "{{ _pod_failed_reason | selectattr('reason', 'equalto', 'ContainersNotReady') }}"
               register: k8s_pod_info
