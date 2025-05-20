@@ -183,7 +183,7 @@
           block:
             - name: Upgrade cluster node
               ansible.builtin.include_role:
-                name: nephelaiio.rke.update
+                name: pokerops.rke2.update
               vars:
                 update_reboot: false
 
