@@ -11,19 +11,26 @@
           ansible.builtin.command: >-
             {{ _rke2_bin_path }}/kubectl get nodes -o json
           register: _rke2_node_info
+          changed_when: false
 
         - name: Register cluster nodes
           ansible.builtin.set_fact:
             _rke2_cluster_nodes: "{{ _node_names }}"
-            _rke2_server_nodes: "{{ _node_servers | map(attribute='metadata.name') | list }}"
           vars:
-            _node_label_control: "metadata.labels.node-role.kubernetes.io/controlplane"
             _node_data: "{{ _rke2_node_info.stdout | from_json }}"
-            _node_control: "{{ _node_data['items'] | selectattr(_node_label_control, 'defined') }}"
-            _node_servers: "{{ _node_control | selectattr(node_label_control, 'equalto', 'true') }}"
             _node_names: "{{ _node_data['items'] | map(attribute='metadata.name') | list }}"
           delegate_to: localhost
           delegate_facts: true
+
+        - name: Query cluster servers
+          ansible.builtin.command: >-
+            {{ _rke2_bin_path }}/kubectl get nodes -l metadata.labels.node-role.kubernetes.io/control-plane=true -o json
+          register: _rke2_server_info
+          changed_when: false
+
+        - name: Register cluster servers
+          ansible.builtin.set_fact:
+            _rke2_cluster_servers: "{{ _rke2_node_info.stdout | from_json }}"
 
         - name: Create healthy cluster master group
           ansible.builtin.add_host:
@@ -31,14 +38,13 @@
             groups:
               - rke2_play_master_hosts
           vars:
-            _rke2_server_nodes: "{{ hostvars['localhost']['_rke2_server_nodes'] }}"
-            _rke2_node: "{{ _rke2_server_nodes | selectattr('metadata.name', 'equalto', item) | list }}"
+            _rke2_node: "{{ _rke2_cluster_servers['items'] | selectattr('metadata.name', 'equalto', item) | list }}"
             _rke2_node_conditions: "{{ _rke2_node | map(attribute='status.conditions') | flatten }}"
             _rke2_node_ready: "{{ _rke2_node_conditions | selectattr('type', 'equalto', 'Ready') }}"
             _rke2_node_healthy: "{{ _rke2_node_ready | selectattr('status', 'equalto', 'True') | length > 0 }}"
-            _rke2_master_healthy: "{{ 'true' if _rke2_node_healthy else 'false' }}"
           loop: "{{ ansible_play_hosts }}"
-          when: _rke2_master_healthy | bool
+          when: _rke2_node_healthy | bool
+          changed_when: false
 
         - name: Slurp kubeconfig cluster file
           ansible.builtin.slurp:
@@ -79,14 +85,7 @@
         - name: Set kubeconfig facts
           ansible.builtin.set_fact:
             _kubeconfig_path: "{{ _tempdir.path }}/kubeconfig"
-          delegate_to: localhost
-          changed_when: false
-
-        - name: Copy kubeconfig to local tempdir
-          ansible.builtin.copy:
-            dest: "{{ _kubeconfig_path }}"
-            content: "{{ _config_data | combine(_config_override) | to_nice_json(indent=2) }}"
-            mode: "u=rw,go="
+            _kubeconfig_data: "{{ _config_data | combine(_config_override) }}"
           vars:
             _config_data: "{{ hostvars['localhost']['_rke2_kubeconfig'] }}"
             _config_cluster: "{{ _config_data.clusters[0] }}"
@@ -94,13 +93,26 @@
               clusters:
                 - name: "{{ _config_cluster.name }}"
                   cluster:
-                    server: "https://{{ inventory_hostname }}:6443"
+                    server: "https://{{ _rke2_play_master }}:6443"
                     certificate-authority-data: "{{ _config_cluster.cluster['certificate-authority-data'] }}"
+
+        - name: Copy kubeconfig to local tempdir
+          ansible.builtin.copy:
+            dest: "{{ _kubeconfig_path }}"
+            content: "{{ _kubeconfig_data | to_nice_json(indent=2) }}"
+            mode: "u=rw,go="
           delegate_to: localhost
           changed_when: false
 
         - name: Cordon cluster node
           block:
+            - name: Query pod state
+              kubernetes.core.k8s_info:
+                kind: Pod
+                kubeconfig: "{{ _kubeconfig_path }}"
+              register: _pod_info
+              delegate_to: localhost
+
             - name: Wait for pods to be in a running state
               kubernetes.core.k8s_info:
                 kind: Pod
