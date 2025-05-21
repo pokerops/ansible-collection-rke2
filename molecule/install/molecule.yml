@@ -9,32 +9,38 @@ driver:
 platforms:
   - name: rke2-${MOLECULE_SCENARIO_NAME}-server-01
     image: "${MOLECULE_KVM_IMAGE}"
+    cpu: 2
     mem: 4
     groups:
       - rke2_server
   - name: rke2-${MOLECULE_SCENARIO_NAME}-server-02
     image: "${MOLECULE_KVM_IMAGE}"
+    cpu: 2
     mem: 4
     groups:
       - rke2_server
   - name: rke2-${MOLECULE_SCENARIO_NAME}-server-03
     image: "${MOLECULE_KVM_IMAGE}"
+    cpu: 2
     mem: 4
     groups:
       - rke2_server
   - name: rke2-${MOLECULE_SCENARIO_NAME}-agent-01
     image: "${MOLECULE_KVM_IMAGE}"
-    mem: 4
+    cpu: 1
+    mem: 2
     groups:
       - rke2_agent
   - name: rke2-${MOLECULE_SCENARIO_NAME}-agent-02
     image: "${MOLECULE_KVM_IMAGE}"
-    mem: 4
+    cpu: 1
+    mem: 2
     groups:
       - rke2_agent
   - name: rke2-${MOLECULE_SCENARIO_NAME}-agent-03
     image: "${MOLECULE_KVM_IMAGE}"
-    mem: 4
+    cpu: 1
+    mem: 2
     groups:
       - rke2_agent
 provisioner:
@@ -43,6 +49,7 @@ provisioner:
     create: ../common/create.yml
     prepare: ../common/prepare.yml
     converge: ../common/install.yml
+    side_effect: ../common/init.yml
     cleanup: ../common/cleanup.yml
     destroy: ../common/destroy.yml
     verify: ../common/verify.yml
@@ -60,12 +67,15 @@ provisioner:
           libvirt_platforms: "{{ molecule_yml.platforms }}"
           molecule_net_prefix: "{{ libvirt_address | ansible.utils.ipaddr('prefix') }}"
           molecule_metallb_prefix: "{{ (molecule_net_prefix | int) + 1 }}"
-          molecule_metallb: "{{ libvirt_address | ansible.utils.ipsubnet(molecule_metallb_prefix, 1) }}"
+          molecule_pool_prefix: "{{ (molecule_metallb_prefix | int) + 1 }}"
+          molecule_pool_private: "{{ libvirt_address | ansible.utils.ipsubnet(molecule_pool_prefix, 0) }}"
+          molecule_pool_public: "{{ libvirt_address | ansible.utils.ipsubnet(molecule_pool_prefix, 1) }}"
           molecule_install_dir: "{{ lookup('ansible.builtin.env', 'MOLECULE_OUTPUT_DIR', default='/tmp/logs') }}"
           molecule_install_log: "{{ molecule_install_dir }}/${MOLECULE_SCENARIO_NAME}"
-          # Required k8s params
+          # Required rke2 params
           rke2_cluster_name: rke2.pokerops.net
-          rke2_metallb_speaker_secret: secret
+          rke2_ippool_public: "{{ molecule_pool_public }}"
+          rke2_ippool_private: "{{ molecule_pool_private }}"
           # Optional k8s params
           rke2_api_url: "https://api.{{ rke2_cluster_name }}:6443"
           rke2_token: "secret"

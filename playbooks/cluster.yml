@@ -28,7 +28,7 @@
 
     - name: Install RKE2
       ansible.builtin.include_role:
-        name: lablabs.rke2
+        name: pokerops.rke2.rke2
         apply:
           become: true
       when: _rke2_install | bool

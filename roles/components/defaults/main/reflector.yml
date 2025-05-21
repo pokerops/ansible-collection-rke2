@@ -1,0 +1,7 @@
+---
+rke2_reflector_chart:
+  name: "reflector"
+  namespace: "kube-system"
+  repo: "https://emberstack.github.io/helm-charts"
+  release: "9.1.5"
+  last_checked: "2025-05-07T12:20:05-06:00"

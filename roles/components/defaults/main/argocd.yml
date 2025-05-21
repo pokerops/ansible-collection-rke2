@@ -1,0 +1,24 @@
+---
+rke2_argocd_hostname: "argocd.{{ k8s_cluster_name }}"
+rke2_argocd_wait_timeout: "{{ k8s_wait_timeout }}"
+rke2_argocd_exec_timeout: "3m"
+rke2_argocd_chart:
+  name: "argo-cd"
+  namespace: "argocd"
+  repo: "https://argoproj.github.io/argo-helm"
+  release: "7.8.14"
+  last_checked: "2025-03-26T10:59:46-06:00"
+rke2_argocd_values:
+  redis-ha:
+    enabled: false
+  controller:
+    replicas: 1
+  server:
+    replicas: 2
+  repoServer:
+    replicas: 2
+  applicationSet:
+    replicas: 2
+  configs:
+    params:
+      application.namespaces: "*"

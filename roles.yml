@@ -1,5 +1,8 @@
 ---
 roles:
+  - name: rke2
+    src: https://github.com/lablabs/ansible-role-rke2.git
+    version: 1.43.0
   - name: k8s
     src: https://github.com/nephelaiio/ansible-role-k8s.git
     version: 0.4.7

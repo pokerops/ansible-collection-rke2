@@ -75,7 +75,11 @@ lint: install
 	uv run ansible-lint -p .
 
 requirements: install
+	TMMPDIR=mktemp -d
+	mv ${ROLE_DIR}/components ${TMMPDIR}
 	@rm -rf ${ROLE_DIR}/*
+	mv ${TMMPDIR}/components ${ROLE_DIR}
+	rm -rf ${TMMPDIR}
 	@python --version
 	@uv run ansible-galaxy role install \
 		--force --no-deps \

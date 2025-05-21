@@ -1,0 +1,126 @@
+---
+- name: Create argocd namespace
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ rke2_config_path }}"
+    resource_definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ rke2_argocd_chart.namespace }}"
+
+- name: Deploy argocd chart
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ rke2_config_path }}"
+    resource_definition:
+      apiVersion: helm.cattle.io/v1
+      kind: HelmChart
+      metadata:
+        name: argocd
+        namespace: kube-system
+      spec:
+        chart: "{{ rke2_argocd_chart.name }}"
+        targetNamespace: "{{ rke2_argocd_chart.namespace }}"
+        repo: "{{ rke2_argocd_chart.repo }}"
+        valuesContent: |-
+          "{{ rke2_argocd_values | to_nice_yaml | indent(2) }}"
+
+- name: Query ArgoCD reposerver definition
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ rke2_config_path }}"
+    kind: Deployment
+    name: argocd-repo-server
+    namespace: "{{ rke2_argocd_chart.namespace }}"
+  register: _reposerver_query
+
+- debug:
+    var: _reposerver_query
+
+- name: Query ArgoCD reposerver definition
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ rke2_config_path }}"
+    kind: Deployment
+    name: argocd-repo-server
+    namespace: "{{ rke2_argocd_chart.namespace }}"
+  register: _reposerver_query
+  retries: "{{ _rke2_retry_num }}"
+  delay: "{{ _rke2_retry_delay }}"
+  until: _reposerver_query.resources | length > 0
+
+- debug:
+    var: _reposerver_query
+
+- fail:
+
+- name: Patch ArgoCD reposerver deployment
+  kubernetes.core.k8s_json_patch:
+    kind: Deployment
+    name: argocd-repo-server
+    namespace: "{{ rke2_argocd_chart.namespace }}"
+    kubeconfig: "{{ rke2_config_path }}"
+    patch:
+      - op: replace
+        path: /spec/template/spec/containers/0/env
+        value: "{{ _reposerver_env_new }}"
+  vars:
+    _reposerver_env_timeout:
+      name: ARGOCD_EXEC_TIMEOUT
+      value: "{{ rke2_argocd_exec_timeout }}"
+    _reposerver_env_def: "{{ _reposerver_def.spec.template.spec.containers[0].env }}"
+    _reposerver_env_pre: "{{ _reposerver_env_def | rejectattr('name', 'equalto', _reposerver_env_timeout.name) }}"
+    _reposerver_env_new: "{{ _reposerver_env_pre + [_reposerver_env_timeout] }}"
+    _reposerver_def: "{{ _reposerver_query | first }}"
+  changed_when: false
+
+- name: Configure ArgoCD resource tracking method
+  kubernetes.core.k8s:
+    api_version: v1
+    kind: ConfigMap
+    namespace: "{{ rke2_argocd_chart.namespace }}"
+    name: argocd-cm
+    kubeconfig: "{{ rke2_config_path }}"
+    definition:
+      data:
+        application.resourceTrackingMethod: "{{ label }}"
+  notify: argocd_update
+  tags: skip_ansible_lint
+
+- name: Deploy ArgoCD ingress
+  kubernetes.core.k8s:
+    namespace: "{{ rke2_argocd_chart.namespace }}"
+    state: present
+    kubeconfig: "{{ rke2_config_path }}"
+    resource_definition:
+      apiVersion: networking.k8s.io/v1
+      kind: Ingress
+      metadata:
+        name: argocd-ingress
+        annotations:
+          nginx.ingress.kubernetes.io/affinity: "cookie"
+          nginx.ingress.kubernetes.io/affinity-mode: "persistent"
+          nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+          nginx.ingress.kubernetes.io/configuration-snippet: |-
+            proxy_ssl_server_name on;
+            proxy_ssl_name $host;
+      spec:
+        ingressClassName: nginx-private
+        tls:
+          - hosts:
+              - "{{ rke2_argocd_hostname }}"
+            secretName: "{{ rke2_argocd_hostname }}"
+        rules:
+          - host: "{{ rke2_argocd_hostname }}"
+            http:
+              paths:
+                - path: /
+                  pathType: Prefix
+                  backend:
+                    service:
+                      name: argocd-server
+                      port:
+                        number: 443
+  retries: "{{ _rke2_retry_num }}"
+  delay: "{{ _rke2_retry_delay }}"
+  register: argocd_ingress_create
+  until: argocd_ingress_create is success

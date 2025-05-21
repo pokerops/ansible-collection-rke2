@@ -7,7 +7,7 @@
     "gnupg@latest",
     "xfsprogs@latest",
     "gnumake@latest",
-    "yq@latest",
+    "yq-go@latest",
     "uv@latest",
     "python@3.11"
   ],
