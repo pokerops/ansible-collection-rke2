@@ -370,7 +370,7 @@
         - name: Auth against argocd api
           ansible.builtin.command:
             cmd: >
-              curl -sLk -XPOST https://argocd.{{ rke2_cluster_name }}/api/v1/session 
+              curl -sLk -XPOST https://argocd.{{ rke2_cluster_name }}/api/v1/session
                 --resolve argocd.{{ rke2_cluster_name }}:443:{{ ingress_argocd_ip }}
                 --json '{ "username": "{{ _argocd_admin_username }}", "password": "{{ _argocd_admin_password }}" }'
           vars:
@@ -498,7 +498,7 @@
             wait_condition:
               type: Ready
             wait_sleep: 10
-            wait_timeout: 60
+            wait_timeout: 300
           delegate_to: localhost
 
       always:

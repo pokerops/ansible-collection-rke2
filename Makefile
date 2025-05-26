@@ -67,7 +67,8 @@ test: lint
 	pnoetry run molecule test -s ${MOLECULE_SCENARIO}
 
 install:
-	sudo apt-get install -y libvirt-dev
+	@sudo apt-get update
+	@sudo apt-get install -y libvirt-dev
 	@uv sync
 
 lint: install
