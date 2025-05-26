@@ -75,7 +75,7 @@ lint: install
 	uv run ansible-lint -p .
 
 requirements: install
-	TMMPDIR=mktemp -d
+	TMMPDIR=$$(mktemp -d)
 	mv ${ROLE_DIR}/components ${TMMPDIR}
 	@rm -rf ${ROLE_DIR}/*
 	mv ${TMMPDIR}/components ${ROLE_DIR}
