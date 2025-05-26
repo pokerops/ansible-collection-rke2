@@ -1,7 +1,7 @@
 ---
 # Defaults
 rke2_defaults_version: v1.33.0+rke2r1
-rke2_defaults_url_api: "https://api.{{ rke2_cluster_name }}"
+rke2_defaults_api_url: "https://api.{{ rke2_cluster_name }}"
 rke2_defaults_options:
   - ""
 
@@ -16,7 +16,8 @@ _rke2_cluster_init: "{{ rke2_cluster_init | default(True) }}"
 _rke2_config_path: /etc/rancher/rke2
 _rke2_kubeconfig: "~/.kube/config"
 _rke2_bin_path: /var/lib/rancher/rke2/bin
-_rke2_api_host: "{{ rke2_api_url | urlsplit('hostname') }}"
+_rke2_api_url: "{{ rke2_api_url | default(rke2_defaults_api_url) }}"
+_rke2_api_host: "{{ _rke2_api_url | urlsplit('hostname') }}"
 _rke2_server_options: "{{ rk2_server_options | default(rke2_defaults_options) }}"
 _rke2_agent_options: "{{ rk2_agent_options | default(rke2_defaults_options) }}"
 _rke2_limits_nofile: "{{ rke2_limits_nofile | default(1048576) }}"

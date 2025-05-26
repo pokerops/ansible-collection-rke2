@@ -372,7 +372,8 @@
             cmd: >
               curl -sLk -XPOST https://argocd.{{ rke2_cluster_name }}/api/v1/session
                 --resolve argocd.{{ rke2_cluster_name }}:443:{{ ingress_argocd_ip }}
-                --json '{ "username": "{{ _argocd_admin_username }}", "password": "{{ _argocd_admin_password }}" }'
+                --header "Content-Type: application/json"
+                --data '{ "username": "{{ _argocd_admin_username }}", "password": "{{ _argocd_admin_password }}" }'
           vars:
             _argocd_admin_username: "admin"
             _argocd_admin_password: "{{ _argocd_admin_data.data.password | b64decode }}"
