@@ -4,4 +4,4 @@ rke2_metallb_chart:
   namespace: "metallb-system"
   repo: "https://metallb.github.io/metallb"
   release: "6.4.13"
-  last_checked: "2025-05-21T17:21:40-06:00"
+  last_checked: "2025-05-25T19:17:23-06:00"

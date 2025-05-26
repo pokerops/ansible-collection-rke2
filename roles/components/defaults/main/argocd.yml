@@ -5,8 +5,8 @@ rke2_argocd_chart:
   name: "argo-cd"
   namespace: "argocd"
   repo: "https://argoproj.github.io/argo-helm"
-  release: "7.8.14"
-  last_checked: "2025-03-26T10:59:46-06:00"
+  release: "8.0.10"
+  last_checked: "2025-05-25T19:16:42-06:00"
 rke2_redis_ha_enabled: true
 rke2_controller_replicas: 2
 rke2_server_replicas: 2

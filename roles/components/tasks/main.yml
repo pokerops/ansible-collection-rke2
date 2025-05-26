@@ -25,3 +25,6 @@
 
 - name: Include argocd tasks
   ansible.builtin.include_tasks: argocd.yml
+
+- name: Include strimzi tasks
+  ansible.builtin.include_tasks: strimzi.yml
