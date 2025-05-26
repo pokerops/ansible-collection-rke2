@@ -378,9 +378,7 @@
             _argocd_admin_password: "{{ _argocd_admin_data.data.password | b64decode }}"
             _argocd_admin_data: "{{ _argocd_secret_query.resources[0] }}"
           register: argocd_auth_data
-
-        - debug:
-            var: argocd_auth_data
+          delegate_to: localhost
 
         - name: Record argocd auth token
           ansible.builtin.set_fact:
