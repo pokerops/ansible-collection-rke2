@@ -75,11 +75,6 @@ lint: install
 	uv run ansible-lint -p .
 
 requirements: install
-	TMMPDIR=$$(mktemp -d)
-	mv ${ROLE_DIR}/components ${TMMPDIR}
-	@rm -rf ${ROLE_DIR}/*
-	mv ${TMMPDIR}/components ${ROLE_DIR}
-	rm -rf ${TMMPDIR}
 	@python --version
 	@uv run ansible-galaxy role install \
 		--force --no-deps \
@@ -87,7 +82,7 @@ requirements: install
 		--role-file ${ROLE_FILE}
 	@uv run ansible-galaxy collection install \
 		--force-with-deps .
-	@\find ./ -name "*.ymle*" -delete
+	@find ./ -name "*.ymle*" -delete
 
 build: requirements
 	@uv run ansible-galaxy collection build --force
