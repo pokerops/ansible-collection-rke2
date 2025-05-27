@@ -1,6 +1,7 @@
 ---
 - name: Deploy RKE2 cluster
   hosts: "{{ rke2_server_group }}:{{ rke2_agent_group }}"
+  any_errors_fatal: true
   vars_files:
     - main.yml
   tasks:
@@ -35,6 +36,7 @@
 
 - name: Configure RKE2 cluster members
   hosts: "{{ rke2_server_group }}"
+  any_errors_fatal: true
   vars_files:
     - main.yml
   tasks:

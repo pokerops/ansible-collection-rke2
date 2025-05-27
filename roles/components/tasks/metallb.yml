@@ -1,7 +1,7 @@
 ---
 - name: Verify ippool ranges
   ansible.builtin.assert:
-    that: rke2_ippool_public is defined
+    that: rke2_ippool_private is defined
     fail_msg: "rke2_ippool_private must be defined"
   run_once: true
 
