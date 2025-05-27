@@ -304,11 +304,13 @@
             kubeconfig: "{{ _config_path }}"
           vars:
             _ip: ip
+            _ingress: ingress
           register: _ingress_query
           retries: "{{ _retry }}"
           delay: "{{ _delay }}"
           until:
             - _ingress_query.resources | length > 0
+            - _ingress in _ingress_query.resources[0].status.loadBalancer
             - _ingress_query.resources[0].status.loadBalancer.ingress | length > 0
             - _ip in _ingress_query.resources[0].status.loadBalancer.ingress[0]
           delegate_to: localhost
