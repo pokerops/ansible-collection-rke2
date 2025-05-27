@@ -1,0 +1,41 @@
+---
+rke2_argocd_hostname: "argocd.{{ rke2_cluster_name }}"
+rke2_argocd_exec_timeout: "3m"
+rke2_argocd_chart:
+  name: "argo-cd"
+  namespace: "argocd"
+  repo: "https://argoproj.github.io/argo-helm"
+  release: "8.0.10"
+  last_checked: "2025-05-25T19:16:42-06:00"
+rke2_redis_ha_enabled: true
+rke2_controller_replicas: 2
+rke2_server_replicas: 2
+rke2_reposerver_replicas: 2
+rke2_applicationset_replicas: 2
+rke2_argocd_values:
+  redis-ha:
+    enabled: "{{ rke2_redis_ha_enabled }}"
+  controller:
+    replicas: "{{ rke2_controller_replicas }}"
+  server:
+    replicas: "{{ rke2_server_replicas }}"
+    ingress:
+      enabled: true
+      https: true
+      ingressClassName: nginx-private
+      hostname: "{{ rke2_argocd_hostname }}"
+      annotations:
+        nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+  repoServer:
+    replicas: "{{ rke2_reposerver_replicas }}"
+  applicationSet:
+    replicas: "{{ rke2_applicationset_replicas }}"
+  configs:
+    params:
+      application.namespaces: "*"
+    cm:
+      application.resourceTrackingMethod: label
+  global:
+    env:
+      - name: ARGOCD_EXEC_TIMEOUT
+        value: "{{ rke2_argocd_exec_timeout }}"

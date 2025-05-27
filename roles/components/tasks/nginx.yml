@@ -1,0 +1,70 @@
+---
+- name: Create nginx namespace
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ rke2_config_path }}"
+    resource_definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ rke2_nginx_chart.namespace }}"
+
+- name: Deploy nginx private controller
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ rke2_config_path }}"
+    resource_definition:
+      apiVersion: helm.cattle.io/v1
+      kind: HelmChart
+      metadata:
+        name: "nginx-private"
+        namespace: "{{ rke2_nginx_chart.namespace }}"
+      spec:
+        chart: "{{ rke2_nginx_chart.name }}"
+        targetNamespace: "{{ rke2_nginx_chart.namespace }}"
+        repo: "{{ rke2_nginx_chart.repo }}"
+        valuesContent: |-
+          controller:
+            config:
+              annotations-risk-level: "Critical"
+            allowSnippetAnnotations: true
+            ingressClass: nginx-private
+            ingressClassResource:
+              default: true
+              name: "nginx-private"
+              controllerValue: "k8s.io/nginx-private"
+              annotations:
+                cert-manager.io/cluster-issuer: "{{ rke2_certmanager_issuer_name }}"
+            service:
+              annotations:
+                metallb.universe.tf/address-pool: "metallb-private"
+
+- name: Deploy nginx public controller
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ rke2_config_path }}"
+    resource_definition:
+      apiVersion: helm.cattle.io/v1
+      kind: HelmChart
+      metadata:
+        name: "nginx-public"
+        namespace: "{{ rke2_nginx_chart.namespace }}"
+      spec:
+        chart: "{{ rke2_nginx_chart.name }}"
+        targetNamespace: "{{ rke2_nginx_chart.namespace }}"
+        repo: "{{ rke2_nginx_chart.repo }}"
+        valuesContent: |-
+          controller:
+            config:
+              annotations-risk-level: "Critical"
+            allowSnippetAnnotations: true
+            ingressClass: nginx-public
+            ingressClassResource:
+              name: "nginx-public"
+              controllerValue: "k8s.io/nginx-public"
+              annotations:
+                cert-manager.io/cluster-issuer: "{{ rke2_certmanager_issuer_name }}"
+            service:
+              annotations:
+                metallb.universe.tf/address-pool: "metallb-public"
+  when: rke2_ippool_public is defined

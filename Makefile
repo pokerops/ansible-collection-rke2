@@ -67,7 +67,8 @@ test: lint
 	pnoetry run molecule test -s ${MOLECULE_SCENARIO}
 
 install:
-	sudo apt-get install -y libvirt-dev
+	@sudo apt-get update
+	@sudo apt-get install -y libvirt-dev
 	@uv sync
 
 lint: install
@@ -75,7 +76,6 @@ lint: install
 	uv run ansible-lint -p .
 
 requirements: install
-	@rm -rf ${ROLE_DIR}/*
 	@python --version
 	@uv run ansible-galaxy role install \
 		--force --no-deps \
@@ -83,7 +83,7 @@ requirements: install
 		--role-file ${ROLE_FILE}
 	@uv run ansible-galaxy collection install \
 		--force-with-deps .
-	@\find ./ -name "*.ymle*" -delete
+	@find ./ -name "*.ymle*" -delete
 
 build: requirements
 	@uv run ansible-galaxy collection build --force

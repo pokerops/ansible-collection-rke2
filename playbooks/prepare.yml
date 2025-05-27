@@ -19,9 +19,9 @@
           - rsync
       when: ansible_os_family == "RedHat"
 
-    - name: Check cluster api parameter
+    - name: Check cluster name parameter
       ansible.builtin.assert:
-        that: rke2_api_url is defined
+        that: rke2_cluster_name is defined
 
     - name: Add host entries for cluster members
       ansible.builtin.lineinfile:

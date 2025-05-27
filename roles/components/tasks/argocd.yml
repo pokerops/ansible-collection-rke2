@@ -1,0 +1,27 @@
+---
+- name: Create argocd namespace
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ rke2_config_path }}"
+    resource_definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ rke2_argocd_chart.namespace }}"
+
+- name: Deploy argocd chart
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ rke2_config_path }}"
+    resource_definition:
+      apiVersion: helm.cattle.io/v1
+      kind: HelmChart
+      metadata:
+        name: argocd
+        namespace: kube-system
+      spec:
+        chart: "{{ rke2_argocd_chart.name }}"
+        targetNamespace: "{{ rke2_argocd_chart.namespace }}"
+        repo: "{{ rke2_argocd_chart.repo }}"
+        valuesContent: |-
+          {{ rke2_argocd_values | to_nice_yaml(indent=2) }}

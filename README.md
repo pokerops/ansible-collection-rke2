@@ -11,27 +11,29 @@ The following is the list of parameters intended for end-user manipulation:
 
 Cluster wide parameters
 
-| Parameter             |               Default | Type   | Description                            | Required |
-| :-------------------- | --------------------: | :----- | :------------------------------------- | :------- |
-| rke2_cluster_name     |                   n/a | string | Cluster name, immutable after creation | yes      |
-| rke2_release_rke      |                v1.5.6 | string | RKE2 release to deploy                 | no       |
-| rke2_release_k8s      |   v1.27.11-rancher1-1 | string | K8s release to deploy                  | no       |
-| rke2_retry_num        |                    10 | bool   | Max number of task retries             | no       |
-| rke2_retry_delay      |                    30 | bool   | Task delay on retries                  | no       |
-| rke2_backup_interval  |                     1 | bool   | Backup interval in hours               | no       |
-| rke2_backup_retention |                    24 | bool   | Backup retention in hours              | no       |
-| rke2_evict_timeout    |                   300 | bool   | Node drain eviction timeout in seconds | no       |
-| rke2_install_user     | {{ ansible_user_id }} | string | RKE2 install user                      | no       |
+| Parameter                    |        Default | Type   | Description                            | Required |
+| :--------------------------- | -------------: | :----- | :------------------------------------- | :------- |
+| rke2_cluster_name            |            n/a | string | Cluster name, immutable after creation | yes      |
+| rke2_version                 | v1.33.0+rke2r1 | string | RKE2 version to deploy                 | no       |
+| rke2_retry_num               |             10 | bool   | Max number of task retries             | no       |
+| rke2_retry_delay             |             30 | bool   | Task delay on retries                  | no       |
+| rke2_evict_timeout           |            300 | bool   | Node drain eviction timeout in seconds | no       |
+| rke2_ippool_private          |            n/a | string | Private IP pool CIDR                   | yes      |
+| rke2_ippool_public           |            n/a | string | Public IP pool CIDR                    | no       |
+| rke2_certmanager_acme_secret |            n/a | string | Secret name for ACME challenge         | no       |
+| rke2_certmanager_acme_email  |            n/a | string | Email for ACME challenge               | no [1]   |
+
+[1] rke2_certmanager_acme_email is required whenever rke2_certmanager_acme_secret is set
 
 ## Collection roles
 
-- pokerops.rke2.k8s
+- pokerops.rke2.components
+- pokerops.rke2.rke2
 
 ## Collection playbooks
 
 - pokerops.rke2.install: Install and (re)configure cluster
-- pokerops.rke2.k8s: Deploy base K8s services
-- pokerops.rke2.restart: Stop rke2 cluster services
+- pokerops.rke2.init: Deploy base K8s services
 - pokerops.rke2.update: Start rke2 cluster services
 
 ## Testing

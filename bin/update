@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+
+date_darwin="-Iseconds"
+date_linux="--iso-8601=seconds"
+
+chart_files=$(grep -Rl "chart:" roles/components/defaults/main/)
+for file in ${chart_files}; do
+    ref_versions=$(grep --no-filename "chart:" "${file}" | cut -d':' -f 1)
+    for vardef in ${ref_versions}; do
+        repo=$(yq ".${vardef}.repo" <"${file}" -r)
+        chart=$(yq ".${vardef}.name" <"${file}" -r)
+        if [[ -n "${repo}" && "${repo}" != "null" && -n "${chart}" && "${chart}" != "null" ]]; then
+            tmp="$(mktemp)"
+            if [[ "${OSTYPE}" == "linux-gnu"* ]]; then
+                timestamp=$(date ${date_linux})
+            elif [[ "${OSTYPE}" == "darwin"* ]]; then
+                timestamp=$(date ${date_darwin})
+            fi
+            release=$(yq ".${vardef}.release" <"${file}")
+            if [[ -n "${release}" && "${release}" != "null" ]]; then
+              helm repo add "${chart}" "${repo}" >/dev/null 2>&1
+              helm repo update >/dev/null 2>&1
+              version=$(helm search repo "${chart}/${chart}" -o json | jq '.[0].version' -r)
+              if [[ -n "${version}" && "${version}" != "null" ]]; then
+                echo "Found version ${version} for chart ${chart}"
+                yq eval-all '. as $item ireduce ({}; . * $item)' \
+                    "${file}" \
+                    <(printf '%s:\n  release: "%s"\n  last_checked: "%s"' "${vardef}" "${version}" "${timestamp}") \
+                    >"${tmp}"
+              else
+                echo "Version query failed for chart ${chart} ... skipping"
+                yq eval-all '. as $item ireduce ({}; . * $item)' \
+                    "${file}" \
+                    <(printf '%s:\n  last_checked: "%s"' "${vardef}" "${timestamp}") \
+                    >"${tmp}"
+              fi
+              mv "${tmp}" "${file}"
+            else
+              echo "No release field set for chart ${chart} ... skipping"
+            fi
+        fi
+    done
+done
+

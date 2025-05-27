@@ -1,0 +1,159 @@
+---
+- name: Create cert-manager namespace
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ rke2_config_path }}"
+    resource_definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ rke2_certmanager_chart.namespace }}"
+
+- name: Deploy cert-manager chart
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ rke2_config_path }}"
+    resource_definition:
+      apiVersion: helm.cattle.io/v1
+      kind: HelmChart
+      metadata:
+        name: cert-manager
+        namespace: kube-system
+      spec:
+        chart: "{{ rke2_certmanager_chart.name }}"
+        targetNamespace: "{{ rke2_certmanager_chart.namespace }}"
+        repo: "{{ rke2_certmanager_chart.repo }}"
+        valuesContent: |-
+          crds:
+            enabled: true
+          podDnsPolicy: None
+          podDnsConfig:
+            nameservers:
+              - 1.1.1.1
+              - 8.8.8.8
+
+- name: Wait for cluster-issuer crd
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ rke2_config_path }}"
+    kind: CustomResourceDefinition
+    name: clusterissuers.cert-manager.io
+  retries: "{{ _rke2_retry_num }}"
+  delay: "{{ _rke2_retry_delay }}"
+  register: certmanager_crd
+  until: certmanager_crd.resources | length > 0
+
+- name: Wait for certitificate crd
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ rke2_config_path }}"
+    kind: CustomResourceDefinition
+    name: certificates.cert-manager.io
+  retries: "{{ _rke2_retry_num }}"
+  delay: "{{ _rke2_retry_delay }}"
+  register: certmanager_crd
+  until: certmanager_crd.resources | length > 0
+
+- name: Deploy Cloudflare cluster issuer
+  when: rke2_certmanager_acme_secret is defined
+  block:
+    - name: Verify acme variable definitions
+      ansible.builtin.assert:
+        that: rke2_certmanager_acme_email is defined
+        fail_msg: "rke2_certmanager_acme_email must be defined when rke2_certmanager_acme_secret is set"
+
+    - name: Create certmanager secret
+      kubernetes.core.k8s:
+        namespace: "{{ rke2_certmanager_chart.namespace }}"
+        kubeconfig: "{{ rke2_config_path }}"
+        state: present
+        resource_definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: cloudflare-api-token-secret
+          type: Opaque
+          data:
+            api-token: "{{ rke2_certmanager_acme_secret | b64encode }}"
+      retries: "{{ _rke2_retry_num }}"
+      delay: "{{ _rke2_retry_delay }}"
+
+    - name: Create LetsEncrypt issuer
+      kubernetes.core.k8s:
+        namespace: "{{ rke2_certmanager_chart.namespace }}"
+        kubeconfig: "{{ rke2_config_path }}"
+        state: present
+        resource_definition:
+          apiVersion: cert-manager.io/v1
+          kind: ClusterIssuer
+          metadata:
+            name: "{{ rke2_certmanager_issuer_name }}"
+          spec:
+            acme:
+              server: "{{ rke2_certmanager_acme_issuer | default('https://acme-staging-v02.api.letsencrypt.org/directory') }}"
+              email: "{{ rke2_certmanager_acme_email }}"
+              privateKeySecretRef:
+                name: letsencrypt-production
+              solvers:
+                - dns01:
+                    cloudflare:
+                      email: "{{ _rke2_certmanager_acme_email }}"
+                      apiKeySecretRef:
+                        name: cloudflare-api-token-secret
+                        key: api-token
+      retries: "{{ _rke2_retry_num }}"
+      delay: "{{ _rke2_retry_delay }}"
+
+- name: Deploy local cluster issuer
+  block:
+    - name: Create bootstrap issuer
+      kubernetes.core.k8s:
+        name: bootstrap-issuer
+        namespace: "{{ rke2_certmanager_chart.namespace }}"
+        kubeconfig: "{{ rke2_config_path }}"
+        state: present
+        resource_definition:
+          apiVersion: cert-manager.io/v1
+          kind: ClusterIssuer
+          metadata:
+            name: bootstrap-issuer
+          spec:
+            selfSigned: {}
+      retries: "{{ _rke2_retry_num }}"
+      delay: "{{ _rke2_retry_delay }}"
+
+    - name: Create self-signed ca certificate
+      kubernetes.core.k8s:
+        namespace: "{{ rke2_certmanager_chart.namespace }}"
+        kubeconfig: "{{ rke2_config_path }}"
+        state: present
+        resource_definition:
+          apiVersion: cert-manager.io/v1
+          kind: Certificate
+          metadata:
+            name: cluster-ca
+          spec:
+            isCA: true
+            commonName: cluster-issuer-ca
+            secretName: cluster-issuer-secret
+            privateKey:
+              algorithm: ECDSA
+              size: 256
+            issuerRef:
+              name: bootstrap-issuer
+              kind: ClusterIssuer
+      retries: "{{ _rke2_retry_num }}"
+      delay: "{{ _rke2_retry_delay }}"
+
+    - name: Create self-signed cluster issuer
+      kubernetes.core.k8s:
+        kubeconfig: "{{ rke2_config_path }}"
+        state: present
+        resource_definition:
+          apiVersion: cert-manager.io/v1
+          kind: ClusterIssuer
+          metadata:
+            name: "{{ rke2_certmanager_issuer_name }}"
+          spec:
+            ca:
+              secretName: cluster-issuer-secret
+      retries: "{{ _rke2_retry_num }}"
+      delay: "{{ _rke2_retry_delay }}"

@@ -1,0 +1,30 @@
+---
+- name: Deploy cluster secrets
+  ansible.builtin.include_tasks: secrets.yml
+
+- name: Include metallb tasks
+  ansible.builtin.include_tasks: longhorn.yml
+
+- name: Include metallb tasks
+  ansible.builtin.include_tasks: metallb.yml
+
+- name: Include cert-manager tasks
+  ansible.builtin.include_tasks: certmanager.yml
+
+- name: Include nginx tasks
+  ansible.builtin.include_tasks: nginx.yml
+
+- name: Include sealed-secrets tasks
+  ansible.builtin.include_tasks: sealedsecrets.yml
+
+- name: Include keel tasks
+  ansible.builtin.include_tasks: keel.yml
+
+- name: Include reflector tasks
+  ansible.builtin.include_tasks: reflector.yml
+
+- name: Include argocd tasks
+  ansible.builtin.include_tasks: argocd.yml
+
+- name: Include strimzi tasks
+  ansible.builtin.include_tasks: strimzi.yml

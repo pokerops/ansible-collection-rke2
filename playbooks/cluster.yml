@@ -1,6 +1,7 @@
 ---
 - name: Deploy RKE2 cluster
   hosts: "{{ rke2_server_group }}:{{ rke2_agent_group }}"
+  any_errors_fatal: true
   vars_files:
     - main.yml
   tasks:
@@ -28,13 +29,14 @@
 
     - name: Install RKE2
       ansible.builtin.include_role:
-        name: lablabs.rke2
+        name: pokerops.rke2.rke2
         apply:
           become: true
       when: _rke2_install | bool
 
 - name: Configure RKE2 cluster members
   hosts: "{{ rke2_server_group }}"
+  any_errors_fatal: true
   vars_files:
     - main.yml
   tasks:
@@ -67,7 +69,7 @@
               clusters:
                 - name: "{{ _kubeconfig_cluster.name }}"
                   cluster:
-                    server: "{{ rke2_api_url }}"
+                    server: "{{ _rke2_api_url }}"
                     certificate-authority-data: "{{ _kubeconfig_cluster.cluster['certificate-authority-data'] }}"
 
         - name: Create user kubeconfig

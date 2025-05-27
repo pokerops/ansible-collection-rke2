@@ -158,6 +158,36 @@
             content: "{{ _config_data }}"
             mode: "u=rw,go=r"
           delegate_to: localhost
+          changed_when: false
+
+        - name: Validate secret namespaces
+          ansible.builtin.assert:
+            that: ns_missing | length == 0
+            fail_msg: "the following namespaces are missing from deployed secrets [{{ ns_missing | join(', ') }}]"
+          vars:
+            ns_query: "{{ query('kubernetes.core.k8s', kind='Namespace', kubeconfig=_config_path) }}"
+            ns_names: "{{ ns_query | map(attribute='metadata.name') }}"
+            ns_targets: "{{ rke2_secrets | default([]) | map(attribute='namespace') }}"
+            ns_missing: "{{ ns_targets | difference(ns_names) }}"
+
+        - name: Validate secret namespace status
+          ansible.builtin.assert:
+            that: ns_failed | length == 0
+            fail_msg: "the following namespaces are in failed status [{{ ns_failed | join(', ') }}]"
+          vars:
+            ns_query: "{{ query('kubernetes.core.k8s', kind='Namespace', kubeconfig=_config_path) }}"
+            ns_inactive: "{{ ns_query | rejectattr('status.phase', 'equalto', 'Active') }}"
+            ns_failed: "{{ ns_inactive | map(attribute='metadata.name') }}"
+
+        - name: Validate secret list
+          ansible.builtin.assert:
+            that: secret_missing | length == 0
+            fail_msg: "the following secrets are missing from secret definitions [{{ secret_missing | join(', ') }}]"
+          vars:
+            secret_query: "{{ query('kubernetes.core.k8s', kind='Secret', kubeconfig=_config_path) }}"
+            secret_names: "{{ secret_query | map(attribute='metadata.name') }}"
+            secret_targets: "{{ rke2_secrets | default([]) | map(attribute='name') }}"
+            secret_missing: "{{ secret_targets | difference(secret_names) }}"
 
         - name: Validate pod status
           ansible.builtin.fail:
@@ -175,6 +205,302 @@
             - (pods_status | length) != (pods_query | length)
             - (pods_phase | length) != (pods_query | length)
             - pods_failed | length > 0
+
+        - name: Validate job status
+          ansible.builtin.fail:
+            msg: "the following jobs are in failed status [{{ jobs_failed | map(attribute='metadata.name') | join(', ') }}]"
+          vars:
+            jobs_status: "{{ jobs_query | selectattr('status', 'defined') }}"
+            jobs_success: "{{ jobs_status | selectattr('status.succeeded', 'defined') }}"
+            jobs_failed: "{{ jobs_success | rejectattr('status.succeeded', 'equalto', 1) }}"
+            jobs_query: "{{ query('kubernetes.core.k8s', kind='Job', kubeconfig=_config_path) }}"
+          retries: "{{ _retry }}"
+          delay: "{{ _delay }}"
+          until: jobs_failed | length == 0
+          failed_when:
+            - (jobs_status | length) != (jobs_query | length)
+            - (jobs_phase | length) != (jobs_query | length)
+            - jobs_failed | length > 0
+
+        - name: Set test facts
+          ansible.builtin.set_fact:
+            _volume_test_namespace: longhorn-test
+            _volume_test_name: longhorn-test
+            _volume_test_mount: longhorn-test
+
+        - name: Create test namespace
+          kubernetes.core.k8s:
+            state: present
+            kubeconfig: "{{ _config_path }}"
+            resource_definition:
+              apiVersion: v1
+              kind: Namespace
+              metadata:
+                name: longhorn-test
+          delegate_to: localhost
+
+        - name: Create test volume claim
+          kubernetes.core.k8s:
+            state: present
+            kubeconfig: "{{ _config_path }}"
+            resource_definition:
+              apiVersion: v1
+              kind: PersistentVolumeClaim
+              metadata:
+                name: longhorn-test
+                namespace: longhorn-test
+              spec:
+                storageClassName: longhorn
+                accessModes:
+                  - ReadWriteOnce
+                resources:
+                  requests:
+                    storage: 3Gi
+          delegate_to: localhost
+
+        - name: Create volume consumer
+          kubernetes.core.k8s:
+            state: present
+            kubeconfig: "{{ _config_path }}"
+            resource_definition:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: longhorn-test
+                namespace: longhorn-test
+              spec:
+                volumes:
+                  - persistentVolumeClaim:
+                      claimName: longhorn-test
+                    name: longhorn-test
+                containers:
+                  - name: longhorn-test-container
+                    image: nginx
+                    ports:
+                      - containerPort: 80
+                        name: "http-server"
+                    volumeMounts:
+                      - mountPath: "/usr/share/nginx/html"
+                        name: longhorn-test
+          delegate_to: localhost
+
+        - name: Validate persistent claim status
+          ansible.builtin.fail:
+            msg: "the following pvcs are in failed status [{{ pvc_names | join(', ') }}]"
+          vars:
+            pvc_names: "{{ pvc_failed | map(attribute='metadata.name') }}"
+            pvc_failed: "{{ pvc_query | rejectattr('status.phase', 'equalto', 'Bound') }}"
+            pvc_query: "{{ query('kubernetes.core.k8s', kind='PersistentVolumeClaim', kubeconfig=_config_path) }}"
+          retries: "{{ _retry }}"
+          delay: "{{ _delay }}"
+          until: pvc_failed | length == 0
+          failed_when: pvc_failed | length > 0
+
+        - name: Query argocd ingress metadata
+          kubernetes.core.k8s_info:
+            kind: Ingress
+            name: argocd-server
+            namespace: argocd
+            kubeconfig: "{{ _config_path }}"
+          vars:
+            _ip: ip
+            _ingress: ingress
+          register: _ingress_query
+          retries: "{{ _retry }}"
+          delay: "{{ _delay }}"
+          until:
+            - _ingress_query.resources | length > 0
+            - _ingress in _ingress_query.resources[0].status.loadBalancer
+            - _ingress_query.resources[0].status.loadBalancer.ingress | length > 0
+            - _ip in _ingress_query.resources[0].status.loadBalancer.ingress[0]
+          delegate_to: localhost
+
+        - name: Set argocd ingress facts
+          ansible.builtin.set_fact:
+            ingress_argocd_ip: "{{ _ingress_query.resources[0].status.loadBalancer.ingress[0].ip }}"
+
+        - name: Verify argocd health status
+          ansible.builtin.command:
+            cmd: "curl -sLk https://argocd.{{ rke2_cluster_name }}/healthz --resolve argocd.{{ rke2_cluster_name }}:443:{{ ingress_argocd_ip }} --fail"
+          delegate_to: localhost
+          changed_when: false
+
+        - name: Query argocd reposerver deployment
+          kubernetes.core.k8s_info:
+            kind: Deployment
+            name: argocd-repo-server
+            namespace: argocd
+            kubeconfig: "{{ _config_path }}"
+          register: _deployment_query
+          retries: "{{ _retry }}"
+          delay: "{{ _delay }}"
+          until: _deployment_query.resources | length > 0
+          delegate_to: localhost
+
+        - name: Set argocd deployment env facts
+          ansible.builtin.set_fact:
+            _argocd_env_exec_item: "{{ _reposerver_env_exec_item }}"
+          vars:
+            _reposerver_def: "{{ _deployment_query.resources[0] }}"
+            _reposerver_env: "{{ _reposerver_def.spec.template.spec.containers[0].env }}"
+            _reposerver_env_exec_item: "{{ _reposerver_env | selectattr('name', 'equalto', 'ARGOCD_EXEC_TIMEOUT') }}"
+
+        - name: Check argocd exec timeout parameter
+          ansible.builtin.assert:
+            that: _argocd_env_exec_item | length > 0
+            fail_msg: "env var ARGOCD_EXEC_TIMEOUT is not set"
+
+        - name: Check argocd exec timeout value
+          ansible.builtin.assert:
+            that: _argocd_env_exec_value == "3m"
+            fail_msg: "env var ARGOCD_EXEC_TIMEOUT is not set correctly ({{ _argocd_env_exec_value }})"
+          vars:
+            _argocd_env_exec_value: "{{ _argocd_env_exec_item[0].value }}"
+
+        - name: Query argocd access secret
+          kubernetes.core.k8s_info:
+            kind: Secret
+            name: argocd-initial-admin-secret
+            namespace: argocd
+            kubeconfig: "{{ _config_path }}"
+          register: _argocd_secret_query
+          retries: "{{ _retry }}"
+          delay: "{{ _delay }}"
+          until: _argocd_secret_query.resources | length > 0
+          delegate_to: localhost
+
+        - name: Auth against argocd api
+          ansible.builtin.command:
+            cmd: >
+              curl -sLk -XPOST https://argocd.{{ rke2_cluster_name }}/api/v1/session
+                --resolve argocd.{{ rke2_cluster_name }}:443:{{ ingress_argocd_ip }}
+                --header "Content-Type: application/json"
+                --data '{ "username": "{{ _argocd_admin_username }}", "password": "{{ _argocd_admin_password }}" }'
+          vars:
+            _argocd_admin_username: "admin"
+            _argocd_admin_password: "{{ _argocd_admin_data.data.password | b64decode }}"
+            _argocd_admin_data: "{{ _argocd_secret_query.resources[0] }}"
+          register: argocd_auth_data
+          delegate_to: localhost
+
+        - name: Record argocd auth token
+          ansible.builtin.set_fact:
+            argocd_admin_token: "{{ _argocd_auth_data.token }}"
+          vars:
+            _argocd_auth_data: "{{ argocd_auth_data.stdout | from_json }}"
+
+        - name: Verify argocd application status
+          block:
+            - name: Query argocd application status
+              ansible.builtin.uri:
+                url: "https://{{ ingress_argocd_ip }}/api/v1/applications?refresh=true"
+                headers:
+                  host: "argocd.{{ rke2_cluster_name }}"
+                  cookie: "argocd.token={{ argocd_admin_token }}"
+                validate_certs: false
+              retries: "{{ _retry }}"
+              delay: "{{ _delay }}"
+              register: _argocd_app_data
+              vars:
+                _app_data: "{{ _argocd_app_data.json['items'] }}"
+                _app_failed: "{{ _app_data | rejectattr('status.health.status', 'equalto', 'Healthy') }}"
+              until: _app_failed | length == 0
+
+          rescue:
+            - name: Debug failed applications
+              ansible.builtin.fail:
+                msg: "the following argocd applications are in failed status [{{ _app_names | join(', ') }}]"
+              vars:
+                _app_data: "{{ argocd_app_data.json['items'] }}"
+                _app_failed: "{{ _app_data | rejectattr('status.health.status', 'equalto', 'Healthy') }}"
+                _app_names: "{{ _app_failed | map(attribute='metadata.name') }}"
+
+        - name: Create Strimzi namespace
+          kubernetes.core.k8s:
+            state: present
+            kubeconfig: "{{ _config_path }}"
+            api_version: v1
+            kind: Namespace
+            name: strimzi-test
+          delegate_to: localhost
+
+        - name: Create test Strimzi controller NodePool
+          kubernetes.core.k8s:
+            state: present
+            kubeconfig: "{{ _config_path }}"
+            resource_definition:
+              apiVersion: kafka.strimzi.io/v1beta2
+              kind: KafkaNodePool
+              metadata:
+                name: strimzi-controller
+                namespace: strimzi-test
+                labels:
+                  strimzi.io/cluster: strimzi-kraft
+              spec:
+                replicas: 1
+                roles:
+                  - controller
+                storage:
+                  type: jbod
+                  volumes:
+                    - id: 0
+                      type: persistent-claim
+                      size: 10Gi
+                      class: longhorn
+          delegate_to: localhost
+
+        - name: Create test Strimzi broker NodePool
+          kubernetes.core.k8s:
+            state: present
+            kubeconfig: "{{ _config_path }}"
+            resource_definition:
+              apiVersion: kafka.strimzi.io/v1beta2
+              kind: KafkaNodePool
+              metadata:
+                name: strimzi-broker
+                namespace: strimzi-test
+                labels:
+                  strimzi.io/cluster: strimzi-kraft
+              spec:
+                replicas: 1
+                roles:
+                  - broker
+                storage:
+                  type: jbod
+                  volumes:
+                    - id: 0
+                      type: persistent-claim
+                      size: 10Gi
+                      class: longhorn
+          delegate_to: localhost
+
+        - name: Create test Kraft Strimzi cluster
+          kubernetes.core.k8s:
+            state: present
+            kubeconfig: "{{ _config_path }}"
+            resource_definition:
+              apiVersion: kafka.strimzi.io/v1beta2
+              kind: Kafka
+              metadata:
+                name: strimzi-kraft
+                namespace: strimzi-test
+                annotations:
+                  strimzi.io/kraft: enabled
+                  strimzi.io/node-pools: enabled
+              spec:
+                kafka:
+                  version: 3.9.0
+                  listeners:
+                    - name: plain
+                      port: 9092
+                      type: internal
+                      tls: false
+            wait: true
+            wait_condition:
+              type: Ready
+            wait_sleep: 10
+            wait_timeout: 450
+          delegate_to: localhost
 
       always:
         - name: Remove local tempdir

@@ -1,0 +1,28 @@
+---
+- name: Create longhorn namespace
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ rke2_config_path }}"
+    resource_definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ rke2_longhorn_chart.namespace }}"
+
+- name: Deploy longhorn chart
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ rke2_config_path }}"
+    resource_definition:
+      apiVersion: helm.cattle.io/v1
+      kind: HelmChart
+      metadata:
+        name: longhorn
+        namespace: kube-system
+      spec:
+        chart: "{{ rke2_longhorn_chart.name }}"
+        targetNamespace: "{{ rke2_longhorn_chart.namespace }}"
+        repo: "{{ rke2_longhorn_chart.repo }}"
+        valuesContent: |-
+          persistence:
+            defaultClass: true
