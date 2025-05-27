@@ -3,3 +3,4 @@
   ansible.builtin.import_playbook: ../common/verify.yml
   vars:
     rke_update_check: true
+    rke_init_check: false
