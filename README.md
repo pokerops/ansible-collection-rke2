@@ -15,7 +15,7 @@ Cluster wide parameters
 | :--------------------------- | -------------: | :----- | :------------------------------------- | :------- |
 | rke2_cluster_name            |            n/a | string | Cluster name, immutable after creation | yes      |
 | rke2_version                 | v1.33.0+rke2r1 | string | RKE2 version to deploy                 | no       |
-| rke2_retry_num               |             10 | bool   | Max numker of task retries             | no       |
+| rke2_retry_num               |             10 | bool   | Max number of task retries             | no       |
 | rke2_retry_delay             |             30 | bool   | Task delay on retries                  | no       |
 | rke2_evict_timeout           |            300 | bool   | Node drain eviction timeout in seconds | no       |
 | rke2_ippool_private          |            n/a | string | Private IP pool CIDR                   | yes      |
