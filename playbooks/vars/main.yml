@@ -27,6 +27,7 @@ _rke2_evict_timeout: "{{ rke2_evict_timeout | default(300) }}"
 _rke2_drain_pod_selectors: "{{ rke2_drain_pod_selectors | default(rke2_defaults_drain_pod_selectors) }}"
 
 # Hardcoded values
+rke2_uninstall_script: /usr/local/bin/rke2-uninstall.sh
 rke2_cluster_group: "{{ rke_cluster | default('rke2_cluster') }}"
 rke2_server_group: "{{ rke2_server | default('rke2_server') }}"
 rke2_agent_group: "{{ rke2_agent | default('rke2_agent') }}"

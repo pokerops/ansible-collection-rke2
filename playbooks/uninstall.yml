@@ -1,0 +1,16 @@
+---
+- name: Undeploy RKE2 cluster
+  hosts: "{{ rke2_cluster_group }}"
+  vars_files:
+    - main.yml
+  tasks:
+    - name: Stat rke2 uninstall script
+      ansible.builtin.stat:
+        path: "{{ rke2_uninstall_script }}"
+      register: _rke2_uninstall_stat
+
+    - name: Undeploy RKE2 cluster
+      ansible.builtin.command:
+        cmd: "{{ rke2_uninstall_script }}"
+      when: _rke2_uninstall_stat.stat.exists
+      become: true
