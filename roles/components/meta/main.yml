@@ -1,0 +1,8 @@
+#SPDX-License-Identifier: MIT-0
+galaxy_info:
+  author: Ted Cook
+  description: standard RKE2 cluster components
+  license: MIT
+  min_ansible_version: 2.1
+  galaxy_tags: []
+dependencies: []
