@@ -499,7 +499,7 @@
             wait_condition:
               type: Ready
             wait_sleep: 10
-            wait_timeout: 300
+            wait_timeout: 450
           delegate_to: localhost
 
       always:
