@@ -128,6 +128,7 @@
         that: _kubectl_status.stdout | reject('equalto', 'Healthy') | length == 0
 
     - name: Validate cluster components
+      when: rke2_init_check | default(True) | bool
       run_once: true
       block:
         - name: Create local tempdir
@@ -519,4 +520,4 @@
       changed_when: false
       register: _update_query
       failed_when: _update_query.stdout | int > 0
-      when: rke_update_check | default(False) | bool
+      when: rke2_update_check | default(False) | bool
