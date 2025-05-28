@@ -26,6 +26,16 @@
         valuesContent: |-
           {{ rke2_argocd_values | default(_rke2_argocd_values) | to_nice_yaml(indent=2) }}
 
+- name: Wait for appproject crd
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ rke2_config_path }}"
+    kind: CustomResourceDefinition
+    name: appprojects.argoproj.io
+  retries: "{{ _rke2_retry_num }}"
+  delay: "{{ _rke2_retry_delay }}"
+  register: argocd_crd
+  until: argocd_crd.resources | length > 0
+
 - name: Create argocd default project
   kubernetes.core.k8s:
     state: present
