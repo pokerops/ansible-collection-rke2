@@ -126,13 +126,12 @@
                     pods_phase: "{{ pods_status | selectattr('status.phase', 'defined') }}"
                     pods_completed: "{{ pods_phase | rejectattr('status.phase', 'equalto', 'Running') }}"
                     pods_failed: "{{ pods_completed | rejectattr('status.phase', 'equalto', 'Succeeded') }}"
-                    pods_query: "{{ query('kubernetes.core.k8s', kind='Pod', kubeconfig=_config_path) }}"
                   register: pods_info
                   retries: "{{ _rke2_retry_num }}"
                   delay: "{{ _rke2_retry_delay }}"
                   until:
-                    - (pods_status | length) == (pods_query | length)
-                    - (pods_phase | length) == (pods_query | length)
+                    - (pods_status | length) == (pods_info.resources | length)
+                    - (pods_phase | length) == (pods_info.resources | length)
                     - pods_failed | length == 0
                   delegate_to: localhost
 
@@ -145,7 +144,6 @@
                     pods_phase: "{{ pods_status | selectattr('status.phase', 'defined') }}"
                     pods_completed: "{{ pods_phase | rejectattr('status.phase', 'equalto', 'Running') }}"
                     pods_failed: "{{ pods_completed | rejectattr('status.phase', 'equalto', 'Succeeded') }}"
-                    pods_query: "{{ query('kubernetes.core.k8s', kind='Pod', kubeconfig=_config_path) }}"
 
                 - name: Fail playbook execution
                   ansible.builtin.fail:
