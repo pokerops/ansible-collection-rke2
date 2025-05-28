@@ -5,4 +5,6 @@ rke2_longhorn_chart:
   repo: "https://charts.longhorn.io"
   release: "1.9.0"
   last_checked: "2025-05-27T18:24:48-06:00"
-_rke2_longhorn_values: "{{ rke2_longhorn_values | default({}) }}"
+rke2_longhorn_values:
+  persistence:
+    defaultClass: true

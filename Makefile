@@ -86,7 +86,10 @@ requirements: install
 	@find ./ -name "*.ymle*" -delete
 
 build: requirements
-	@uv run ansible-galaxy collection build --force
+	@uv run bin/build
+
+update: build
+	@uv run bin/update
 
 dependency create prepare converge idempotence side-effect verify destroy cleanup reset list:
 	MOLECULE_REVISION=${MOLECULE_REVISION} \

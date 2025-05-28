@@ -24,8 +24,4 @@
         targetNamespace: "{{ rke2_longhorn_chart.namespace }}"
         repo: "{{ rke2_longhorn_chart.repo }}"
         valuesContent: |-
-          {{ rke2_longhorn_values | default(_rke2_longhorn_values) | to_nice_yaml(indent=2) }}
-  vars:
-    _rke2_longhorn_values:
-      persistence:
-        defaultClass: true
+          {{ rke2_longhorn_values | to_nice_yaml(indent=2) }}

@@ -24,7 +24,7 @@
         targetNamespace: "{{ rke2_argocd_chart.namespace }}"
         repo: "{{ rke2_argocd_chart.repo }}"
         valuesContent: |-
-          {{ rke2_argocd_values | default(_rke2_argocd_values) | to_nice_yaml(indent=2) }}
+          {{ rke2_argocd_values | to_nice_yaml(indent=2) }}
 
 - name: Wait for appproject crd
   kubernetes.core.k8s_info:
@@ -71,4 +71,4 @@
         targetNamespace: "{{ rke2_argocd_apps_chart.namespace }}"
         repo: "{{ rke2_argocd_apps_chart.repo }}"
         valuesContent: |-
-          {{ rke2_argocd_apps_values | default(_rke2_argocd_apps_values) | to_nice_yaml(indent=2) }}
+          {{ rke2_argocd_apps_values | to_nice_yaml(indent=2) }}

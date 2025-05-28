@@ -12,12 +12,12 @@ rke2_argocd_controller_replicas: 2
 rke2_argocd_server_replicas: 2
 rke2_argocd_reposerver_replicas: 2
 rke2_argocd_applicationset_replicas: 2
-_rke2_argocd_values_configs:
+rke2_argocd_values_configs:
   params:
     application.namespaces: "*"
   cm:
     application.resourceTrackingMethod: label
-_rke2_argocd_values:
+rke2_argocd_values:
   redis-ha:
     enabled: "{{ rke2_argocd_redis_ha_enabled }}"
   controller:
@@ -35,21 +35,20 @@ _rke2_argocd_values:
     replicas: "{{ rke2_argocd_reposerver_replicas }}"
   applicationSet:
     replicas: "{{ rke2_argocd_applicationset_replicas }}"
-  configs: "{{ rke2_argocd_values_configs | default(_rke2_argocd_values_configs) }}"
+  configs: "{{ rke2_argocd_values_configs }}"
   global:
     env:
       - name: ARGOCD_EXEC_TIMEOUT
         value: "{{ rke2_argocd_exec_timeout }}"
-
 rke2_argocd_apps_chart:
   name: "argocd-apps"
   namespace: "argocd"
   repo: "https://argoproj.github.io/argo-helm"
   release: "2.0.2"
   last_checked: "2025-05-27T18:24:41-06:00"
-_rke2_argocd_apps_pokerops_revision: "{{ rke2_argocd_apps_pokerops_revision | default('HEAD') }}"
-_rke2_argocd_apps_values_extra: "{{ rke2_argocd_apps_values_extra | default({}) }}"
-_rke2_argocd_apps_values_base:
+rke2_argocd_apps_pokerops_revision: 0.0.5
+rke2_argocd_apps_values_extra: {}
+rke2_argocd_apps_values_base:
   applications:
     pokerops.rke2:
       finalizers:
@@ -57,7 +56,7 @@ _rke2_argocd_apps_values_base:
       project: default
       source:
         repoURL: https://github.com/pokerops/ansible-collection-rke2.git
-        targetRevision: "{{ _rke2_argocd_apps_pokerops_revision }}"
+        targetRevision: "{{ rke2_argocd_apps_pokerops_revision }}"
         path: argocd
         directory:
           recurse: true
@@ -74,4 +73,4 @@ _rke2_argocd_apps_values_base:
       info:
         - name: url
           value: https://github.com/pokerops/ansible-collection-rke2
-_rke2_argocd_apps_values: "{{ _rke2_argocd_apps_values_base | combine(_rke2_argocd_apps_values_extra) }}"
+rke2_argocd_apps_values: "{{ rke2_argocd_apps_values_base | combine(rke2_argocd_apps_values_extra) }}"

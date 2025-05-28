@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+
+VERSION=$(yq '.version' < galaxy.yml -r)
+
+if [[ -z "${VERSION}" || "${VERSION}" == "null" ]]; then
+  echo "Version not set in galaxy.yml, exiting."
+  exit 1
+fi
+
+ARGOCD_FILE="roles/components/defaults/main/argocd.yml"
+if [[ ! -f "${ARGOCD_FILE}" ]]; then
+  echo "ArgoCD defaults file not found: ${ARGOCD_FILE}"
+  exit 1
+fi
+yq ".rke2_argocd_apps_pokerops_revision = \"${VERSION}\"" -i "${ARGOCD_FILE}"
+
+ansible-galaxy collection build --force
