@@ -24,4 +24,21 @@
         targetNamespace: "{{ rke2_argocd_chart.namespace }}"
         repo: "{{ rke2_argocd_chart.repo }}"
         valuesContent: |-
-          {{ rke2_argocd_values | to_nice_yaml(indent=2) }}
+          {{ rke2_argocd_values | default(_rke2_argocd_values) | to_nice_yaml(indent=2) }}
+
+- name: Deploy argocd apps chart
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ rke2_config_path }}"
+    resource_definition:
+      apiVersion: helm.cattle.io/v1
+      kind: HelmChart
+      metadata:
+        name: argocd-apps
+        namespace: kube-system
+      spec:
+        chart: "{{ rke2_argocd_apps_chart.name }}"
+        targetNamespace: "{{ rke2_argocd_apps_chart.namespace }}"
+        repo: "{{ rke2_argocd_apps_chart.repo }}"
+        valuesContent: |-
+          {{ rke2_argocd_apps_values | default(_rke2_argocd_apps_values) | to_nice_yaml(indent=2) }}

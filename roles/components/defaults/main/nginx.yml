@@ -4,4 +4,4 @@ rke2_nginx_chart:
   namespace: "nginx"
   repo: "https://kubernetes.github.io/ingress-nginx"
   release: "4.12.2"
-  last_checked: "2025-05-25T19:18:45-06:00"
+  last_checked: "2025-05-27T18:26:10-06:00"

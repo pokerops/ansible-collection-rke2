@@ -5,4 +5,4 @@ rke2_certmanager_chart:
   namespace: "cert-manager"
   repo: "https://charts.jetstack.io"
   release: "v1.17.2"
-  last_checked: "2025-05-25T19:17:30-06:00"
+  last_checked: "2025-05-27T18:26:02-06:00"
