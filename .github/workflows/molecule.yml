@@ -13,6 +13,7 @@ on:
       - "playbooks/**"
       - "requirements.yml"
       - "roles.yml"
+      - "roles/components/**"
       - "Makefile"
       - "pyproject.toml"
       - "poetry.lock"
