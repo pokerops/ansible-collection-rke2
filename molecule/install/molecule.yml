@@ -74,6 +74,7 @@ provisioner:
           molecule_install_log: "{{ molecule_install_dir }}/${MOLECULE_SCENARIO_NAME}"
           # Optional rke2 params
           rke2_cluster_init: false
+          rke2_argocd_apps_pokerops_revision: "{{ lookup('ansible.builtin.env', 'MOLECULE_REVISION', default='HEAD') }}"
           # Required rke2 params
           rke2_cluster_name: rke2.pokerops.net
           rke2_ippool_private: "{{ molecule_pool_private }}"

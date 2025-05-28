@@ -1,7 +1,0 @@
----
-rke2_strimzi_chart:
-  name: "strimzi-kafka-operator"
-  namespace: strimzi
-  repo: "https://strimzi.io/charts/"
-  release: "0.46.0"
-  last_checked: "2025-05-25T19:16:58-06:00"

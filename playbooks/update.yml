@@ -1,6 +1,7 @@
 ---
 - name: Query cluster server status
   hosts: "{{ rke2_server_group }}"
+  any_errors_fatal: true
   vars_files:
     - main.yml
   tasks:
@@ -60,6 +61,7 @@
 
 - name: Update OS on cluster members
   hosts: "{{ rke2_server_group }}:{{ rke2_agent_group }}"
+  any_errors_fatal: true
   serial: 1
   vars_files:
     - main.yml
@@ -113,27 +115,39 @@
               register: _pod_info
               delegate_to: localhost
 
-            - name: Wait for pods to be in a running state
-              kubernetes.core.k8s_info:
-                kind: Pod
-                kubeconfig: "{{ _kubeconfig_path }}"
-              vars:
-                _pod_resources: "{{ _pod_info.resources | list }}"
-                _pod_status: "{{ _pod_resources | map(attribute='status') }}"
-                _pod_phases: "{{ _pod_status | selectattr('phase', 'defined') }}"
-                _pod_running: "{{ _pod_phases | selectattr('phase', 'equalto', 'Running') }}"
-                _pod_conditions: "{{ _pod_running | map(attribute='conditions') | flatten }}"
-                _pod_containers: "{{ _pod_conditions | selectattr('type', 'equalto', 'ContainersReady') }}"
-                _pod_falsestatus: "{{ _pod_containers | selectattr('status', 'equalto', 'False') }}"
-                _pod_reasons: "{{ _pod_falsestatus | selectattr('reason', 'defined') }}"
-                _pod_filter: "{{ _pod_reasons | selectattr('reason', 'equalto', 'ContainersNotReady') }}"
-              register: _pod_info
-              retries: "{{ _rke2_retry_num }}"
-              delay: "{{ _rke2_retry_delay }}"
-              until:
-                - _pod_info is succeeded
-                - _pod_filter | length == 0
-              delegate_to: localhost
+            - name: Verify cluster node pod state
+              block:
+                - name: Wait for pods to be in a running state
+                  kubernetes.core.k8s_info:
+                    kind: Pod
+                    kubeconfig: "{{ _kubeconfig_path }}"
+                  vars:
+                    pods_status: "{{ pods_info.resources | selectattr('status', 'defined') }}"
+                    pods_phase: "{{ pods_status | selectattr('status.phase', 'defined') }}"
+                    pods_completed: "{{ pods_phase | rejectattr('status.phase', 'equalto', 'Running') }}"
+                    pods_failed: "{{ pods_completed | rejectattr('status.phase', 'equalto', 'Succeeded') }}"
+                  register: pods_info
+                  retries: "{{ _rke2_retry_num }}"
+                  delay: "{{ _rke2_retry_delay }}"
+                  until:
+                    - (pods_status | length) == (pods_info.resources | length)
+                    - (pods_phase | length) == (pods_info.resources | length)
+                    - pods_failed | length == 0
+                  delegate_to: localhost
+
+              rescue:
+                - name: Debug failed pods
+                  ansible.builtin.debug:
+                    msg: "The following pods are in failed status [{{ pods_failed | map(attribute='metadata.name') | join(', ') }}]"
+                  vars:
+                    pods_status: "{{ pods_info.resources | selectattr('status', 'defined') }}"
+                    pods_phase: "{{ pods_status | selectattr('status.phase', 'defined') }}"
+                    pods_completed: "{{ pods_phase | rejectattr('status.phase', 'equalto', 'Running') }}"
+                    pods_failed: "{{ pods_completed | rejectattr('status.phase', 'equalto', 'Succeeded') }}"
+
+                - name: Fail playbook execution
+                  ansible.builtin.fail:
+                    msg: "Pod verification failed, aborting cluster upgrade"
 
             - name: Drain cluster node
               block:

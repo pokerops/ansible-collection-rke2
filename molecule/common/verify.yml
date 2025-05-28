@@ -324,6 +324,10 @@
           ansible.builtin.command:
             cmd: "curl -sLk https://argocd.{{ rke2_cluster_name }}/healthz --resolve argocd.{{ rke2_cluster_name }}:443:{{ ingress_argocd_ip }} --fail"
           delegate_to: localhost
+          register: _argocd_health_check
+          retries: "{{ _retry }}"
+          delay: "{{ _delay }}"
+          until: _argocd_health_check is succeeded
           changed_when: false
 
         - name: Query argocd reposerver deployment
@@ -415,93 +419,6 @@
                 _app_data: "{{ argocd_app_data.json['items'] }}"
                 _app_failed: "{{ _app_data | rejectattr('status.health.status', 'equalto', 'Healthy') }}"
                 _app_names: "{{ _app_failed | map(attribute='metadata.name') }}"
-
-        - name: Create Strimzi namespace
-          kubernetes.core.k8s:
-            state: present
-            kubeconfig: "{{ _config_path }}"
-            api_version: v1
-            kind: Namespace
-            name: strimzi-test
-          delegate_to: localhost
-
-        - name: Create test Strimzi controller NodePool
-          kubernetes.core.k8s:
-            state: present
-            kubeconfig: "{{ _config_path }}"
-            resource_definition:
-              apiVersion: kafka.strimzi.io/v1beta2
-              kind: KafkaNodePool
-              metadata:
-                name: strimzi-controller
-                namespace: strimzi-test
-                labels:
-                  strimzi.io/cluster: strimzi-kraft
-              spec:
-                replicas: 1
-                roles:
-                  - controller
-                storage:
-                  type: jbod
-                  volumes:
-                    - id: 0
-                      type: persistent-claim
-                      size: 10Gi
-                      class: longhorn
-          delegate_to: localhost
-
-        - name: Create test Strimzi broker NodePool
-          kubernetes.core.k8s:
-            state: present
-            kubeconfig: "{{ _config_path }}"
-            resource_definition:
-              apiVersion: kafka.strimzi.io/v1beta2
-              kind: KafkaNodePool
-              metadata:
-                name: strimzi-broker
-                namespace: strimzi-test
-                labels:
-                  strimzi.io/cluster: strimzi-kraft
-              spec:
-                replicas: 1
-                roles:
-                  - broker
-                storage:
-                  type: jbod
-                  volumes:
-                    - id: 0
-                      type: persistent-claim
-                      size: 10Gi
-                      class: longhorn
-          delegate_to: localhost
-
-        - name: Create test Kraft Strimzi cluster
-          kubernetes.core.k8s:
-            state: present
-            kubeconfig: "{{ _config_path }}"
-            resource_definition:
-              apiVersion: kafka.strimzi.io/v1beta2
-              kind: Kafka
-              metadata:
-                name: strimzi-kraft
-                namespace: strimzi-test
-                annotations:
-                  strimzi.io/kraft: enabled
-                  strimzi.io/node-pools: enabled
-              spec:
-                kafka:
-                  version: 3.9.0
-                  listeners:
-                    - name: plain
-                      port: 9092
-                      type: internal
-                      tls: false
-            wait: true
-            wait_condition:
-              type: Ready
-            wait_sleep: 10
-            wait_timeout: 450
-          delegate_to: localhost
 
       always:
         - name: Remove local tempdir

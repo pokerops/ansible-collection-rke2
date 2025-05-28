@@ -6,19 +6,24 @@ rke2_argocd_chart:
   namespace: "argocd"
   repo: "https://argoproj.github.io/argo-helm"
   release: "8.0.10"
-  last_checked: "2025-05-25T19:16:42-06:00"
-rke2_redis_ha_enabled: true
-rke2_controller_replicas: 2
-rke2_server_replicas: 2
-rke2_reposerver_replicas: 2
-rke2_applicationset_replicas: 2
+  last_checked: "2025-05-27T18:24:34-06:00"
+rke2_argocd_redis_ha_enabled: true
+rke2_argocd_controller_replicas: 2
+rke2_argocd_server_replicas: 2
+rke2_argocd_reposerver_replicas: 2
+rke2_argocd_applicationset_replicas: 2
+rke2_argocd_values_configs:
+  params:
+    application.namespaces: "*"
+  cm:
+    application.resourceTrackingMethod: label
 rke2_argocd_values:
   redis-ha:
-    enabled: "{{ rke2_redis_ha_enabled }}"
+    enabled: "{{ rke2_argocd_redis_ha_enabled }}"
   controller:
-    replicas: "{{ rke2_controller_replicas }}"
+    replicas: "{{ rke2_argocd_controller_replicas }}"
   server:
-    replicas: "{{ rke2_server_replicas }}"
+    replicas: "{{ rke2_argocd_server_replicas }}"
     ingress:
       enabled: true
       https: true
@@ -27,15 +32,45 @@ rke2_argocd_values:
       annotations:
         nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
   repoServer:
-    replicas: "{{ rke2_reposerver_replicas }}"
+    replicas: "{{ rke2_argocd_reposerver_replicas }}"
   applicationSet:
-    replicas: "{{ rke2_applicationset_replicas }}"
-  configs:
-    params:
-      application.namespaces: "*"
-    cm:
-      application.resourceTrackingMethod: label
+    replicas: "{{ rke2_argocd_applicationset_replicas }}"
+  configs: "{{ rke2_argocd_values_configs }}"
   global:
     env:
       - name: ARGOCD_EXEC_TIMEOUT
         value: "{{ rke2_argocd_exec_timeout }}"
+rke2_argocd_apps_chart:
+  name: "argocd-apps"
+  namespace: "argocd"
+  repo: "https://argoproj.github.io/argo-helm"
+  release: "2.0.2"
+  last_checked: "2025-05-27T18:24:41-06:00"
+rke2_argocd_apps_pokerops_revision: 0.0.5
+rke2_argocd_apps_values_extra: {}
+rke2_argocd_apps_values_base:
+  applications:
+    pokerops.rke2:
+      finalizers:
+        - resources-finalizer.argocd.argoproj.io
+      project: default
+      source:
+        repoURL: https://github.com/pokerops/ansible-collection-rke2.git
+        targetRevision: "{{ rke2_argocd_apps_pokerops_revision }}"
+        path: argocd
+        directory:
+          recurse: true
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: default
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - ApplyOutOfSyncOnly=true
+      revisionHistoryLimit: null
+      info:
+        - name: url
+          value: https://github.com/pokerops/ansible-collection-rke2
+rke2_argocd_apps_values: "{{ rke2_argocd_apps_values_base | combine(rke2_argocd_apps_values_extra) }}"

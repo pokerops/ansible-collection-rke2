@@ -25,3 +25,50 @@
         repo: "{{ rke2_argocd_chart.repo }}"
         valuesContent: |-
           {{ rke2_argocd_values | to_nice_yaml(indent=2) }}
+
+- name: Wait for appproject crd
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ rke2_config_path }}"
+    kind: CustomResourceDefinition
+    name: appprojects.argoproj.io
+  retries: "{{ _rke2_retry_num }}"
+  delay: "{{ _rke2_retry_delay }}"
+  register: argocd_crd
+  until: argocd_crd.resources | length > 0
+
+- name: Create argocd default project
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ rke2_config_path }}"
+    resource_definition:
+      apiVersion: argoproj.io/v1alpha1
+      kind: AppProject
+      metadata:
+        name: default
+        namespace: "{{ rke2_argocd_apps_chart.namespace }}"
+      spec:
+        sourceRepos:
+          - "*"
+        destinations:
+          - namespace: "*"
+            server: "*"
+        clusterResourceWhitelist:
+          - group: "*"
+            kind: "*"
+
+- name: Deploy argocd apps chart
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ rke2_config_path }}"
+    resource_definition:
+      apiVersion: helm.cattle.io/v1
+      kind: HelmChart
+      metadata:
+        name: argocd-apps
+        namespace: kube-system
+      spec:
+        chart: "{{ rke2_argocd_apps_chart.name }}"
+        targetNamespace: "{{ rke2_argocd_apps_chart.namespace }}"
+        repo: "{{ rke2_argocd_apps_chart.repo }}"
+        valuesContent: |-
+          {{ rke2_argocd_apps_values | to_nice_yaml(indent=2) }}

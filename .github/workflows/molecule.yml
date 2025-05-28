@@ -48,6 +48,7 @@ jobs:
       - name: Run molecule tests
         run: devbox run -- make ${{ matrix.image }} converge side-effect verify
         env:
+          MOLECULE_REVISION: ${{ github.head_ref || github.ref_name }}
           MOLECULE_KVM_IMAGE: ${{ matrix.image }}
           MOLECULE_SCENARIO: ${{ matrix.scenario }}
           MOLECULE_OUTPUT_DIR: /tmp/logs
