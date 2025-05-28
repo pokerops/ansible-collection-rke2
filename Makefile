@@ -1,7 +1,7 @@
 .PHONY: all ${MAKECMDGOALS}
 
-# This Makefile is used to manage the development and testing of Ansible roles
 MOLECULE_SCENARIO ?= install
+MOLECULE_REVISION ?= $$(git rev-parse --abbrev-ref HEAD)
 DEBIAN_RELEASE ?= bookworm
 UBUNTU_RELEASE ?= noble
 EL_RELEASE ?= 9
@@ -89,6 +89,7 @@ build: requirements
 	@uv run ansible-galaxy collection build --force
 
 dependency create prepare converge idempotence side-effect verify destroy cleanup reset list:
+	MOLECULE_REVISION=${MOLECULE_REVISION} \
 	MOLECULE_KVM_IMAGE=${MOLECULE_KVM_IMAGE} \
 	uv run molecule $@ -s ${MOLECULE_SCENARIO}
 

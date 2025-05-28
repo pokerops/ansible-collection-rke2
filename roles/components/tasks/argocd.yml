@@ -26,6 +26,26 @@
         valuesContent: |-
           {{ rke2_argocd_values | default(_rke2_argocd_values) | to_nice_yaml(indent=2) }}
 
+- name: Create argocd default project
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ rke2_config_path }}"
+    resource_definition:
+      apiVersion: argoproj.io/v1alpha1
+      kind: AppProject
+      metadata:
+        name: default
+        namespace: "{{ rke2_argocd_apps_chart.namespace }}"
+      spec:
+        sourceRepos:
+          - "*"
+        destinations:
+          - namespace: "*"
+            server: "*"
+        clusterResourceWhitelist:
+          - group: "*"
+            kind: "*"
+
 - name: Deploy argocd apps chart
   kubernetes.core.k8s:
     state: present

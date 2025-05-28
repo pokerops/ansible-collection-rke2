@@ -32,6 +32,7 @@ Cluster wide parameters
 | rke2_argocd_server_replicas         |                                2 | int    | ArgoCD server replicas, override for default ArgoCD chart values         | no       |
 | rke2_argocd_reposerver_replicas     |                                2 | int    | ArgoCD repo server replicas, override for default ArgoCD chart values    | no       |
 | rke2_argocd_applicationset_replicas |                                2 | int    | ArgoCD applicationset replicas, override for default ArgoCD chart values | no       |
+| rke2_argocd_apps_pokerops_revision  |                             HEAD | string | PokerOps ArgoCD revision, used to deploy base cluster assets             | no       |
 
 [1] rke2_certmanager_acme_email is required whenever rke2_certmanager_acme_secret is set
 [2] rke2_argocd_values default is as follows:
