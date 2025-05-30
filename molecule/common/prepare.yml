@@ -32,10 +32,20 @@
         _multipath_deb: multipath-tools
         _multipath_rpm: device-mapper-multipath
 
+    - name: Check rke2_api_url parameter
+      ansible.builtin.assert:
+        that: rke2_api_url is defined
+        fail_msg: "rke2_api_url must be defined"
+
+    - name: Check rke2_api_ip parameter
+      ansible.builtin.assert:
+        that: rke2_api_ip is defined
+        fail_msg: "rke2_api_ip must be defined"
+
     - name: Create api host file entry
       ansible.builtin.lineinfile:
         path: /etc/hosts
         regexp: ".*{{ _api_hostname }}.*"
         line: "{{ ansible_default_ipv4 }} {{ _api_hostname }}"
       vars:
-        _api_hostname: "{{ _rke2_api_url | urlsplit('hostname') }}"
+        _api_hostname: "{{ rke2_api_url | urlsplit('hostname') }}"
