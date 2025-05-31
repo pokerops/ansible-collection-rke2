@@ -33,7 +33,7 @@
           clusters:
             - name: "{{ _config_cluster.name }}"
               cluster:
-                server: "https://{{ ansible_default_ipv4.address }}:6443"
+                server: "{{ _rke2_api_url }}"
                 certificate-authority-data: "{{ _config_cluster.cluster['certificate-authority-data'] }}"
 
     - name: Copy kubeconfig to local tempdir

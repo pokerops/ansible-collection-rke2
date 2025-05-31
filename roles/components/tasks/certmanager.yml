@@ -95,7 +95,7 @@
               solvers:
                 - dns01:
                     cloudflare:
-                      email: "{{ _rke2_certmanager_acme_email }}"
+                      email: "{{ rke2_certmanager_acme_email }}"
                       apiKeySecretRef:
                         name: cloudflare-api-token-secret
                         key: api-token
