@@ -80,7 +80,6 @@ provisioner:
           rke2_ippool_private: "{{ molecule_pool_private }}"
           rke2_ippool_public: "{{ molecule_pool_public }}"
           rke2_api_url: "https://api.{{ rke2_cluster_name }}:6443"
-          rke2_api_ip: "{{ ansible_default_ipv4.address }}"
           rke2_token: "secret"
 verifier:
   name: ansible
