@@ -1,3 +1,15 @@
 ---
 - name: Import libvirt destroy playbook
   import_playbook: nephelaiio.libvirt.destroy
+
+- name: Clean KVM hostfile entries
+  hosts: localhost
+  become: true
+  tasks:
+    - name: Create api host file entry
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        regexp: ".*{{ _api_hostname }}.*"
+        state: absent
+      vars:
+        _api_hostname: "{{ rke2_api_url | urlsplit('hostname') }}"

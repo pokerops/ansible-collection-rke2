@@ -95,7 +95,7 @@
               clusters:
                 - name: "{{ _config_cluster.name }}"
                   cluster:
-                    server: "https://{{ _rke2_play_master }}:6443"
+                    server: "{{ _rke2_api_url }}"
                     certificate-authority-data: "{{ _config_cluster.cluster['certificate-authority-data'] }}"
 
         - name: Copy kubeconfig to local tempdir
