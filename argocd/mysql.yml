@@ -1,0 +1,12 @@
+---
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: mysql-operator
+  namespace: kube-system
+spec:
+  chart: mysql-operator
+  targetNamespace: mysql-operator
+  createNamespace: true
+  repo: https://mysql.github.io/mysql-operator/
+  version: "2.2.4"

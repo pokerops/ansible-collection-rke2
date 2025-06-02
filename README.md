@@ -3,7 +3,22 @@
 [![Build Status](https://github.com/pokerops/ansible-collection-rke2/actions/workflows/molecule.yml/badge.svg)](https://github.com/pokerops/ansible-collection-rke2/actions/wofklows/molecule.yml)
 [![Ansible Galaxy](http://img.shields.io/badge/ansible--galaxy-pokerops.rke2-blue.svg)](https://galaxy.ansible.com/ui/repo/published/pokerops/rke2/)
 
-An [ansible collection](https://galaxy.ansible.com/ui/repo/published/pokerops/rke2/) to install and manage rke2 clusters
+An opinionated [ansible collection](https://galaxy.ansible.com/ui/repo/published/pokerops/rke2/) to install and manage rke2 clusters matching standard components:
+
+- [MetalLB](https://metallb.universe.tf/)
+- [Ingress Nginx](https://kubernetes.github.io/ingress-nginx/)
+- [Longhorn](https://longhorn.io/)
+- [CertManager](https://cert-manager.io/docs/)
+- [ArgoCD](https://argo-cd.readthedocs.io/en/stable/)
+
+Default installation uses [ArgoCD Applications](https://argo-cd.readthedocs.io/en/stable/user-guide/auto_sync/) to deploy and manage the following components:
+
+- [Sealed Secrets](https://github.com/bitnami-labs/sealed-secrets)
+- [Keel](https://keel.sh/)
+- [Kubernetes Reflector](https://github.com/emberstack/kubernetes-reflector)
+- [Strimzi Operator](https://strimzi.io/)
+- [MySQL Operator](https://github.com/mysql/mysql-operator)
+- [PGDG Operator](https://github.com/cloudnative-pg/cloudnative-pg)
 
 ## Collection Variables
 
@@ -99,7 +114,3 @@ Role releases are ci/cd tested against the following distributions:
 ## License
 
 This project is licensed under the terms of the [MIT License](https://opensource.org/license/mit)
-
-```
-
-```

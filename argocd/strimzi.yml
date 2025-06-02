@@ -9,6 +9,6 @@ spec:
   targetNamespace: strimzi
   createNamespace: true
   repo: https://strimzi.io/charts/
-  version: "0.46.0"
+  version: "1.0.5"
   valuesContent: |-
     watchAnyNamespace: true
