@@ -1,15 +1,59 @@
 ---
-- name: Import libvirt destroy playbook
-  import_playbook: nephelaiio.libvirt.destroy
+- name: Clean ingress hostfile entries
+  hosts: rke2_server
+  run_once: true
+  gather_facts: false
+  vars_files:
+    - ../../playbooks/vars/main.yml
+  tasks:
+    - name: Ping host to ensure connectivity
+      ansible.builtin.ping:
+      register: _ping_query
+      ignore_errors: true
 
-- name: Clean KVM hostfile entries
+    - name: End play for unreachable cluster
+      ansible.builtin.meta: end_play
+      when: _ping_query is unreachable
+
+    - name: Query cluster ingresses
+      ansible.builtin.command:
+        cmd: "/var/lib/rancher/rke2/bin/kubectl get ingresses -A -o json --kubeconfig /etc/rancher/rke2/rke2.yaml"
+      register: _ingress_query
+      become: true
+      ignore_errors: true
+
+    - name: Skip on ingress query failure
+      ansible.builtin.meta: end_play
+      when: _ingress_query is failed
+
+    - name: Set ingress facts
+      ansible.builtin.set_fact:
+        _ingress_hosts: "{{ _ingress_data['items'] | map(attribute='spec.rules') | map('map', attribute='host') | flatten }}"
+      vars:
+        _ingress_data: "{{ _ingress_query.stdout | from_json }}"
+
+    - name: Remove ingress endpoints from local hostfile
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        regexp: ".*{{ item }}.*"
+        state: absent
+      loop: "{{ _ingress_hosts }}"
+      become: true
+      delegate_to: localhost
+
+- name: Clean api hostfile entries
   hosts: localhost
+  vars_files:
+    - ../../playbooks/vars/main.yml
   become: true
   tasks:
-    - name: Create api host file entry
+    - name: Destroy api host file entry
       ansible.builtin.lineinfile:
         path: /etc/hosts
         regexp: ".*{{ _api_hostname }}.*"
         state: absent
       vars:
         _api_hostname: "{{ rke2_api_url | urlsplit('hostname') }}"
+
+- name: Import libvirt destroy playbook
+  import_playbook: nephelaiio.libvirt.destroy

@@ -8,58 +8,67 @@
       ansible.builtin.meta: end_play
       when: not (_rke2_cluster_init | bool)
 
-    - name: Slurp kubeconfig cluster file
-      ansible.builtin.slurp:
-        src: /etc/rancher/rke2/rke2.yaml
-      register: _kubeconfig_slurp
-      become: true
-
-    - name: Create local tempdir
-      ansible.builtin.tempfile:
-        state: directory
-        suffix: kubeconfig
-      register: _tempdir
-      delegate_to: localhost
-      changed_when: false
-
-    - name: Set kubeconfig facts
-      ansible.builtin.set_fact:
-        _config_path: "{{ _tempdir.path }}/{{ inventory_hostname }}.yaml"
-        _config_data: "{{ _config_raw | combine(_config_override) | to_nice_json(indent=2) }}"
-      vars:
-        _config_raw: "{{ _kubeconfig_slurp['content'] | b64decode | from_yaml }}"
-        _config_cluster: "{{ _config_raw.clusters[0] }}"
-        _config_override:
-          clusters:
-            - name: "{{ _config_cluster.name }}"
-              cluster:
-                server: "{{ _rke2_api_url }}"
-                certificate-authority-data: "{{ _config_cluster.cluster['certificate-authority-data'] }}"
-
-    - name: Copy kubeconfig to local tempdir
-      ansible.builtin.copy:
-        dest: "{{ _config_path }}"
-        content: "{{ _config_data }}"
-        mode: "u=rw,go=r"
-      delegate_to: localhost
-      changed_when: false
-
-    - name: Query node status
-      kubernetes.core.k8s_info:
-        kind: Node
-        kubeconfig: "{{ _config_path }}"
-      register: _node_query
-      delegate_to: localhost
-
-    - name: End play for failed nodes
-      ansible.builtin.meta: end_host
-      when: _node_query is failed
-
     - name: Deploy cluster components
-      ansible.builtin.include_role:
-        name: pokerops.rke2.components
-        apply:
+      block:
+        - name: Create local tempdir
+          ansible.builtin.tempfile:
+            state: directory
+            suffix: kubeconfig
+          register: _tempdir
           delegate_to: localhost
-      vars:
-        rke2_config_path: "{{ _config_path }}"
-      run_once: true
+          changed_when: false
+
+        - name: Slurp kubeconfig cluster file
+          ansible.builtin.slurp:
+            src: /etc/rancher/rke2/rke2.yaml
+          register: _kubeconfig_slurp
+          become: true
+
+        - name: Set kubeconfig facts
+          ansible.builtin.set_fact:
+            _config_path: "{{ _tempdir.path }}/{{ inventory_hostname }}.yaml"
+            _config_data: "{{ _config_raw | combine(_config_override) | to_nice_json(indent=2) }}"
+          vars:
+            _config_raw: "{{ _kubeconfig_slurp['content'] | b64decode | from_yaml }}"
+            _config_cluster: "{{ _config_raw.clusters[0] }}"
+            _config_override:
+              clusters:
+                - name: "{{ _config_cluster.name }}"
+                  cluster:
+                    server: "{{ _rke2_api_url }}"
+                    certificate-authority-data: "{{ _config_cluster.cluster['certificate-authority-data'] }}"
+
+        - name: Copy kubeconfig to local tempdir
+          ansible.builtin.copy:
+            dest: "{{ _config_path }}"
+            content: "{{ _config_data }}"
+            mode: "u=rw,go=r"
+          delegate_to: localhost
+          changed_when: false
+
+        - name: Query node status
+          kubernetes.core.k8s_info:
+            kind: Node
+            kubeconfig: "{{ _config_path }}"
+          register: _node_query
+          delegate_to: localhost
+
+        - name: End play for failed nodes
+          ansible.builtin.meta: end_host
+          when: _node_query is failed
+
+        - name: Deploy cluster components
+          ansible.builtin.include_role:
+            name: pokerops.rke2.components
+            apply:
+              delegate_to: localhost
+          vars:
+            rke2_config_path: "{{ _config_path }}"
+          run_once: true
+
+      always:
+        - name: Remove local tempdir
+          ansible.builtin.file:
+            path: "{{ _tempdir.path }}"
+            state: absent
+          changed_when: false
