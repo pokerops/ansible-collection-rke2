@@ -14,8 +14,18 @@
       ansible.builtin.command:
         cmd: "/var/lib/rancher/rke2/bin/kubectl get ingresses -A -o json --kubeconfig /etc/rancher/rke2/rke2.yaml"
       register: _ingress_query
-      become: true
+      vars:
+        _ingress_data: "{{ _ingress_query.stdout | from_json }}"
+        _ingress_ingresses: "{{ _ingress_data['items'] | selectattr('status.loadBalancer.ingress', 'defined') | map(attribute='status.loadBalancer.ingress') }}"
+        _ingress_num: "{{ _ingress_data['items'] | length }}"
+      retries: "{{ _rke2_retry_num }}"
+      delay: "{{ _rke2_retry_delay }}"
       ignore_errors: true
+      become: true
+      unti:
+        - _ingress_query is succeeded
+        - _ingress_data['items'] | length > 0
+        - _ingress_ingresss | select('length', '>', 0) | list | length == _ingress_num
 
     - name: Skip on ingress query failure
       ansible.builtin.meta: end_play
