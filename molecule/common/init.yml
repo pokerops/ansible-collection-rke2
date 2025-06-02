@@ -3,3 +3,36 @@
   import_playbook: pokerops.rke2.init
   vars:
     rke2_cluster_init: true
+
+- name: Add ingress endpoints to local hostfile
+  hosts: rke2_server
+  run_once: true
+  vars_files:
+    - ../../playbooks/vars/main.yml
+  tasks:
+    - name: Query cluster ingresses
+      ansible.builtin.command:
+        cmd: "/var/lib/rancher/rke2/bin/kubectl get ingresses -A -o json --kubeconfig /etc/rancher/rke2/rke2.yaml"
+      register: _ingress_query
+      become: true
+      ignore_errors: true
+
+    - name: Skip on ingress query failure
+      ansible.builtin.meta: end_play
+      when: _ingress_query is failed
+
+    - name: Set ingress facts
+      ansible.builtin.set_fact:
+        _ingress_hosts: "{{ _ingress_data['items'] | map(attribute='spec.rules') | map('map', attribute='host') | flatten }}"
+        _ingress_endpoints: "{{ _ingress_data['items'] | map(attribute='status.loadBalancer.ingress') | map('map', attribute='ip') }}"
+      vars:
+        _ingress_data: "{{ _ingress_query.stdout | from_json }}"
+
+    - name: Add ingress endpoints to local hostfile
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        regexp: ".*{{ ' '.join(item.0) }}.*"
+        line: "{{ item.1 | first }} {{ ' '.join(item.0) }}"
+      loop: "{{ _ingress_hosts | zip(_ingress_endpoints) }}"
+      delegate_to: localhost
+      become: true
