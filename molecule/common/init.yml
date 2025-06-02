@@ -22,7 +22,7 @@
       delay: "{{ _rke2_retry_delay }}"
       ignore_errors: true
       become: true
-      unti:
+      until:
         - _ingress_query is succeeded
         - _ingress_data['items'] | length > 0
         - _ingress_ingresss | select('length', '>', 0) | list | length == _ingress_num
