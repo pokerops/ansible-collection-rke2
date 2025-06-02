@@ -41,7 +41,7 @@
     - name: Add ingress endpoints to local hostfile
       ansible.builtin.lineinfile:
         path: /etc/hosts
-        regexp: ".*{{ ' '.join(item.0) }}.*"
+        regexp: "^{{ ' '.join(item.0) }}\\s+.*"
         line: "{{ item.1 | first }} {{ ' '.join(item.0) }}"
       loop: "{{ _ingress_hosts | zip(_ingress_endpoints) }}"
       delegate_to: localhost
