@@ -9,6 +9,8 @@ on:
       - "playbooks/**"
       - "requirements.yml"
       - "roles.yml"
+      - "roles/**"
+      - ".github/workflows/version.yml"
 
 jobs:
   version:

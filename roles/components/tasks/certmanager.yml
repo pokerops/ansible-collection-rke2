@@ -103,6 +103,7 @@
       delay: "{{ _rke2_retry_delay }}"
 
 - name: Deploy local cluster issuer
+  when: rke2_certmanager_acme_secret is not defined
   block:
     - name: Create bootstrap issuer
       kubernetes.core.k8s:
