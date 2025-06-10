@@ -5,7 +5,7 @@ metadata:
   name: strimzi-kafka-operator
   namespace: kube-system
 spec:
-  chart: keel
+  chart: strimzi-kafka-operator
   targetNamespace: strimzi
   createNamespace: true
   repo: https://strimzi.io/charts/
