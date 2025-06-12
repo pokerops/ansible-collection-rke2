@@ -38,8 +38,9 @@ Cluster wide parameters
 | rke2_certmanager_acme_secret        |                                n/a | string | Secret name for ACME challenge                                           | no       |
 | rke2_certmanager_acme_email         |                                n/a | string | Email for ACME challenge                                                 | no [1]   |
 | rke2_argocd_hostname                |   "argocd.{{ rke2_cluster_name }}" | string | ArgoCD hostname                                                          | no       |
-| rke2_argocd_values                  |                         object [2] | dict   | Helm chart values for ArgoCD Applications chart                          | no       |
-| rke2_argocd_apps_values             |                                n/a | dict   | Helm chart varlues for ArgoCD Applications chart                         | no       |
+| rke2_argocd_values                  |                         object [2] | dict   | Helm chart values for ArgoCD chart                                       | no       |
+| rke2_argocd_apps_deploy             |                               true | dict   | Toggle flag for ArgoCD Applications chart deployment                     | no       |
+| rke2_argocd_apps_values             |                                n/a | dict   | Helm chart values for ArgoCD Applications chart                          | no       |
 | rke2_argocd_values_configs          |                         object [3] | dict   | ArgoCD configs, override for default ArgoCD chart values                 | no       |
 | rke2_argocd_exec_timeout            |                                 3m | string | ArgoCD exec timeout, override for default ArgoCD chart values            | no       |
 | rke2_argocd_redis_ha_enabled        |                               true | bool   | ArgoCD Redis HA toggle, override for default ArgoCD chart values         | no       |

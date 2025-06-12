@@ -37,7 +37,7 @@
   until: argocd_crd.resources | length > 0
 
 - name: Deploy argocd apps
-  when: rke2_argocd_apps_chart_deploy
+  when: rke2_argocd_apps_deploy
   block:
     - name: Create argocd default project
       kubernetes.core.k8s:

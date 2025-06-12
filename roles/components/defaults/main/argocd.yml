@@ -41,7 +41,7 @@ rke2_argocd_values:
     env:
       - name: ARGOCD_EXEC_TIMEOUT
         value: "{{ rke2_argocd_exec_timeout }}"
-rke2_argocd_apps_chart_deploy: true
+rke2_argocd_apps_deploy: true
 rke2_argocd_apps_chart:
   name: "argocd-apps"
   namespace: "argocd"
