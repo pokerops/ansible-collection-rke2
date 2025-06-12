@@ -4,6 +4,8 @@ kind: HelmChart
 metadata:
   name: strimzi-kafka-operator
   namespace: kube-system
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
 spec:
   chart: strimzi-kafka-operator
   targetNamespace: strimzi

@@ -2,13 +2,13 @@
 apiVersion: helm.cattle.io/v1
 kind: HelmChart
 metadata:
-  name: mysql-operator
+  name: gatekeeper
   namespace: kube-system
   annotations:
     argocd.argoproj.io/sync-wave: "-1"
 spec:
-  chart: mysql-operator
-  targetNamespace: mysql-operator
+  chart: gatekeeper
+  targetNamespace: gatekeeper
   createNamespace: true
-  repo: https://mysql.github.io/mysql-operator/
-  version: "2.2.4"
+  repo: https://open-policy-agent.github.io/gatekeeper/charts
+  version: "0.0.0"
