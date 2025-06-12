@@ -64,7 +64,7 @@ rocky9:
 	make rocky EL_RELEASE=9 MOLECULE_SCENARIO=${MOLECULE_SCENARIO}
 
 test: lint
-	poetry run molecule test -s ${MOLECULE_SCENARIO}
+	@uv run molecule test -s ${MOLECULE_SCENARIO}
 
 install:
 	@sudo apt-get update
