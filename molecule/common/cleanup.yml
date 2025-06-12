@@ -1,7 +1,8 @@
 ---
-- name: Archive RKE install logs
-  hosts: rke_control
+- name: Archive RKE2 install logs
+  hosts: rke2_server
   gather_facts: false
+  become: true
   vars:
     _logfile: "{{ molecule_install_log | default('/tmp/install') }}"
   tasks:
@@ -35,125 +36,85 @@
         - name: Slurp hostfile
           ansible.builtin.slurp:
             src: /etc/hosts
-          register: _rke_hostfile_slurp
+          register: _rke2_hostfile_slurp
 
         - name: Create hostfile archive
           ansible.builtin.copy:
             dest: "{{ _logfile }}.{{ inventory_hostname }}.hostfile"
-            content: "{{ _rke_hostfile_slurp['content'] | b64decode }}"
+            content: "{{ _rke2_hostfile_slurp['content'] | b64decode }}"
             mode: "u=rw,go=r"
           delegate_to: localhost
 
-    - fail:
-
-    - name: Archive RKE install logs
-      run_once: true
+    - name: Archive RKE2 install logs
       block:
         - name: Stat cluster configuration
           ansible.builtin.stat:
-            path: /opt/rke/cluster.yml
-          register: _rke_clusterconfig_stat
+            path: /etc/rancher/rke2/config.yaml
+          register: _rke2_clusterconfig_stat
 
         - name: Archive cluster configuration
-          when: _rke_clusterconfig_stat.stat.exists
+          when: _rke2_clusterconfig_stat.stat.exists
           block:
             - name: Slurp cluster configuration
               ansible.builtin.slurp:
-                src: /opt/rke/cluster.yml
-              register: _rke_clusterconfig_slurp
+                src: /etc/rancher/rke2/config.yaml
+              register: _rke2_clusterconfig_slurp
 
             - name: Create cluster configuration archive
               ansible.builtin.copy:
-                dest: "{{ _logfile }}.cluster.yml.{{ ansible_date_time.iso8601_basic_short }}"
-                content: "{{ _rke_clusterconfig_slurp['content'] | b64decode }}"
+                dest: "{{ _logfile }}.{{ inventory_hostname }}.config.yaml.{{ ansible_date_time.iso8601_basic_short }}"
+                content: "{{ _rke2_clusterconfig_slurp['content'] | b64decode }}"
                 mode: "u=rw,go=r"
               delegate_to: localhost
 
-        - name: Stat install log
-          ansible.builtin.find:
-            path: /opt/rke
-            patterns:
-              - "install.log"
-              - "install.log.*"
-          register: _rke_installlog_files
+        - name: Query systemd logs
+          ansible.builtin.shell: journalctl -rxu rke2-server
+          register: _rke2_journalctl
+          changed_when: false
 
-        - name: Archive install log
-          when: _rke_installlog_files.matched > 0
-          block:
-            - name: Slurp install logs
-              ansible.builtin.slurp:
-                src: "{{ item }}"
-              loop: "{{  _rke_installlog_files.files | map(attribute='path') }}"
-              register: _rke_installlog_slurp
-
-            - name: Create install log archives
-              ansible.builtin.copy:
-                dest: "{{ _logarchive }}"
-                content: "{{ item['content'] | b64decode }}"
-                mode: "u=rw,go=r"
-              vars:
-                _logarchive: "{{ _logfile }}.{{ item.source | basename }}"
-              loop_control:
-                label: "{{  _logarchive }}"
-              loop: "{{ _rke_installlog_slurp.results }}"
-              delegate_to: localhost
-
-        - name: Stat cluster state
-          ansible.builtin.stat:
-            path: /opt/rke/cluster.rkestate
-          register: _rke_clusterstate_stat
-
-        - name: Archive cluster state
-          when: _rke_clusterstate_stat.stat.exists
-          block:
-            - name: Slurp cluster state
-              ansible.builtin.slurp:
-                src: /opt/rke/cluster.rkestate
-              register: _rke_clusterstate_slurp
-
-            - name: Create cluster state archive
-              ansible.builtin.copy:
-                dest: "{{ _logfile }}.cluster.rkestate.{{ ansible_date_time.iso8601_basic_short }}"
-                content: "{{ _rke_clusterstate_slurp['content'] | b64decode }}"
-                mode: "u=rw,go=r"
-              delegate_to: localhost
+        - name: Create systemd log archive
+          ansible.builtin.copy:
+            dest: "{{ _logfile }}.{{ inventory_hostname }}.journalctl.{{ ansible_date_time.iso8601_basic_short }}"
+            content: "{{ _rke2_journalctl.stdout }}"
+            mode: "u=rw,go=r"
+          delegate_to: localhost
 
         - name: Stat install kubeconfig
           ansible.builtin.stat:
-            path: /opt/rke/kube_config_cluster.yml
-          register: _rke_kubeconfig_stat
+            path: /etc/rancher/rke2/rke2.yaml
+          register: _rke2_kubeconfig_stat
 
         - name: Archive install kubeconfig
-          when: _rke_kubeconfig_stat.stat.exists
+          when: _rke2_kubeconfig_stat.stat.exists
           block:
             - name: Slurp install kubeconfig
               ansible.builtin.slurp:
-                src: /opt/rke/kube_config_cluster.yml
-              register: _rke_kubeconfig_slurp
+                src: /etc/rancher/rke2/rke2.yaml
+              register: _rke2_kubeconfig_slurp
 
             - name: Create install kubeconfig archive
               ansible.builtin.copy:
-                dest: "{{ _logfile }}.kubeconfig.install.{{ ansible_date_time.iso8601_basic_short }}"
-                content: "{{ _rke_kubeconfig_slurp['content'] | b64decode }}"
+                dest: "{{ _logfile }}.{{ inventory_hostname }}.kubeconfig.install.{{ ansible_date_time.iso8601_basic_short }}"
+                content: "{{ _rke2_kubeconfig_slurp['content'] | b64decode }}"
                 mode: "u=rw,go=r"
               delegate_to: localhost
 
-        - name: Stat install kubeconfig
+        - name: Stat user kubeconfig
           ansible.builtin.stat:
             path: "~{{ ansible_user_id }}/.kube/config"
-          register: _rke_kubeconfig_stat
+          register: _rke2_kubeconfig_stat
 
-        - name: Archive install kubeconfig
-          when: _rke_kubeconfig_stat.stat.exists
+        - name: Archive user kubeconfig
+          when: _rke2_kubeconfig_stat.stat.exists
           block:
             - name: Slurp user kubeconfig
               ansible.builtin.slurp:
                 src: "~{{ ansible_user_id }}/.kube/config"
-              register: _rke_kubeconfig_slurp
+              register: _rke2_kubeconfig_slurp
 
             - name: Create install kubeconfig archive
               ansible.builtin.copy:
-                dest: "{{ _logfile }}.kubeconfig.user.{{ ansible_date_time.iso8601_basic_short }}"
-                content: "{{ _rke_kubeconfig_slurp['content'] | b64decode }}"
+                dest: "{{ _logfile }}.{{ inventory_hostname }}.kubeconfig.user.{{ ansible_date_time.iso8601_basic_short }}"
+                content: "{{ _rke2_kubeconfig_slurp['content'] | b64decode }}"
                 mode: "u=rw,go=r"
               delegate_to: localhost

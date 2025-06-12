@@ -2,9 +2,9 @@
 - name: Deploy metallb to RKE2
   import_playbook: pokerops.rke2.deploy
   vars:
-    rke2_component: "{{ rke2_component | default('metallb') }}"
+    rke2_component: metallb
 
 - name: Deploy components to RKE2
   import_playbook: pokerops.rke2.deploy
   vars:
-    rke2_component: "{{ rke2_component | default('main') }}"
+    rke2_component: main
