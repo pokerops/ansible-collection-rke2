@@ -6,9 +6,9 @@
 An opinionated [ansible collection](https://galaxy.ansible.com/ui/repo/published/pokerops/rke2/) to install and manage rke2 clusters matching standard components:
 
 - [MetalLB](https://metallb.universe.tf/)
-- [Ingress Nginx](https://kubernetes.github.io/ingress-nginx/)
 - [Longhorn](https://longhorn.io/)
 - [CertManager](https://cert-manager.io/docs/)
+- [Ingress Nginx](https://kubernetes.github.io/ingress-nginx/)
 - [ArgoCD](https://argo-cd.readthedocs.io/en/stable/)
 
 Default installation uses [ArgoCD Applications](https://argo-cd.readthedocs.io/en/stable/user-guide/auto_sync/) to deploy and manage the following components:
@@ -38,8 +38,9 @@ Cluster wide parameters
 | rke2_certmanager_acme_secret        |                                n/a | string | Secret name for ACME challenge                                           | no       |
 | rke2_certmanager_acme_email         |                                n/a | string | Email for ACME challenge                                                 | no [1]   |
 | rke2_argocd_hostname                |   "argocd.{{ rke2_cluster_name }}" | string | ArgoCD hostname                                                          | no       |
-| rke2_argocd_values                  |                         object [2] | dict   | Helm chart values for ArgoCD Applications chart                          | no       |
-| rke2_argocd_apps_values             |                                n/a | dict   | Helm chart varlues for ArgoCD Applications chart                         | no       |
+| rke2_argocd_values                  |                         object [2] | dict   | Helm chart values for ArgoCD chart                                       | no       |
+| rke2_argocd_apps_deploy             |                               true | dict   | Toggle flag for ArgoCD Applications chart deployment                     | no       |
+| rke2_argocd_apps_values             |                                n/a | dict   | Helm chart values for ArgoCD Applications chart                          | no       |
 | rke2_argocd_values_configs          |                         object [3] | dict   | ArgoCD configs, override for default ArgoCD chart values                 | no       |
 | rke2_argocd_exec_timeout            |                                 3m | string | ArgoCD exec timeout, override for default ArgoCD chart values            | no       |
 | rke2_argocd_redis_ha_enabled        |                               true | bool   | ArgoCD Redis HA toggle, override for default ArgoCD chart values         | no       |
@@ -99,7 +100,8 @@ cm:
 ## Collection playbooks
 
 - pokerops.rke2.install: Install and (re)configure cluster
-- pokerops.rke2.init: Deploy base K8s services
+- pokerops.rke2.deploy: Deploy individual cluster components
+- pokerops.rke2.init: Deploy base K8s components
 - pokerops.rke2.update: Start rke2 cluster services
 
 ## Testing

@@ -1,5 +1,5 @@
 ---
-- name: Prepare cluster nodes
+- name: Prepare RKE2 cluster nodes
   import_playbook: pokerops.rke2.prepare
 
 - name: Deploy RKE2 cluster

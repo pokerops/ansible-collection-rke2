@@ -2,5 +2,5 @@
 - name: Import verification playbook
   ansible.builtin.import_playbook: ../common/verify.yml
   vars:
-    rke_update_check: true
-    rke_init_check: false
+    rke2_update_check: true
+    rke2_component_check: false

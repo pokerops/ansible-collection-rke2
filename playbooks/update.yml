@@ -91,11 +91,12 @@
           vars:
             _config_data: "{{ hostvars['localhost']['_rke2_kubeconfig'] }}"
             _config_cluster: "{{ _config_data.clusters[0] }}"
+            _config_server_local: "https://{{ inventory_hostname }}:6443"
             _config_override:
               clusters:
                 - name: "{{ _config_cluster.name }}"
                   cluster:
-                    server: "{{ _rke2_api_url }}"
+                    server: "{{ _rke2_api_url if inventory_hostname in groups[rke2_agent_group] else _config_server_local }}"
                     certificate-authority-data: "{{ _config_cluster.cluster['certificate-authority-data'] }}"
 
         - name: Copy kubeconfig to local tempdir
@@ -233,6 +234,8 @@
                 name: "{{ inventory_hostname }}"
                 kubeconfig: "{{ _kubeconfig_path }}"
                 state: uncordon
+              retries: "{{ _rke2_retry_num }}"
+              delay: "{{ _rke2_retry_delay }}"
               delegate_to: localhost
 
             - name: Wait for cluster node to be schedulable
@@ -279,6 +282,14 @@
               retries: "{{ _rke2_retry_num }}"
               delay: "{{ _rke2_retry_delay }}"
               until: (_pod_noreason + _pod_notready) | length == 0
+
+            - name: Wait for cluster api to be available
+              ansible.builtin.wait_for:
+                host: "{{ inventory_hostname }}"
+                port: 6443
+                delay: 10
+                timeout: 300
+              when: inventory_hostname in groups[rke2_server_group]
 
       always:
         - name: Remove local tempdir
