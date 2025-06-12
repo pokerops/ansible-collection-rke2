@@ -234,6 +234,8 @@
                 name: "{{ inventory_hostname }}"
                 kubeconfig: "{{ _kubeconfig_path }}"
                 state: uncordon
+              retries: "{{ _rke2_retry_num }}"
+              delay: "{{ _rke2_retry_delay }}"
               delegate_to: localhost
 
             - name: Wait for cluster node to be schedulable
