@@ -2,11 +2,8 @@
 - name: Deploy cluster secrets
   ansible.builtin.include_tasks: secrets.yml
 
-- name: Include metallb tasks
+- name: Include longhorn tasks
   ansible.builtin.include_tasks: longhorn.yml
-
-- name: Include metallb tasks
-  ansible.builtin.include_tasks: metallb.yml
 
 - name: Include cert-manager tasks
   ansible.builtin.include_tasks: certmanager.yml

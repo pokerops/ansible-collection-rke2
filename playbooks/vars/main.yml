@@ -12,7 +12,6 @@ rke2_defaults_drain_pod_selectors:
 
 # Overridable values
 _rke2_install: "{{ lookup('ansible.builtin.env', 'RKE2_INSTALL', default=true) }}"
-_rke2_cluster_init: "{{ rke2_cluster_init | default(True) }}"
 _rke2_config_path: /etc/rancher/rke2
 _rke2_kubeconfig: "~/.kube/config"
 _rke2_bin_path: /var/lib/rancher/rke2/bin
@@ -43,3 +42,6 @@ rke2_additional_sans:
   - "{{ _rke2_api_host }}"
 rke2_server_options: "{{ _rke2_server_options }}"
 rke2_agent_options: "{{ _rke2_agent_options }}"
+
+# Test specific values
+_rke2_skip_deploy: "{{ rke2_skip_deploy | default(false) }}"

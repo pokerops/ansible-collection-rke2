@@ -2,7 +2,7 @@
 - name: Import component playbook
   import_playbook: pokerops.rke2.init
   vars:
-    rke2_cluster_init: true
+    rke2_skip_deploy: false
 
 - name: Add ingress endpoints to local hostfile
   hosts: rke2_server

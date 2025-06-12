@@ -6,9 +6,9 @@
 An opinionated [ansible collection](https://galaxy.ansible.com/ui/repo/published/pokerops/rke2/) to install and manage rke2 clusters matching standard components:
 
 - [MetalLB](https://metallb.universe.tf/)
-- [Ingress Nginx](https://kubernetes.github.io/ingress-nginx/)
 - [Longhorn](https://longhorn.io/)
 - [CertManager](https://cert-manager.io/docs/)
+- [Ingress Nginx](https://kubernetes.github.io/ingress-nginx/)
 - [ArgoCD](https://argo-cd.readthedocs.io/en/stable/)
 
 Default installation uses [ArgoCD Applications](https://argo-cd.readthedocs.io/en/stable/user-guide/auto_sync/) to deploy and manage the following components:
@@ -99,7 +99,8 @@ cm:
 ## Collection playbooks
 
 - pokerops.rke2.install: Install and (re)configure cluster
-- pokerops.rke2.init: Deploy base K8s services
+- pokerops.rke2.deploy: Deploy individual cluster components
+- pokerops.rke2.init: Deploy base K8s components
 - pokerops.rke2.update: Start rke2 cluster services
 
 ## Testing
