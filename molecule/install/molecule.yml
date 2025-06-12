@@ -97,5 +97,6 @@ scenario:
     - create
     - prepare
     - converge
+    - side-effect
     - verify
     - cleanup
