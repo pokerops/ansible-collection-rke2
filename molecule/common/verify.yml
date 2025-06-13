@@ -199,7 +199,7 @@
                 issuers_status: "{{ issuers_query | selectattr('status', 'defined') }}"
                 issuers_conditions: "{{ issuers_status | selectattr('status.conditions', 'defined') | flatten }}"
                 issuers_ready: "{{ issuers_conditions | selectattr('type', 'equalto', 'Ready') }}"
-                issuers_failed: "{{ pods_completed | rejectattr('status', 'equalto', 'True') }}"
+                issuers_failed: "{{ issuers_ready | rejectattr('status', 'equalto', 'True') }}"
                 issuers_query: "{{ query('kubernetes.core.k8s', kind='ClusterIssuer', kubeconfig=_config_path) }}"
               retries: "{{ _retry }}"
               delay: "{{ _delay }}"
