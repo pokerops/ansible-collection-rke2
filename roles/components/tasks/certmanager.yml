@@ -129,11 +129,11 @@
           apiVersion: cert-manager.io/v1
           kind: Certificate
           metadata:
-            name: cluster-ca
+            name: private-ca
           spec:
             isCA: true
-            commonName: cluster-issuer-ca
-            secretName: cluster-issuer-secret
+            commonName: private-ca
+            secretName: private-ca-secret
             privateKey:
               algorithm: ECDSA
               size: 256
@@ -154,7 +154,7 @@
             name: "{{ _issuer_name }}"
           spec:
             ca:
-              secretName: "{{ _issuer_name }}-secret"
+              secretName: "private-ca-secret"
       vars:
         _issuer_name: "{{ rke2_certmanager_issuer_name if rke2_certmanager_acme_secret is not defined else 'private-issuer' }}"
       retries: "{{ _rke2_retry_num }}"
