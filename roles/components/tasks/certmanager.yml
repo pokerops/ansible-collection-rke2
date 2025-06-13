@@ -102,8 +102,7 @@
       retries: "{{ _rke2_retry_num }}"
       delay: "{{ _rke2_retry_delay }}"
 
-- name: Deploy local cluster issuer
-  when: rke2_certmanager_acme_secret is not defined
+- name: Deploy self-signed cluster issuer
   block:
     - name: Create bootstrap issuer
       kubernetes.core.k8s:
@@ -152,9 +151,11 @@
           apiVersion: cert-manager.io/v1
           kind: ClusterIssuer
           metadata:
-            name: "{{ rke2_certmanager_issuer_name }}"
+            name: "{{ _issuer_name }}"
           spec:
             ca:
-              secretName: cluster-issuer-secret
+              secretName: "{{ _issuer_name }}-secret"
+      vars:
+        _issuer_name: "{{ rke2_certmanager_issuer_name if rke2_certmanager_acme_secret is not defined else 'private-issuer' }}"
       retries: "{{ _rke2_retry_num }}"
       delay: "{{ _rke2_retry_delay }}"
