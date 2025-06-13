@@ -87,6 +87,7 @@ requirements: install
 
 build: requirements
 	@uv run bin/build
+	@git status --porcelain | wc -l | grep -q '^0$$' || (echo "Uncommitted build detected, please run build stage and commit changes" && exit 1)
 
 update: build
 	@uv run bin/update
