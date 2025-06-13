@@ -196,22 +196,22 @@
               ansible.builtin.fail:
                 msg: "found cluster issuers with failed status"
               vars:
-                issuer_status: "{{ issuer_query | selectattr('status', 'defined') }}"
-                issuer_conditions: "{{ issuer_status | selectattr('status.conditions', 'defined') | flatten }}"
-                issuer_ready: "{{ issuer_conditions | selectattr('type', 'equalto', 'Ready') }}"
-                issuer_failed: "{{ pods_completed | rejectattr('status', 'equalto', 'True') }}"
-                issuer_query: "{{ query('kubernetes.core.k8s', kind='ClusterIssuer', kubeconfig=_config_path) }}"
+                issuers_status: "{{ issuers_query | selectattr('status', 'defined') }}"
+                issuers_conditions: "{{ issuers_status | selectattr('status.conditions', 'defined') | flatten }}"
+                issuers_ready: "{{ issuers_conditions | selectattr('type', 'equalto', 'Ready') }}"
+                issuers_failed: "{{ pods_completed | rejectattr('status', 'equalto', 'True') }}"
+                issuers_query: "{{ query('kubernetes.core.k8s', kind='ClusterIssuer', kubeconfig=_config_path) }}"
               retries: "{{ _retry }}"
               delay: "{{ _delay }}"
-              until: pods_failed | length == 0
-              failed_when: issuer_failed | length > 0
+              until: issuers_failed | length == 0
+              failed_when: issuers_failed | length > 0
 
           always:
             - name: Debug cluster-issuers
               ansible.builtin.debug:
-                var: issuer_query
+                var: issuers_query
               vars:
-                issuer_query: "{{ query('kubernetes.core.k8s', kind='ClusterIssuer', kubeconfig=_config_path) }}"
+                issuers_query: "{{ query('kubernetes.core.k8s', kind='ClusterIssuer', kubeconfig=_config_path) }}"
 
         - name: Validate pod status
           ansible.builtin.fail:
