@@ -190,6 +190,29 @@
             secret_targets: "{{ rke2_secrets | default([]) | map(attribute='name') }}"
             secret_missing: "{{ secret_targets | difference(secret_names) }}"
 
+        - name: Validate cluster-issuers
+          block:
+            - name: Validate cluster-issuer status
+              ansible.builtin.fail:
+                msg: "found cluster issuers with failed status"
+              vars:
+                issuer_status: "{{ issuer_query | selectattr('status', 'defined') }}"
+                issuer_conditions: "{{ issuer_status | selectattr('status.conditions', 'defined') | flatten }}"
+                issuer_ready: "{{ issuer_conditions | selectattr('type', 'equalto', 'Ready') }}"
+                issuer_failed: "{{ pods_completed | rejectattr('status', 'equalto', 'True') }}"
+                issuer_query: "{{ query('kubernetes.core.k8s', kind='ClusterIssuer', kubeconfig=_config_path) }}"
+              retries: "{{ _retry }}"
+              delay: "{{ _delay }}"
+              until: pods_failed | length == 0
+              failed_when: issuer_failed | length > 0
+
+          always:
+            - name: Debug cluster-issuers
+              ansible.builtin.debug:
+                var: issuer_query
+              vars:
+                issuer_query: "{{ query('kubernetes.core.k8s', kind='ClusterIssuer', kubeconfig=_config_path) }}"
+
         - name: Validate pod status
           ansible.builtin.fail:
             msg: "the following pods are in failed status [{{ pods_failed | map(attribute='metadata.name') | join(', ') }}]"
