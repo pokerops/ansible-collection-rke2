@@ -27,6 +27,21 @@
       ansible.builtin.debug:
         msg: "Installing RKE2 version {{ rke2_version }}"
 
+    - name: Set default RKE2 server options
+      ansible.builtin.set_fact:
+        rke2_server_options: "{{ rke2_defaults_server_options }}"
+      when: rke2_server_options is not defined
+
+    - name: Set default RKE2 agent options
+      ansible.builtin.set_fact:
+        rke2_agent_options: "{{ rke2_defaults_agent_options }}"
+      when: rke2_agent_options is not defined
+
+    - name: Set default RKE2 registry mirrors
+      ansible.builtin.set_fact:
+        rke2_registry_mirrors: "{{ rke2_defaults_registry_mirrors }}"
+      when: rke2_registry_mirrors is not defined
+
     - name: Install RKE2
       ansible.builtin.include_role:
         name: pokerops.rke2.rke2
