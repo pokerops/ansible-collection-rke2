@@ -47,6 +47,10 @@
         name: pokerops.rke2.rke2
         apply:
           become: true
+      vars:
+        rke2_cluster_group_name: "{{ rke2_cluster_group }}"
+        rke2_servers_group_name: "{{ rke2_server_group }}"
+        rke2_agents_group_name: "{{ rke2_agent_group }}"
       when: _rke2_install | bool
 
 - name: Configure RKE2 cluster members
