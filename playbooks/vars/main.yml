@@ -2,8 +2,11 @@
 # Defaults
 rke2_defaults_version: v1.33.0+rke2r1
 rke2_defaults_api_url: "https://api.{{ rke2_cluster_name }}"
-rke2_defaults_options:
-  - ""
+rke2_defaults_registry_mirrors:
+  - name: "*"
+rke2_defaults_server_options:
+  - "embedded-registry: true"
+rke2_defaults_agent_options: []
 
 rke2_defaults_drain_pod_selectors:
   - "longhorn.io/component!=instance-manager"
@@ -17,8 +20,6 @@ _rke2_kubeconfig: "~/.kube/config"
 _rke2_bin_path: /var/lib/rancher/rke2/bin
 _rke2_api_url: "{{ rke2_api_url | default(rke2_defaults_api_url) }}"
 _rke2_api_host: "{{ _rke2_api_url | urlsplit('hostname') }}"
-_rke2_server_options: "{{ rk2_server_options | default(rke2_defaults_options) }}"
-_rke2_agent_options: "{{ rk2_agent_options | default(rke2_defaults_options) }}"
 _rke2_limits_nofile: "{{ rke2_limits_nofile | default(1048576) }}"
 _rke2_retry_delay: "{{ rke2_retry_delay | default(30) }}"
 _rke2_retry_num: "{{ rke2_retry_num | default(10) }}"
@@ -28,12 +29,9 @@ _rke2_config_hostnames: "{{ rke2_config_hostnames | default(true) }}"
 
 # Hardcoded values
 rke2_uninstall_script: /usr/local/bin/rke2-uninstall.sh
-rke2_cluster_group: "{{ rke_cluster | default('rke2_cluster') }}"
-rke2_server_group: "{{ rke2_server | default('rke2_server') }}"
-rke2_agent_group: "{{ rke2_agent | default('rke2_agent') }}"
-rke2_cluster_group_name: "{{ rke2_cluster_group }}"
-rke2_servers_group_name: "{{ rke2_server_group }}"
-rke2_agents_group_name: "{{ rke2_agent_group }}"
+rke2_cluster_group: "{{ rke2_cluster_hostgroup | default('rke2_cluster') }}"
+rke2_server_group: "{{ rke2_server_hostgroup | default('rke2_server') }}"
+rke2_agent_group: "{{ rke2_agent_hostgroup | default('rke2_agent') }}"
 rke2_ha_mode: true
 rke2_ha_mode_keepalived: false
 rke2_cloud_provider_name: "external"
