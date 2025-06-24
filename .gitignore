@@ -3,6 +3,7 @@
 .ansible/
 .devbox/
 .python-version
+ansible_collections/
 
 # globs
 pokerops-rke2-*.tar.gz

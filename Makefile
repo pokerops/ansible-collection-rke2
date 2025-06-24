@@ -1,5 +1,8 @@
 .PHONY: all ${MAKECMDGOALS}
 
+MAKEFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
+MAKEFILE_DIR := $(dir $(MAKEFILE_PATH))
+
 MOLECULE_SCENARIO ?= install
 MOLECULE_REVISION ?= $$(git rev-parse --abbrev-ref HEAD)
 DEBIAN_RELEASE ?= bookworm
@@ -22,6 +25,8 @@ ROLE_FILE = roles.yml
 COLLECTION_NAMESPACE = $$(yq -r '.namespace' < galaxy.yml)
 COLLECTION_NAME = $$(yq -r '.name' < galaxy.yml)
 COLLECTION_VERSION = $$(yq -r '.version' < galaxy.yml)
+
+LOGIN_ARGS ?=
 
 all: install version lint test
 
@@ -64,6 +69,9 @@ rocky9:
 	make rocky EL_RELEASE=9 MOLECULE_SCENARIO=${MOLECULE_SCENARIO}
 
 test: lint
+	ANSIBLE_COLLECTIONS_PATH=$(MAKEFILE_DIR) \
+	MOLECULE_REVISION=${MOLECULE_REVISION} \
+	MOLECULE_KVM_IMAGE=${MOLECULE_KVM_IMAGE} \
 	@uv run molecule test -s ${MOLECULE_SCENARIO}
 
 install:
@@ -92,17 +100,14 @@ build: requirements
 update: build
 	@uv run bin/update
 
-dependency create prepare converge idempotence side-effect verify destroy cleanup reset list:
-	MOLECULE_REVISION=${MOLECULE_REVISION} \
-	MOLECULE_KVM_IMAGE=${MOLECULE_KVM_IMAGE} \
-	uv run molecule $@ -s ${MOLECULE_SCENARIO}
-
 ifeq (login,$(firstword $(MAKECMDGOALS)))
     LOGIN_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
     $(eval $(subst $(space),,$(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))):;@:)
 endif
 
-login:
+dependency create prepare converge idempotence side-effect verify destroy cleanup reset list:
+	ANSIBLE_COLLECTIONS_PATH=$(MAKEFILE_DIR) \
+	MOLECULE_REVISION=${MOLECULE_REVISION} \
 	MOLECULE_KVM_IMAGE=${MOLECULE_KVM_IMAGE} \
 	uv run molecule $@ -s ${MOLECULE_SCENARIO} ${LOGIN_ARGS}
 
