@@ -72,7 +72,7 @@ test: lint
 	ANSIBLE_COLLECTIONS_PATH=$(MAKEFILE_DIR) \
 	MOLECULE_REVISION=${MOLECULE_REVISION} \
 	MOLECULE_KVM_IMAGE=${MOLECULE_KVM_IMAGE} \
-	@uv run molecule test -s ${MOLECULE_SCENARIO}
+	uv run molecule test -s ${MOLECULE_SCENARIO}
 
 install:
 	@sudo apt-get update
