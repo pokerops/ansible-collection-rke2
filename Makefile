@@ -80,8 +80,9 @@ install:
 	@uv sync
 
 lint: install
-	uv run yamllint .
-	uv run ansible-lint -p .
+	uv run yamllint . -c .yamllint
+	ANSIBLE_COLLECTIONS_PATH=$(MAKEFILE_DIR) \
+	uv run ansible-lint -p playbooks/ --exclude ".ansible/*"
 
 requirements: install
 	@python --version

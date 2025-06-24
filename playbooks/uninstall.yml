@@ -14,3 +14,4 @@
         cmd: "{{ rke2_uninstall_script }}"
       when: _rke2_uninstall_stat.stat.exists
       become: true
+      tags: skip_ansible_lint

@@ -55,6 +55,7 @@
       ansible.builtin.command:
         cmd: swapoff -a
       when: ansible_swaptotal_mb > 0
+      changed_when: ansible_swaptotal_mb > 0
 
     - name: Disable swap fstab entry
       ansible.builtin.lineinfile:

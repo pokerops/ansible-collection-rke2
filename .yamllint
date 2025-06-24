@@ -5,6 +5,7 @@ ignore: |
   .devbox/
   .venv/
   .ansible/
+  ansible_collections/
   roles/
   *.j2.yml
 

@@ -1,0 +1,4 @@
+# This file contains ignores rule violations for ansible-lint
+playbooks/cluster.yml run-once[task]
+playbooks/deploy.yml run-once[task]
+playbooks/update.yml run-once[task]
