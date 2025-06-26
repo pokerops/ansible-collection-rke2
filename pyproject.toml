@@ -12,7 +12,6 @@ dev = [
   "ansible-lint>=25.4.0",
   "github3-py>=4.0.1",
   "kubernetes>=32.0.1",
-  "libvirt-python>=11.3.0",
   "lxml>=5.4.0",
   "molecule>=25.4.0",
   "molecule-plugins>=23.7.0",
