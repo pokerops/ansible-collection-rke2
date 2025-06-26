@@ -102,7 +102,8 @@ cm:
 
 - pokerops.rke2.install: Install and (re)configure cluster
 - pokerops.rke2.deploy: Deploy individual cluster components
-- pokerops.rke2.init: Deploy base K8s components
+- pokerops.rke2.secrets: Deploy cluster secrets
+- pokerops.rke2.init: Deploy base cluster components
 - pokerops.rke2.update: Start rke2 cluster services
 
 ## Testing

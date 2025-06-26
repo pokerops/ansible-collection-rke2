@@ -1,7 +1,7 @@
 ---
 namespace: pokerops
 name: rke2
-version: 0.1.11
+version: 0.1.12
 readme: README.md
 authors:
   - Ted Cook <358176+teddyphreak@users.noreply.github.com>
