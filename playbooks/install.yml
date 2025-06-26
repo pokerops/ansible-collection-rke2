@@ -5,5 +5,8 @@
 - name: Deploy RKE2 cluster
   import_playbook: pokerops.rke2.cluster
 
+- name: Deploy RKE2 cluster secrets
+  import_playbook: pokerops.rke2.secrets
+
 - name: Deploy RKE2 components
   import_playbook: pokerops.rke2.init

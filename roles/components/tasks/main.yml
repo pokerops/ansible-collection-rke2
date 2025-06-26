@@ -1,7 +1,4 @@
 ---
-- name: Deploy cluster secrets
-  ansible.builtin.include_tasks: secrets.yml
-
 - name: Include longhorn tasks
   ansible.builtin.include_tasks: longhorn.yml
 
