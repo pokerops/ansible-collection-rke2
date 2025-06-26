@@ -21,6 +21,10 @@ on:
       - "devbox.lock"
       - .github/workflows/molecule.yml
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   molecule:
     name: molecule
@@ -38,7 +42,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install devbox
-        uses: jetify-com/devbox-install-action@v0.12.0
+        uses: jetify-com/devbox-install-action@v0.13.0
+        with:
+          enable-cache: true
 
       - name: Install test requirements
         run: devbox run -- make requirements
