@@ -15,8 +15,6 @@ rke2_argocd_values_configs:
   params:
     application.namespaces: "*"
     applicationsetcontroller.namespaces: "*"
-  cm:
-    application.resourceTrackingMethod: label
 rke2_argocd_values:
   redis-ha:
     enabled: "{{ rke2_argocd_redis_ha_enabled }}"
@@ -55,18 +53,16 @@ rke2_argocd_apps_chart:
   namespace: "argocd"
   repo: "https://argoproj.github.io/argo-helm"
   release: "2.0.2"
-rke2_argocd_apps_pokerops_revision: 0.1.12
+rke2_argocd_apps_pokerops_revision: 0.1.13
 rke2_argocd_apps_values_extra: {}
 rke2_argocd_apps_values_base:
   applications:
-    pokerops.rke2:
-      finalizers:
-        - resources-finalizer.argocd.argoproj.io
+    cluster:
       project: default
       source:
         repoURL: https://github.com/pokerops/ansible-collection-rke2.git
         targetRevision: "{{ rke2_argocd_apps_pokerops_revision }}"
-        path: argocd
+        path: argocd/applications/
         directory:
           recurse: true
       destination:
@@ -78,8 +74,8 @@ rke2_argocd_apps_values_base:
           selfHeal: true
         syncOptions:
           - ApplyOutOfSyncOnly=true
-      revisionHistoryLimit: null
+      revisionHistoryLimit:
       info:
         - name: url
           value: https://github.com/pokerops/ansible-collection-rke2
-rke2_argocd_apps_values: "{{ rke2_argocd_apps_values_base | ansible.builtin.combine(rke2_argocd_apps_values_extra, recursive=True) }}"
+rke2_argocd_apps_values: "{{ rke2_argocd_apps_values_base | combine(rke2_argocd_apps_values_extra, recursive=True) }}"

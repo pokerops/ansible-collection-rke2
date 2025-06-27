@@ -1,0 +1,25 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: mysql-operator
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: default
+  source:
+    repoURL: https://mysql.github.io/mysql-operator/
+    chart: mysql-operator
+    targetRevision: "2.2.4"
+    helm:
+      releaseName: mysql-operator
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: mysql-operator
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
