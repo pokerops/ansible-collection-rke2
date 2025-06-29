@@ -2,19 +2,20 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: cnpg
+  name: postgres-operator
   namespace: argocd
   annotations:
     argocd.argoproj.io/sync-wave: "-1"
 spec:
   project: default
   source:
-    repoURL: https://cloudnative-pg.github.io/charts
-    chart: cloudnative-pg
-    targetRevision: "0.24.0"
+    repoURL: 
+      https://opensource.zalando.com/postgres-operator/charts/postgres-operator
+    chart: postgres-operator
+    targetRevision: "1.14.0"
   destination:
     server: https://kubernetes.default.svc
-    namespace: gnpg-system
+    namespace: postgres-operator
   syncPolicy:
     automated:
       prune: true
