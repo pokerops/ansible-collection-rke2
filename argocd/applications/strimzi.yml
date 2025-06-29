@@ -13,7 +13,7 @@ spec:
     chart: strimzi-kafka-operator
     targetRevision: "0.46.1"
     helm:
-      values:
+      valuesObject:
         watchAnyNamespace: true
   destination:
     server: https://kubernetes.default.svc
