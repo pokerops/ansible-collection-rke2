@@ -1,0 +1,27 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: keel
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: default
+  source:
+    chart: keel
+    repoURL: https://charts.keel.sh
+    targetRevision: "1.0.5"
+    helm:
+      valuesObject:
+        helmProvider:
+          version: "v3"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: keel-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

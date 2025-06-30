@@ -76,8 +76,7 @@ applicationSet:
 configs:
   params:
     application.namespaces: "*"
-  cm:
-    application.resourceTrackingMethod: label
+    applicationsetcontroller.namespaces: "*"
 global:
   env:
     - name: ARGOCD_EXEC_TIMEOUT
@@ -89,8 +88,7 @@ global:
 ```yaml
 params:
   application.namespaces: "*"
-cm:
-  application.resourceTrackingMethod: label
+  applicationsetcontroller.namespaces: "*"
 ```
 
 ## Collection roles

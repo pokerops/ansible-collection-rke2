@@ -93,18 +93,18 @@ requirements: install
 	@find ./ -name "*.ymle*" -delete
 
 build: requirements
-	@uv run bin/build
+	@uv run rke2 build
 	@git status --porcelain | wc -l | grep -q '^0$$' || (echo "Uncommitted build detected, please run build stage and commit changes" && exit 1)
 
-update: build
-	@uv run bin/update
+update:
+	@uv run rke2 update
 
 ifeq (login,$(firstword $(MAKECMDGOALS)))
     LOGIN_ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
     $(eval $(subst $(space),,$(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))):;@:)
 endif
 
-dependency create prepare converge idempotence side-effect verify destroy cleanup reset list:
+dependency create prepare converge idempotence side-effect verify destroy cleanup reset list login:
 	ANSIBLE_COLLECTIONS_PATH=$(MAKEFILE_DIR) \
 	MOLECULE_REVISION=${MOLECULE_REVISION} \
 	MOLECULE_KVM_IMAGE=${MOLECULE_KVM_IMAGE} \
