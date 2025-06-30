@@ -1,5 +1,5 @@
 ---
-- name: Deploy longhorn chart
+- name: Deploy longhorn application
   kubernetes.core.k8s:
     state: present
     kubeconfig: "{{ rke2_config_path }}"

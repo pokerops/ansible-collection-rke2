@@ -13,7 +13,7 @@ import yaml
 from deepmerge import always_merger as merger
 from ruamel.yaml import YAML, CommentedMap, CommentedSeq
 
-DEFAULT_DIRECTORIES = [Path("argocd/applications"), Path("argocd/charts")]
+DEFAULT_DIRECTORIES = [Path("argocd/applications"), Path("argocd/templates")]
 DEFAULT_GALAXY_PATH = Path("galaxy.yml")
 DEFAULT_ARGOCD_PATH = Path("roles/components/defaults/main/argocd.yml")
 VERSION_REGEX = r"v?[0-9]+\.[0-9]+\.[0-9]+$"
@@ -52,6 +52,13 @@ class HelmIndex(pydantic.BaseModel):
     """Pydantic model representing a Helm repository index.yaml."""
 
     entries: dict[str, list[HelmChart]]
+
+
+class Collection(pydantic.BaseModel):
+    """Pydantic model representing an Ansible Galaxy collection."""
+
+    name: str
+    version: str
 
 
 def format_yaml(data: object) -> object:
@@ -142,12 +149,14 @@ def collection_version(path: Path) -> str:
     try:
         if path.exists() and path.is_file():
             with path.open("r") as f:
-                data = yaml.safe_load(f)  # pyright: ignore[reportAny]
-                return str(data.get("version", ""))  # pyright: ignore[reportAny]
+                collection = Collection(**yaml.safe_load(f))  # pyright: ignore[reportAny]
+                return str(collection.version)
     except FileNotFoundError as e:
         typer.echo(f"Error reading {path}: {e}")
     except yaml.YAMLError as e:
         typer.echo(f"Error parsing {path}: {e}")
+    except AttributeError as e:
+        typer.echo(f"Error parsing Collection mdetadata: {e}")
     return ""
 
 
