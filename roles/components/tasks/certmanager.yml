@@ -1,36 +1,9 @@
 ---
-- name: Create cert-manager namespace
+- name: Deploy longhorn chart
   kubernetes.core.k8s:
     state: present
     kubeconfig: "{{ rke2_config_path }}"
-    resource_definition:
-      apiVersion: v1
-      kind: Namespace
-      metadata:
-        name: "{{ rke2_certmanager_chart.namespace }}"
-
-- name: Deploy cert-manager chart
-  kubernetes.core.k8s:
-    state: present
-    kubeconfig: "{{ rke2_config_path }}"
-    resource_definition:
-      apiVersion: helm.cattle.io/v1
-      kind: HelmChart
-      metadata:
-        name: cert-manager
-        namespace: kube-system
-      spec:
-        chart: "{{ rke2_certmanager_chart.name }}"
-        targetNamespace: "{{ rke2_certmanager_chart.namespace }}"
-        repo: "{{ rke2_certmanager_chart.repo }}"
-        valuesContent: |-
-          crds:
-            enabled: true
-          podDnsPolicy: None
-          podDnsConfig:
-            nameservers:
-              - 1.1.1.1
-              - 8.8.8.8
+    resource_definition: "{{ lookup('ansible.builtin.template', '../../../argocd/templates/certmanager.yml' ) | from_yaml }}"
 
 - name: Wait for cluster-issuer crd
   kubernetes.core.k8s_info:

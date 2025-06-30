@@ -1,10 +1,5 @@
 ---
 rke2_longhorn_hostname: "longhorn.{{ rke2_cluster_name }}"
-rke2_longhorn_chart:
-  name: longhorn
-  namespace: longhorn-system
-  repo: "https://charts.longhorn.io"
-  release: "1.9.0"
 rke2_longhorn_values:
   persistence:
     defaultClass: true
