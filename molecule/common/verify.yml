@@ -448,7 +448,7 @@
               ansible.builtin.fail:
                 msg: "the following argocd applications are in failed status [{{ _app_names | join(', ') }}]"
               vars:
-                _app_data: "{{ argocd_app_data.json['items'] }}"
+                _app_data: "{{ _argocd_app_data.json['items'] }}"
                 _app_failed: "{{ _app_data | rejectattr('status.health.status', 'equalto', 'Healthy') }}"
                 _app_names: "{{ _app_failed | map(attribute='metadata.name') }}"
 
