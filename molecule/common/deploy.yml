@@ -38,10 +38,6 @@
       vars:
         _ingress_data: "{{ _ingress_query.stdout | from_json }}"
 
-    - name: Skip on ingress deployment failure
-      ansible.builtin.meta: end_play
-      when: (_ingress_hosts | length) != (_ingress_endpoints | length)
-
     - name: Add ingress endpoints to local hostfile
       ansible.builtin.lineinfile:
         path: /etc/hosts
