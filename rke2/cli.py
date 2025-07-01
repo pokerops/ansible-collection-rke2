@@ -156,7 +156,7 @@ def collection_version(path: Path) -> str:
     except yaml.YAMLError as e:
         typer.echo(f"Error parsing {path}: {e}")
     except AttributeError as e:
-        typer.echo(f"Error parsing Collection mdetadata: {e}")
+        typer.echo(f"Error parsing Collection metadata: {e}")
     return ""
 
 
