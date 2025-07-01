@@ -11,10 +11,7 @@ spec:
   source:
     chart: cert-manager
     repoURL: https://charts.jetstack.io
-    targetRevision: v1.18.1
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: cert-manager
+    targetRevision: "v1.18.1"
     helm:
       valuesObject:
         crds:
@@ -24,6 +21,9 @@ spec:
           nameservers:
             - 1.1.1.1
             - 8.8.8.8
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cert-manager
   syncPolicy:
     automated:
       prune: true
