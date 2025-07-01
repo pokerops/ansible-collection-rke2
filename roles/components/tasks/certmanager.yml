@@ -36,7 +36,7 @@
 
     - name: Create certmanager secret
       kubernetes.core.k8s:
-        namespace: "{{ rke2_certmanager_chart.namespace }}"
+        namespace: cert-manager
         apply: true
         kubeconfig: "{{ rke2_config_path }}"
         state: present
@@ -53,7 +53,7 @@
 
     - name: Create LetsEncrypt issuer
       kubernetes.core.k8s:
-        namespace: "{{ rke2_certmanager_chart.namespace }}"
+        namespace: cert-manager
         kubeconfig: "{{ rke2_config_path }}"
         apply: true
         state: present
@@ -83,7 +83,7 @@
     - name: Create bootstrap issuer
       kubernetes.core.k8s:
         name: bootstrap-issuer
-        namespace: "{{ rke2_certmanager_chart.namespace }}"
+        namespace: cert-manager
         kubeconfig: "{{ rke2_config_path }}"
         apply: true
         state: present
@@ -99,7 +99,7 @@
 
     - name: Create self-signed ca certificate
       kubernetes.core.k8s:
-        namespace: "{{ rke2_certmanager_chart.namespace }}"
+        namespace: cert-manager
         kubeconfig: "{{ rke2_config_path }}"
         apply: true
         state: present
