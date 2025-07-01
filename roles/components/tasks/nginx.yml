@@ -6,7 +6,7 @@
     resource_definition: "{{ _nginx_chart_application }}"
   vars:
     _nginx_chart_application: "{{ _nginx_chart_manifest | combine(_nginx_chart_overrides, recursive=True) }}"
-    _nginx_chart_manifest: "{{ lookup('ansible.builtin.template', '../../../argocd/templates/nginx.yml' ) | from_yaml }}"
+    _nginx_chart_manifest: "{{ lookup('ansible.builtin.template', 'templates/nginx.yml' ) | from_yaml }}"
     _nginx_chart_overrides:
       metadata:
         name: "nginx-private"
@@ -36,7 +36,7 @@
     resource_definition: "{{ _nginx_chart_application }}"
   vars:
     _nginx_chart_application: "{{ _nginx_chart_manifest | combine(_nginx_chart_overrides, recursive=True) }}"
-    _nginx_chart_manifest: "{{ lookup('ansible.builtin.template', '../../../argocd/templates/nginx.yml' ) | from_yaml }}"
+    _nginx_chart_manifest: "{{ lookup('ansible.builtin.template', 'templates/nginx.yml' ) | from_yaml }}"
     _nginx_chart_overrides:
       metadata:
         name: "nginx-public"

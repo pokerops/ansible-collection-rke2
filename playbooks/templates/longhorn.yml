@@ -12,6 +12,16 @@ spec:
     chart: longhorn
     repoURL: https://charts.longhorn.io
     targetRevision: "1.9.0"
+    helm:
+      valuesObject:
+        preUpgradeChecker:
+          jobEnabled: false
+        persistence:
+          defaultClass: true
+        ingress:
+          enabled: true
+          tls: true
+          secureBackends: true
   destination:
     server: https://kubernetes.default.svc
     namespace: longhorn-system
@@ -21,3 +31,8 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+  ignoreDifferences:
+    - group: apiextensions.k8s.io
+      kind: CustomResourceDefinition
+      jqPathExpressions:
+        - .spec.preserveUnknownFields

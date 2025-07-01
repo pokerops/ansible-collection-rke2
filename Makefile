@@ -88,7 +88,8 @@ requirements: install
 		--force --no-deps \
 		--roles-path ${ROLE_DIR} \
 		--role-file ${ROLE_FILE}
-	@uv run ansible-galaxy collection install \
+	ANSIBLE_COLLECTIONS_PATH=$(MAKEFILE_DIR) \
+	uv run ansible-galaxy collection install \
 		--force-with-deps .
 	@find ./ -name "*.ymle*" -delete
 

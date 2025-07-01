@@ -5,38 +5,6 @@
   vars:
     _multipath_service: multipathd.service
   tasks:
-    - name: Create ingress hostfile entries
-      run_once: true
-      become: true
-      block:
-        - name: Query cluster ingresses
-          ansible.builtin.command:
-            cmd: "/var/lib/rancher/rke2/bin/kubectl get ingresses -A -o json --kubeconfig /etc/rancher/rke2/rke2.yaml"
-          register: _ingress_query
-
-        - debug:
-            var: _ingress_query
-
-        - name: Set ingress facts
-          ansible.builtin.set_fact:
-            _ingress_hosts: "{{ _ingress_data['items'] | map(attribute='spec.rules') | map('map', attribute='host') | flatten }}"
-            _ingress_addrs: "{{ _ingress_data['items'] }}"
-          vars:
-            _ingress_data: "{{ _ingress_query.stdout | from_json }}"
-
-        - debug:
-            var: _ingress_addrs
-
-        - fail:
-
-        - name: Add ingress endpoints to local hostfile
-          ansible.builtin.lineinfile:
-            path: /etc/hosts
-            regexp: ".*{{ item }}.*"
-            state: present
-          loop: "{{ _ingress_hosts }}"
-          delegate_to: localhost
-
     - name: Query service facts
       ansible.builtin.service_facts:
 

@@ -2,11 +2,12 @@
 - name: Deploy longhorn application
   kubernetes.core.k8s:
     state: present
+    apply: true
     kubeconfig: "{{ rke2_config_path }}"
     resource_definition: "{{ _longhorn_chart_application }}"
   vars:
     _longhorn_chart_application: "{{ _longhorn_chart_manifest | combine(_longhorn_chart_overrides, recursive=True) }}"
-    _longhorn_chart_manifest: "{{ lookup('ansible.builtin.template', '../../../argocd/templates/longhorn.yml' ) | from_yaml }}"
+    _longhorn_chart_manifest: "{{ lookup('ansible.builtin.template', 'templates/longhorn.yml' ) | from_yaml }}"
     _longhorn_chart_overrides:
       spec:
         source:

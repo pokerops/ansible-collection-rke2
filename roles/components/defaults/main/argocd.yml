@@ -11,10 +11,6 @@ rke2_argocd_controller_replicas: 2
 rke2_argocd_server_replicas: 2
 rke2_argocd_reposerver_replicas: 2
 rke2_argocd_applicationset_replicas: 2
-rke2_argocd_values_configs:
-  params:
-    application.namespaces: "*"
-    applicationsetcontroller.namespaces: "*"
 rke2_argocd_values:
   redis-ha:
     enabled: "{{ rke2_argocd_redis_ha_enabled }}"
@@ -42,7 +38,7 @@ rke2_argocd_values:
     replicas: "{{ rke2_argocd_reposerver_replicas }}"
   applicationSet:
     replicas: "{{ rke2_argocd_applicationset_replicas }}"
-  configs: "{{ rke2_argocd_values_configs }}"
+  configs: "{{ rke2_argocd_values_configs | default({}) }}"
   global:
     env:
       - name: ARGOCD_EXEC_TIMEOUT
@@ -78,5 +74,6 @@ rke2_argocd_apps_values_base:
       info:
         - name: url
           value: https://github.com/pokerops/ansible-collection-rke2
-rke2_argocd_apps_values: "{{ rke2_argocd_apps_values_base | combine(rke2_argocd_apps_values_extra,
+rke2_argocd_apps_values:
+  "{{ rke2_argocd_apps_values_base | combine(rke2_argocd_apps_values_extra,
   recursive=True) }}"

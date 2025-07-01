@@ -2,8 +2,9 @@
 - name: Deploy metallb application
   kubernetes.core.k8s:
     state: present
+    apply: true
     kubeconfig: "{{ rke2_config_path }}"
-    resource_definition: "{{ lookup('ansible.builtin.template', '../../../argocd/templates/metallb.yml' ) | from_yaml }}"
+    resource_definition: "{{ lookup('ansible.builtin.template', 'templates/metallb.yml' ) | from_yaml }}"
 
 - name: Verify ippool ranges
   ansible.builtin.assert:
@@ -14,6 +15,7 @@
 - name: Create metallb private pool
   kubernetes.core.k8s:
     state: present
+    apply: true
     kubeconfig: "{{ rke2_config_path }}"
     resource_definition:
       apiVersion: metallb.io/v1beta1
@@ -30,6 +32,7 @@
 - name: Create metallb public pool
   kubernetes.core.k8s:
     state: present
+    apply: true
     kubeconfig: "{{ rke2_config_path }}"
     resource_definition:
       apiVersion: metallb.io/v1beta1
@@ -47,6 +50,7 @@
 - name: Advertise metallb pools
   kubernetes.core.k8s:
     state: present
+    apply: true
     kubeconfig: "{{ rke2_config_path }}"
     resource_definition:
       apiVersion: metallb.io/v1beta1

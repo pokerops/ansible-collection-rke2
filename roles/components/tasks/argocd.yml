@@ -12,6 +12,7 @@
 - name: Deploy argocd chart
   kubernetes.core.k8s:
     state: present
+    apply: true
     kubeconfig: "{{ rke2_config_path }}"
     resource_definition:
       apiVersion: helm.cattle.io/v1
@@ -62,6 +63,7 @@
     - name: Deploy argocd apps chart
       kubernetes.core.k8s:
         state: present
+        apply: true
         kubeconfig: "{{ rke2_config_path }}"
         resource_definition:
           apiVersion: helm.cattle.io/v1

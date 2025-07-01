@@ -5,8 +5,8 @@
 - name: Include longhorn tasks
   ansible.builtin.include_tasks: longhorn.yml
 
-- name: Include cert-manager tasks
-  ansible.builtin.include_tasks: certmanager.yml
-
 - name: Include nginx tasks
   ansible.builtin.include_tasks: nginx.yml
+
+- name: Include cert-manager tasks
+  ansible.builtin.include_tasks: certmanager.yml

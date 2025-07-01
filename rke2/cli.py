@@ -13,7 +13,7 @@ import yaml
 from deepmerge import always_merger as merger
 from ruamel.yaml import YAML, CommentedMap, CommentedSeq
 
-DEFAULT_DIRECTORIES = [Path("argocd/applications"), Path("argocd/templates")]
+DEFAULT_DIRECTORIES = [Path("argocd/applications"), Path("playbooks/templates")]
 DEFAULT_GALAXY_PATH = Path("galaxy.yml")
 DEFAULT_ARGOCD_PATH = Path("roles/components/defaults/main/argocd.yml")
 VERSION_REGEX = r"v?[0-9]+\.[0-9]+\.[0-9]+$"
