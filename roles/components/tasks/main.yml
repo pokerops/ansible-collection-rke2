@@ -1,4 +1,10 @@
 ---
+- name: Include argocd tasks
+  ansible.builtin.include_tasks: argocd.yml
+
+- name: Include metallb tasks
+  ansible.builtin.include_tasks: metallb.yml
+
 - name: Include longhorn tasks
   ansible.builtin.include_tasks: longhorn.yml
 
@@ -7,6 +13,3 @@
 
 - name: Include nginx tasks
   ansible.builtin.include_tasks: nginx.yml
-
-- name: Include argocd tasks
-  ansible.builtin.include_tasks: argocd.yml

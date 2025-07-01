@@ -2,19 +2,19 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: reflector
+  name: metallb
   namespace: argocd
   annotations:
-    argocd.argoproj.io/sync-wave: "-1"
+    argocd.argoproj.io/sync-wave: "-5"
 spec:
   project: default
   source:
-    repoURL: https://emberstack.github.io/helm-charts
-    chart: reflector
-    targetRevision: "9.1.15"
+    chart: metallb
+    repoURL: "https://metallb.github.io/metallb"
+    targetRevision: "0.15.2"
   destination:
     server: https://kubernetes.default.svc
-    namespace: kube-system
+    namespace: metallb-system
   syncPolicy:
     automated:
       prune: true

@@ -1,27 +1,15 @@
 ---
-- name: Create longhorn namespace
+- name: Deploy longhorn application
   kubernetes.core.k8s:
     state: present
+    apply: true
     kubeconfig: "{{ rke2_config_path }}"
-    resource_definition:
-      apiVersion: v1
-      kind: Namespace
-      metadata:
-        name: "{{ rke2_longhorn_chart.namespace }}"
-
-- name: Deploy longhorn chart
-  kubernetes.core.k8s:
-    state: present
-    kubeconfig: "{{ rke2_config_path }}"
-    resource_definition:
-      apiVersion: helm.cattle.io/v1
-      kind: HelmChart
-      metadata:
-        name: longhorn
-        namespace: kube-system
+    resource_definition: "{{ _longhorn_chart_application }}"
+  vars:
+    _longhorn_chart_application: "{{ _longhorn_chart_manifest | combine(_longhorn_chart_overrides, recursive=True) }}"
+    _longhorn_chart_manifest: "{{ lookup('ansible.builtin.template', 'templates/longhorn.yml' ) | from_yaml }}"
+    _longhorn_chart_overrides:
       spec:
-        chart: "{{ rke2_longhorn_chart.name }}"
-        targetNamespace: "{{ rke2_longhorn_chart.namespace }}"
-        repo: "{{ rke2_longhorn_chart.repo }}"
-        valuesContent: |-
-          {{ rke2_longhorn_values | to_nice_yaml(indent=2) }}
+        source:
+          helm:
+            valuesObject: "{{ rke2_longhorn_values }}"

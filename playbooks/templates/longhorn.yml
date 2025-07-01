@@ -2,21 +2,29 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: mysql-operator
+  name: longhorn
   namespace: argocd
   annotations:
-    argocd.argoproj.io/sync-wave: "-1"
+    argocd.argoproj.io/sync-wave: "-5"
 spec:
   project: default
   source:
-    repoURL: https://mysql.github.io/mysql-operator/
-    chart: mysql-operator
-    targetRevision: "2.2.4"
+    chart: longhorn
+    repoURL: https://charts.longhorn.io
+    targetRevision: "1.9.0"
     helm:
-      releaseName: mysql-operator
+      valuesObject:
+        preUpgradeChecker:
+          jobEnabled: false
+        persistence:
+          defaultClass: true
+        ingress:
+          enabled: true
+          tls: true
+          secureBackends: true
   destination:
     server: https://kubernetes.default.svc
-    namespace: mysql-operator
+    namespace: longhorn-system
   syncPolicy:
     automated:
       prune: true

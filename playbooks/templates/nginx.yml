@@ -2,19 +2,19 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: reflector
+  name: nginx-ingress
   namespace: argocd
   annotations:
-    argocd.argoproj.io/sync-wave: "-1"
+    argocd.argoproj.io/sync-wave: "-5"
 spec:
   project: default
   source:
-    repoURL: https://emberstack.github.io/helm-charts
-    chart: reflector
-    targetRevision: "9.1.15"
+    chart: ingress-nginx
+    repoURL: https://kubernetes.github.io/ingress-nginx
+    targetRevision: "4.12.3"
   destination:
     server: https://kubernetes.default.svc
-    namespace: kube-system
+    namespace: nginx
   syncPolicy:
     automated:
       prune: true

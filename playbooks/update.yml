@@ -245,7 +245,7 @@
                 kubeconfig: "{{ _kubeconfig_path }}"
               vars:
                 _hostname: "{{ inventory_hostname }}"
-                _node_resources: "{{ k8s_node_info.resources | list }}"
+                _node_resources: "{{ [] if 'resources' not in k8s_node_info else (k8s_node_info.resources | list) }}"
                 _node_filter: "{{ _node_resources | selectattr('metadata.name', 'equalto', _hostname) }}"
                 _node_spec: "{{ _node_filter | map(attribute='spec') | list }}"
                 _node_cordoned: "{{ _node_spec | selectattr('unschedulable', 'defined') }}"

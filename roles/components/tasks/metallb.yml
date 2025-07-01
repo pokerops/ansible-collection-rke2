@@ -1,49 +1,28 @@
 ---
+- name: Deploy metallb application
+  kubernetes.core.k8s:
+    state: present
+    apply: true
+    kubeconfig: "{{ rke2_config_path }}"
+    resource_definition: "{{ lookup('ansible.builtin.template', 'templates/metallb.yml' ) | from_yaml }}"
+
 - name: Verify ippool ranges
   ansible.builtin.assert:
     that: rke2_ippool_private is defined
     fail_msg: "rke2_ippool_private must be defined"
   run_once: true
 
-- name: Create metallb namespace
-  kubernetes.core.k8s:
-    state: present
-    kubeconfig: "{{ rke2_config_path }}"
-    resource_definition:
-      apiVersion: v1
-      kind: Namespace
-      metadata:
-        name: "{{ rke2_metallb_chart.namespace }}"
-        labels:
-          pod-security.kubernetes.io/enforce: privileged
-          pod-security.kubernetes.io/audit: privileged
-          pod-security.kubernetes.io/warn: privileged
-
-- name: Deploy metallb chart
-  kubernetes.core.k8s:
-    state: present
-    kubeconfig: "{{ rke2_config_path }}"
-    resource_definition:
-      apiVersion: helm.cattle.io/v1
-      kind: HelmChart
-      metadata:
-        name: metallb
-        namespace: kube-system
-      spec:
-        chart: "{{ rke2_metallb_chart.name }}"
-        targetNamespace: "{{ rke2_metallb_chart.namespace }}"
-        repo: "{{ rke2_metallb_chart.repo }}"
-
 - name: Create metallb private pool
   kubernetes.core.k8s:
     state: present
+    apply: true
     kubeconfig: "{{ rke2_config_path }}"
     resource_definition:
       apiVersion: metallb.io/v1beta1
       kind: IPAddressPool
       metadata:
-        name: "metallb-private"
-        namespace: "{{ rke2_metallb_chart.namespace }}"
+        name: metallb-private
+        namespace: metallb-system
       spec:
         addresses:
           - "{{ rke2_ippool_private }}"
@@ -53,13 +32,14 @@
 - name: Create metallb public pool
   kubernetes.core.k8s:
     state: present
+    apply: true
     kubeconfig: "{{ rke2_config_path }}"
     resource_definition:
       apiVersion: metallb.io/v1beta1
       kind: IPAddressPool
       metadata:
-        name: "metallb-public"
-        namespace: "{{ rke2_metallb_chart.namespace }}"
+        name: metallb-public
+        namespace: metallb-system
       spec:
         addresses:
           - "{{ rke2_ippool_public }}"
@@ -70,12 +50,13 @@
 - name: Advertise metallb pools
   kubernetes.core.k8s:
     state: present
+    apply: true
     kubeconfig: "{{ rke2_config_path }}"
     resource_definition:
       apiVersion: metallb.io/v1beta1
       kind: L2Advertisement
       metadata:
         name: metallb
-        namespace: "{{ rke2_metallb_chart.namespace }}"
+        namespace: metallb-system
   retries: "{{ _rke2_retry_num }}"
   delay: "{{ _rke2_retry_delay }}"
