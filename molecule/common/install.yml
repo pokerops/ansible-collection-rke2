@@ -1,4 +1,7 @@
 ---
+- name: Uninstall RKE2 cluster
+  import_playbook: pokerops.rke2.uninstall
+
 - name: Import install playbook
   import_playbook: pokerops.rke2.install
   vars:
