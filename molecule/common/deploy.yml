@@ -20,7 +20,7 @@
         _ingress_lbs: "{{ _ingress_items | selectattr('status.loadBalancer', 'defined') | map(attribute='status.loadBalancer') }}"
         _ingress_ingress: "{{ _ingress_lbs | selectattr('ingress', 'defined') | map(attribute='ingress') | list }}"
       ignore_errors: true
-      until: (_ingress_items | length) == (_ingress_ingress | length)
+      failed_when: (_ingress_items | length) == (_ingress_ingress | length)
 
     - name: Exit on ingress deployment failure
       ansible.builtin.meta: end_play
