@@ -4,5 +4,3 @@
 
 - name: Import install playbook
   import_playbook: pokerops.rke2.install
-  vars:
-    rke2_skip_deploy: true

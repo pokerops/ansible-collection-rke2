@@ -79,6 +79,8 @@ provisioner:
           rke2_ippool_private: "{{ molecule_pool_private }}"
           rke2_api_url: "https://api.{{ rke2_cluster_name }}:6443"
           rke2_token: "secret"
+          # Test rke2 params
+          rke2_skip_deploy: true
 verifier:
   name: ansible
 scenario:
