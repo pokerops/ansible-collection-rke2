@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+import os
+import tempfile
 from itertools import chain
 from pathlib import Path
 from re import match
@@ -125,23 +127,45 @@ def argocd_application_chart(file: Path) -> Application | None:
     return None
 
 
-def argocd_application_helm_index(session: requests.Session, app: Application) -> HelmChart | None:
-    """Retrieve and parse Helm repository index.yaml."""
-    index_url = f"{app.spec.source.repoURL.rstrip('/')}/index.yaml"
+def create_file(path: Path, content: str | None = None) -> None:
+    """Create a file with the given content."""
+
     try:
-        response = session.get(index_url, timeout=30)
-        response.raise_for_status()
-        index_data = HelmIndex(**yaml.safe_load(response.text))  # pyright: ignore[reportAny])
-        charts_published = index_data.entries.get(app.spec.source.chart, [])
-        charts_released = [chart for chart in charts_published if chart.version and match(VERSION_REGEX, chart.version)]
-        return charts_released[0]
-    except requests.RequestException as e:
-        typer.echo(f"Error fetching repository index: {e}")
-    except yaml.YAMLError as e:
-        typer.echo(f"Error parsing repository index YAML: {e}")
-    except AttributeError as e:
-        typer.echo(f"Error parsing Helm index {index_url}: {e}")
-    return None
+        with path.open("w") as f:
+            if content is not None:
+                _ = f.write(content)
+            f.flush()
+    except FileNotFoundError as e:
+        typer.echo(f"Error creating file {path}: {e}")
+    except IOError as e:
+        typer.echo(f"Error writing to file {path}: {e}")
+
+
+def argocd_application_helm_index(session: requests.Session, app: Application) -> HelmChart | None:
+    """Retrieve and parse Helm repository using Helm commands"""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        config_repository = Path(temp_dir) / "repository.yaml"
+        config_registry = Path(temp_dir) / "registry.yaml"
+        config_cache = Path(temp_dir) / "cache"
+        create_file(config_repository)
+        create_file(config_registry)
+        _ = os.makedirs(config_cache, exist_ok=True)
+        try:
+            chart_name = app.spec.source.chart
+            chart_repo = app.spec.source.repoURL
+            helm_config = ["--registry-config", str(config_registry), "--repository-config", str(config_repository), "--repository-cache", str(config_cache)]
+            _ = run(["helm", "repo", "add", chart_name, chart_repo] + helm_config, check=True, capture_output=True, text=True)
+            _ = run(["helm", "repo", "update", chart_name] + helm_config, check=True, capture_output=True, text=True)
+            result = run(["helm", "search", "repo", f"{chart_name}/{chart_name}", "--output", "json"] + helm_config, check=True, capture_output=True, text=True)
+            chart_data = yaml.safe_load(result.stdout.strip())  # pyright: ignore[reportAny]
+            chart = HelmChart(**chart_data[0])  # pyright: ignore[reportAny]
+            return chart
+        except (CalledProcessError, yaml.YAMLError, FileNotFoundError):
+            typer.echo(f"Error fetching Helm chart index for {app.spec.source.repoURL}")
+            return None
+        except AttributeError as e:
+            typer.echo(f"Error parsing Helm index data: {e}")
+            return None
 
 
 def collection_version(path: Path) -> str:
