@@ -106,6 +106,7 @@ ifeq (login,$(firstword $(MAKECMDGOALS)))
 endif
 
 dependency create prepare converge idempotence side-effect verify destroy cleanup reset list login:
+	rm -rf ansible_collections/ 
 	ANSIBLE_COLLECTIONS_PATH=$(MAKEFILE_DIR) \
 	MOLECULE_REVISION=${MOLECULE_REVISION} \
 	MOLECULE_KVM_IMAGE=${MOLECULE_KVM_IMAGE} \
