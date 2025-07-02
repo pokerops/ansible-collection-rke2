@@ -10,26 +10,21 @@
   vars_files:
     - ../../playbooks/vars/main.yml
   tasks:
-    - name: Configure access to cluster ingresses
-      block:
-        - name: Query cluster ingresses
-          ansible.builtin.command:
-            cmd: "/var/lib/rancher/rke2/bin/kubectl get ingresses -A -o json --kubeconfig /etc/rancher/rke2/rke2.yaml"
-          register: _ingress_query
-          vars:
-            _ingress_data: "{{ _ingress_query.stdout | from_json }}"
-            _ingress_items: "{{ _ingress_data['items'] }}"
-            _ingress_lbs: "{{ _ingress_items | selectattr('status.loadBalancer', 'defined') | map(attribute='status.loadBalancer') }}"
-            _ingress_ingress: "{{ _ingress_lbs | selectattr('ingress', 'defined') | map(attribute='ingress') | list }}"
-          retries: "{{ _rke2_retry_num }}"
-          delay: "{{ _rke2_retry_delay }}"
-          become: true
-          until: (_ingress_items | length) == (_ingress_ingress | length)
+    - name: Query cluster ingresses
+      ansible.builtin.command:
+        cmd: "/var/lib/rancher/rke2/bin/kubectl get ingresses -A -o json --kubeconfig /etc/rancher/rke2/rke2.yaml"
+      register: _ingress_query
+      vars:
+        _ingress_data: "{{ _ingress_query.stdout | from_json }}"
+        _ingress_items: "{{ _ingress_data['items'] }}"
+        _ingress_lbs: "{{ _ingress_items | selectattr('status.loadBalancer', 'defined') | map(attribute='status.loadBalancer') }}"
+        _ingress_ingress: "{{ _ingress_lbs | selectattr('ingress', 'defined') | map(attribute='ingress') | list }}"
+      ignore_errors: true
+      until: (_ingress_items | length) == (_ingress_ingress | length)
 
-      rescue:
-        - name: Exit on ingress deployment failure
-          ansible.builtin.meta: end_play
-          when: _ingress_query is failed
+    - name: Exit on ingress deployment failure
+      ansible.builtin.meta: end_play
+      when: _ingress_query is failed
 
     - name: Set ingress facts
       ansible.builtin.set_fact:
