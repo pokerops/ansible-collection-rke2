@@ -1,6 +1,6 @@
 ---
 - name: Undeploy RKE2 cluster
-  hosts: "{{ rke2_cluster_group }}"
+  hosts: "{{ rke2_server_group }}:{{ rke2_agent_group }}"
   vars_files:
     - main.yml
   tasks:
