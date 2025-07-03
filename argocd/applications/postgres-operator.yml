@@ -9,9 +9,13 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://opensource.zalando.com/postgres-operator/charts/postgres-operator
     chart: postgres-operator
+    repoURL: https://opensource.zalando.com/postgres-operator/charts/postgres-operator
     targetRevision: "1.14.0"
+    helm:
+      valuesObject:
+        configKubernetes:
+          enable_pod_antiaffinity: false
   destination:
     server: https://kubernetes.default.svc
     namespace: postgres-operator

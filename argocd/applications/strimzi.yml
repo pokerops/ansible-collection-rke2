@@ -9,8 +9,8 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://strimzi.io/charts/
     chart: strimzi-kafka-operator
+    repoURL: https://strimzi.io/charts/
     targetRevision: "0.46.1"
     helm:
       valuesObject:

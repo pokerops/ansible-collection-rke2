@@ -37,6 +37,9 @@ jobs:
         image:
           - noble
           - jammy
+        include:
+          - scenario: components
+            image: noble
     steps:
       - name: Check out the codebase
         uses: actions/checkout@v4

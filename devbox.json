@@ -9,7 +9,8 @@
     "xfsprogs@latest",
     "gnumake@latest",
     "yq-go@latest",
-    "uv@latest"
+    "uv@latest",
+    "velero@latest"
   ],
   "shell": {
     "init_hook": [". .venv/bin/activate"],

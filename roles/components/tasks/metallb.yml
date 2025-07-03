@@ -12,6 +12,16 @@
     fail_msg: "rke2_ippool_private must be defined"
   run_once: true
 
+- name: Wait for ipaddresspool crd
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ rke2_config_path }}"
+    kind: CustomResourceDefinition
+    name: ipaddresspools.metallb.io
+  retries: "{{ _rke2_retry_num }}"
+  delay: "{{ _rke2_retry_delay }}"
+  register: metallb_crd
+  until: metallb_crd.resources | length > 0
+
 - name: Create metallb private pool
   kubernetes.core.k8s:
     state: present

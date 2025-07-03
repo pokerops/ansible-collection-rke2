@@ -4,5 +4,41 @@
 
 - name: Import install playbook
   import_playbook: pokerops.rke2.install
-  vars:
-    rke2_skip_deploy: true
+
+- name: Cache cluster kubeconfig
+  hosts: "{{ rke2_server_group }}"
+  gather_facts: false
+  run_once: true
+  vars_files:
+    - ../../playbooks/vars/main.yml
+  tasks:
+    - name: Slurp kubeconfig cluster file
+      ansible.builtin.slurp:
+        src: /etc/rancher/rke2/rke2.yaml
+      register: _kubeconfig_slurp
+      become: true
+
+    - name: Set kubeconfig facts
+      ansible.builtin.set_fact:
+        _config_data: "{{ _config_raw | combine(_config_override) | to_nice_json(indent=2) }}"
+      vars:
+        _config_raw: "{{ _kubeconfig_slurp['content'] | b64decode | from_yaml }}"
+        _config_cluster: "{{ _config_raw.clusters[0] }}"
+        _config_override:
+          clusters:
+            - name: "{{ _config_cluster.name }}"
+              cluster:
+                server: "{{ _rke2_api_url }}"
+                certificate-authority-data: "{{ _config_cluster.cluster['certificate-authority-data'] }}"
+
+    - name: Copy kubeconfig to project directory
+      ansible.builtin.copy:
+        dest: "{{ molecule_local_kubeconfig }}"
+        content: "{{ _config_data }}"
+        mode: "u=rw,go=r"
+      delegate_to: localhost
+      changed_when: false
+
+    - name: Debug kubeconfig location
+      ansible.builtin.debug:
+        msg: "Kubeconfig cached at {{ molecule_local_kubeconfig }}"

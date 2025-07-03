@@ -1,14 +1,9 @@
 ---
 - name: Deploy RKE2 cluster components
   hosts: "{{ rke2_server_group }}"
-  run_once: true
   vars_files:
     - main.yml
   tasks:
-    - name: End play when cluster initialization is not requested
-      ansible.builtin.meta: end_play
-      when: _rke2_skip_deploy | bool
-
     - name: Deploy cluster components
       block:
         - name: Create local tempdir
@@ -47,16 +42,9 @@
           delegate_to: localhost
           changed_when: false
 
-        - name: Query node status
-          kubernetes.core.k8s_info:
-            kind: Node
-            kubeconfig: "{{ _config_path }}"
-          register: _node_query
-          delegate_to: localhost
-
-        - name: End play for failed nodes
-          ansible.builtin.meta: end_host
-          when: _node_query is failed
+        - name: End play when cluster initialization is not requested
+          ansible.builtin.meta: end_play
+          when: _rke2_skip_deploy | bool
 
         - name: Deploy cluster components
           ansible.builtin.include_role:
@@ -66,6 +54,7 @@
               delegate_to: localhost
           vars:
             rke2_config_path: "{{ _config_path }}"
+          run_once: true
 
       always:
         - name: Remove local tempdir

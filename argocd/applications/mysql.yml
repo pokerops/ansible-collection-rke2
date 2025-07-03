@@ -9,8 +9,8 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://mysql.github.io/mysql-operator/
     chart: mysql-operator
+    repoURL: https://mysql.github.io/mysql-operator/
     targetRevision: "2.2.4"
     helm:
       releaseName: mysql-operator

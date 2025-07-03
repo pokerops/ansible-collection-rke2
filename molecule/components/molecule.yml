@@ -49,9 +49,10 @@ provisioner:
     create: ../common/libvirt.yml
     prepare: ../common/prepare.yml
     converge: ../common/install.yml
-    side_effect: ../common/update.yml
+    side_effect: ../common/deploy.yml
     cleanup: ../common/cleanup.yml
     destroy: ../common/destroy.yml
+    verify: ../common/verify.yml
   config_options:
     defaults:
       callbacks_enabled: ansible.posix.profile_tasks
@@ -77,6 +78,7 @@ provisioner:
           # Required rke2 params
           rke2_cluster_name: rke2.pokerops.net
           rke2_ippool_private: "{{ molecule_pool_private }}"
+          rke2_ippool_public: "{{ molecule_pool_public }}"
           rke2_api_url: "https://api.{{ rke2_cluster_name }}:6443"
           rke2_token: "secret"
           # Test rke2 params
