@@ -164,7 +164,7 @@
         - name: Validate secret namespaces
           ansible.builtin.assert:
             that: ns_missing | length == 0
-            fail_msg: "the following namespaces are missing from deployed secrets [{{ ns_missing | join(', ') }}]"
+            fail_msg: "The following namespaces are missing from deployed secrets [{{ ns_missing | join(', ') }}]"
           vars:
             ns_query: "{{ query('kubernetes.core.k8s', kind='Namespace', kubeconfig=_config_path) }}"
             ns_names: "{{ ns_query | map(attribute='metadata.name') }}"
@@ -174,7 +174,7 @@
         - name: Validate secret namespace status
           ansible.builtin.assert:
             that: ns_failed | length == 0
-            fail_msg: "the following namespaces are in failed status [{{ ns_failed | join(', ') }}]"
+            fail_msg: "The following namespaces are in failed status [{{ ns_failed | join(', ') }}]"
           vars:
             ns_query: "{{ query('kubernetes.core.k8s', kind='Namespace', kubeconfig=_config_path) }}"
             ns_inactive: "{{ ns_query | rejectattr('status.phase', 'equalto', 'Active') }}"
@@ -183,7 +183,7 @@
         - name: Validate secret list
           ansible.builtin.assert:
             that: secret_missing | length == 0
-            fail_msg: "the following secrets are missing from secret definitions [{{ secret_missing | join(', ') }}]"
+            fail_msg: "The following secrets are missing from secret definitions [{{ secret_missing | join(', ') }}]"
           vars:
             secret_query: "{{ query('kubernetes.core.k8s', kind='Secret', kubeconfig=_config_path) }}"
             secret_names: "{{ secret_query | map(attribute='metadata.name') }}"
@@ -194,7 +194,7 @@
           block:
             - name: Validate cluster-issuer status
               ansible.builtin.fail:
-                msg: "found cluster issuers with failed status"
+                msg: "Found cluster issuers with failed status"
               vars:
                 issuers_status: "{{ issuers_query | selectattr('status', 'defined') | map(attribute='status') | flatten }}"
                 issuers_conditions: "{{ issuers_status | selectattr('conditions', 'defined') | map(attribute='conditions') | flatten }}"
@@ -213,38 +213,68 @@
               vars:
                 issuers_query: "{{ query('kubernetes.core.k8s', kind='ClusterIssuer', kubeconfig=_config_path) }}"
 
-        - name: Validate pod status
-          ansible.builtin.fail:
-            msg: "the following pods are in failed status [{{ pods_failed | map(attribute='metadata.name') | join(', ') }}]"
-          vars:
-            pods_status: "{{ pods_query | selectattr('status', 'defined') }}"
-            pods_phase: "{{ pods_status | selectattr('status.phase', 'defined') }}"
-            pods_completed: "{{ pods_phase | rejectattr('status.phase', 'equalto', 'Running') }}"
-            pods_failed: "{{ pods_completed | rejectattr('status.phase', 'equalto', 'Succeeded') }}"
-            pods_query: "{{ query('kubernetes.core.k8s', kind='Pod', kubeconfig=_config_path) }}"
-          retries: "{{ _retry }}"
-          delay: "{{ _delay }}"
-          until: pods_failed | length == 0
-          failed_when:
-            - (pods_status | length) != (pods_query | length)
-            - (pods_phase | length) != (pods_query | length)
-            - pods_failed | length > 0
+        - name: Verify cluster pod status
+          block:
+            - name: Verify cluster pod status
+              ansible.builtin.shell:
+                cmd: "/var/lib//rancher/rke2/bin/kubectl get pod -o json | jq '.items'"
+              register: _argocd_pod_data
+              retries: "{{ _retry }}"
+              delay: "{{ _delay }}"
+              vars:
+                _pod_data: "{{ _argocd_pod_data.stdout | from_json }}"
+                _pod_status: "{{ _pod_data | selectattr('status', 'defined') }}"
+                _pod_phase: "{{ _pod_status | selectattr('status.phase', 'defined') }}"
+                _pod_completed: "{{ _pod_phase | rejectattr('status.phase', 'equalto', 'Running') }}"
+                _pod_failed: "{{ _pod_completed | rejectattr('status.phase', 'equalto', 'Succeeded') }}"
+              until: _pod_failed | length == 0
+              failed_when:
+                - (_pod_status | length) != (_pod_data | length)
+                - (_pod_phase | length) != (_pod_data | length)
+                - _pod_failed | length > 0
+              changed_when: false
 
-        - name: Validate job status
-          ansible.builtin.fail:
-            msg: "the following jobs are in failed status [{{ jobs_failed | map(attribute='metadata.name') | join(', ') }}]"
-          vars:
-            jobs_status: "{{ jobs_query | selectattr('status', 'defined') }}"
-            jobs_success: "{{ jobs_status | selectattr('status.succeeded', 'defined') }}"
-            jobs_failed: "{{ jobs_success | rejectattr('status.succeeded', 'equalto', 1) }}"
-            jobs_query: "{{ query('kubernetes.core.k8s', kind='Job', kubeconfig=_config_path) }}"
-          retries: "{{ _retry }}"
-          delay: "{{ _delay }}"
-          until: jobs_failed | length == 0
-          failed_when:
-            - (jobs_status | length) != (jobs_query | length)
-            - (jobs_phase | length) != (jobs_query | length)
-            - jobs_failed | length > 0
+          rescue:
+            - name: Debug failed cluster pods
+              ansible.builtin.fail:
+                msg: "The following pods are in failed status [{{ _pod_names | join(', ') }}]"
+              vars:
+                _pod_data: "{{ _argocd_pod_data.stdout | from_json }}"
+                _pod_unhealthy: "{{ _pod_data['items'] | rejectattr('status.health.status', 'equalto', 'Healthy') }}"
+                _pod_outofsync: "{{ _pod_unhealthy | rejectattr('status.sync.status', 'equalto', 'Synced') }}"
+                _pod_failed: "{{ _pod_unhealthy + _pod_outofsync }}"
+                _pod_names: "{{ _pod_failed | map(attribute='metadata.name') }}"
+
+        - name: Verify cluster job status
+          block:
+            - name: Verify cluster job status
+              ansible.builtin.shell:
+                cmd: "/var/lib//rancher/rke2/bin/kubectl get job -o json | jq '.items'"
+              register: _argocd_job_data
+              retries: "{{ _retry }}"
+              delay: "{{ _delay }}"
+              vars:
+                _job_data: "{{ _argocd_job_data.stdout | from_json }}"
+                _job_status: "{{ _job_data | selectattr('status', 'defined') }}"
+                _job_success: "{{ _job_status | selectattr('status.succeeded', 'defined') }}"
+                _job_failed: "{{ _job_success | rejectattr('status.succeeded', 'equalto', 1) }}"
+              until: _job_failed | length == 0
+              failed_when:
+                - (_job_status | length) != (_job_data | length)
+                - (_job_phase | length) != (_job_data | length)
+                - _job_failed | length > 0
+              changed_when: false
+
+          rescue:
+            - name: Debug failed cluster jobs
+              ansible.builtin.fail:
+                msg: "The following jobs are in failed status [{{ _job_names | join(', ') }}]"
+              vars:
+                _job_data: "{{ _argocd_job_data.stdout | from_json }}"
+                _job_unhealthy: "{{ _job_data['items'] | rejectattr('status.health.status', 'equalto', 'Healthy') }}"
+                _job_outofsync: "{{ _job_unhealthy | rejectattr('status.sync.status', 'equalto', 'Synced') }}"
+                _job_failed: "{{ _job_unhealthy + _job_outofsync }}"
+                _job_names: "{{ _job_failed | map(attribute='metadata.name') }}"
 
         - name: Set test facts
           ansible.builtin.set_fact:
@@ -308,11 +338,42 @@
                         name: longhorn-test
           delegate_to: localhost
 
+        - name: Verify persistent claim status
+          block:
+            - name: Verify persistent claim status
+              ansible.builtin.shell:
+                cmd: "/var/lib//rancher/rke2/bin/kubectl get pvc -o json | jq '.items'"
+              register: _argocd_pvc_data
+              retries: "{{ _retry }}"
+              delay: "{{ _delay }}"
+              vars:
+                _pvc_data: "{{ _argocd_pvc_data.stdout | from_json }}"
+                _pvc_status: "{{ _pvc_data | selectattr('status', 'defined') }}"
+                _pvc_success: "{{ _pvc_status | selectattr('status.succeeded', 'defined') }}"
+                _pvc_failed: "{{ _pvc_success | rejectattr('status.succeeded', 'equalto', 1) }}"
+              until: _pvc_failed | length == 0
+              failed_when:
+                - (_pvc_status | length) != (_pvc_data | length)
+                - (_pvc_phase | length) != (_pvc_data | length)
+                - _pvc_failed | length > 0
+              changed_when: false
+
+          rescue:
+            - name: Debug failed cluster persistent claims
+              ansible.builtin.fail:
+                msg: "The following persistent claims are in failed status [{{ _job_names | join(', ') }}]"
+              vars:
+                _job_data: "{{ _argocd_job_data.stdout | from_json }}"
+                _job_unhealthy: "{{ _job_data['items'] | rejectattr('status.health.status', 'equalto', 'Healthy') }}"
+                _job_outofsync: "{{ _job_unhealthy | rejectattr('status.sync.status', 'equalto', 'Synced') }}"
+                _job_failed: "{{ _job_unhealthy + _job_outofsync }}"
+                _job_names: "{{ _job_failed | map(attribute='metadata.name') }}"
+
         - name: Verify persistent claims
           block:
             - name: Validate persistent claim status
               ansible.builtin.fail:
-                msg: "the following pvcs are in failed status [{{ pvc_names | join(', ') }}]"
+                msg: "The following pvcs are in failed status [{{ pvc_names | join(', ') }}]"
               vars:
                 pvc_names: "{{ pvc_failed | map(attribute='metadata.name') }}"
                 pvc_failed: "{{ pvc_query | rejectattr('status.phase', 'equalto', 'Bound') }}"
@@ -361,95 +422,32 @@
           vars:
             _argocd_env_exec_value: "{{ _argocd_env_exec_item[0].value }}"
 
-        - name: Query argocd ingress metadata
-          kubernetes.core.k8s_info:
-            kind: Ingress
-            name: argocd-server
-            namespace: argocd
-            kubeconfig: "{{ _config_path }}"
-          vars:
-            _ip: ip
-            _ingress: ingress
-          register: _ingress_query
-          retries: "{{ _retry }}"
-          delay: "{{ _delay }}"
-          until:
-            - _ingress_query.resources | length > 0
-            - _ingress in _ingress_query.resources[0].status.loadBalancer
-            - _ingress_query.resources[0].status.loadBalancer.ingress | length > 0
-            - _ip in _ingress_query.resources[0].status.loadBalancer.ingress[0]
-          delegate_to: localhost
-
-        - name: Set argocd ingress facts
-          ansible.builtin.set_fact:
-            ingress_argocd_ip: "{{ _ingress_query.resources[0].status.loadBalancer.ingress[0].ip }}"
-
-        - name: Verify argocd health status
-          ansible.builtin.command:
-            cmd: "curl -sLk https://argocd.{{ rke2_cluster_name }}/healthz --resolve argocd.{{ rke2_cluster_name }}:443:{{ ingress_argocd_ip }} --fail"
-          delegate_to: localhost
-          register: _argocd_health_check
-          retries: "{{ _retry }}"
-          delay: "{{ _delay }}"
-          until: _argocd_health_check is succeeded
-          changed_when: false
-
-        - name: Query argocd access secret
-          kubernetes.core.k8s_info:
-            kind: Secret
-            name: argocd-initial-admin-secret
-            namespace: argocd
-            kubeconfig: "{{ _config_path }}"
-          register: _argocd_secret_query
-          retries: "{{ _retry }}"
-          delay: "{{ _delay }}"
-          until: _argocd_secret_query.resources | length > 0
-          delegate_to: localhost
-
-        - name: Auth against argocd api
-          ansible.builtin.command:
-            cmd: >
-              curl -sLk -XPOST https://argocd.{{ rke2_cluster_name }}/api/v1/session
-                --resolve argocd.{{ rke2_cluster_name }}:443:{{ ingress_argocd_ip }}
-                --header "Content-Type: application/json"
-                --data '{ "username": "{{ _argocd_admin_username }}", "password": "{{ _argocd_admin_password }}" }'
-          vars:
-            _argocd_admin_username: "admin"
-            _argocd_admin_password: "{{ _argocd_admin_data.data.password | b64decode }}"
-            _argocd_admin_data: "{{ _argocd_secret_query.resources[0] }}"
-          register: argocd_auth_data
-          delegate_to: localhost
-
-        - name: Record argocd auth token
-          ansible.builtin.set_fact:
-            argocd_admin_token: "{{ _argocd_auth_data.token }}"
-          vars:
-            _argocd_auth_data: "{{ argocd_auth_data.stdout | from_json }}"
-
         - name: Verify argocd application status
           block:
-            - name: Query argocd application status
-              ansible.builtin.uri:
-                url: "https://{{ ingress_argocd_ip }}/api/v1/applications?refresh=true"
-                headers:
-                  host: "argocd.{{ rke2_cluster_name }}"
-                  cookie: "argocd.token={{ argocd_admin_token }}"
-                validate_certs: false
+            - name: Verify argocd application status
+              ansible.builtin.shell:
+                cmd: /var/lib//rancher/rke2/bin/kubectl get applications -n argocd -o json
+              register: _argocd_app_data
               retries: "{{ _retry }}"
               delay: "{{ _delay }}"
-              register: _argocd_app_data
               vars:
-                _app_data: "{{ _argocd_app_data.json['items'] }}"
-                _app_failed: "{{ _app_data | rejectattr('status.health.status', 'equalto', 'Healthy') }}"
-              until: _app_failed | length == 0
+                _app_data: "{{ _argocd_app_data.stdout | from_json }}"
+                _app_unhealthy: "{{ _app_data['items'] | rejectattr('status.health.status', 'equalto', 'Healthy') }}"
+                _app_outofsync: "{{ _app_unhealthy | rejectattr('status.sync.status', 'equalto', 'Synced') }}"
+                _app_failed: "{{ _app_unhealthy + _app_outofsync }}"
+              until:
+                - _app_data | length > 0
+                - _app_failed | length == 0
 
           rescue:
             - name: Debug failed applications
               ansible.builtin.fail:
-                msg: "the following argocd applications are in failed status [{{ _app_names | join(', ') }}]"
+                msg: "The following argocd applications are in failed status [{{ _app_names | join(', ') }}]"
               vars:
-                _app_data: "{{ _argocd_app_data.json['items'] }}"
-                _app_failed: "{{ _app_data | rejectattr('status.health.status', 'equalto', 'Healthy') }}"
+                _app_data: "{{ _argocd_app_data.stdout | from_json }}"
+                _app_unhealthy: "{{ _app_data['items'] | rejectattr('status.health.status', 'equalto', 'Healthy') }}"
+                _app_outofsync: "{{ _app_unhealthy | rejectattr('status.sync.status', 'equalto', 'Synced') }}"
+                _app_failed: "{{ _app_unhealthy + _app_outofsync }}"
                 _app_names: "{{ _app_failed | map(attribute='metadata.name') }}"
 
       always:
