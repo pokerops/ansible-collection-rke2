@@ -1,3 +1,6 @@
+# files
+.kubeconfig
+
 # directories
 .venv/
 .ansible/

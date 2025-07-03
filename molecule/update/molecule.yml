@@ -71,6 +71,7 @@ provisioner:
           molecule_pool_public: "{{ libvirt_address | ansible.utils.ipsubnet(molecule_pool_prefix, 1) }}"
           molecule_install_dir: "{{ lookup('ansible.builtin.env', 'MOLECULE_OUTPUT_DIR', default='/tmp/logs') }}"
           molecule_install_log: "{{ molecule_install_dir }}/${MOLECULE_SCENARIO_NAME}"
+          molecule_local_kubeconfig: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}/.kubeconfig"
           # Optional rke2 params
           rke2_argocd_apps_deploy: false
           rke2_argocd_apps_pokerops_revision: "{{ lookup('ansible.builtin.env', 'MOLECULE_REVISION', default='HEAD') }}"
@@ -80,6 +81,7 @@ provisioner:
           rke2_api_url: "https://api.{{ rke2_cluster_name }}:6443"
           rke2_token: "secret"
           # Test rke2 params
+          rke2_retry_num: 20
           rke2_skip_deploy: true
 verifier:
   name: ansible
