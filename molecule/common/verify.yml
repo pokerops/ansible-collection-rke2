@@ -46,10 +46,10 @@
     _servers: "{{ groups['rke2_server'] }}"
     _agents: "{{ groups['rke2_agent'] }}"
     _members: "{{ _servers + _agents }}"
-    _retry: 6
-    _delay: 20
+    _retry: 20
+    _delay: 30
   tasks:
-    - name: Install JQ
+    - name: Install jq
       ansible.builtin.package:
         name: jq
       become: true
