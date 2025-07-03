@@ -49,6 +49,7 @@ provisioner:
     create: ../common/libvirt.yml
     prepare: ../common/prepare.yml
     converge: ../common/install.yml
+    side_effect: ../common/deploy.yml
     cleanup: ../common/cleanup.yml
     destroy: ../common/destroy.yml
     verify: ../common/verify.yml
