@@ -329,6 +329,38 @@
               vars:
                 pvc_query: "{{ query('kubernetes.core.k8s', kind='PersistentVolumeClaim', kubeconfig=_config_path) }}"
 
+        - name: Query argocd reposerver deployment
+          kubernetes.core.k8s_info:
+            kind: Deployment
+            name: argocd-repo-server
+            namespace: argocd
+            kubeconfig: "{{ _config_path }}"
+          register: _deployment_query
+          retries: "{{ _retry }}"
+          delay: "{{ _delay }}"
+          until: _deployment_query.resources | length > 0
+          delegate_to: localhost
+
+        - name: Set argocd deployment env facts
+          ansible.builtin.set_fact:
+            _argocd_env_exec_item: "{{ _reposerver_env_exec_item }}"
+          vars:
+            _reposerver_def: "{{ _deployment_query.resources[0] }}"
+            _reposerver_env: "{{ _reposerver_def.spec.template.spec.containers[0].env }}"
+            _reposerver_env_exec_item: "{{ _reposerver_env | selectattr('name', 'equalto', 'ARGOCD_EXEC_TIMEOUT') }}"
+
+        - name: Check argocd exec timeout parameter
+          ansible.builtin.assert:
+            that: _argocd_env_exec_item | length > 0
+            fail_msg: "env var ARGOCD_EXEC_TIMEOUT is not set"
+
+        - name: Check argocd exec timeout value
+          ansible.builtin.assert:
+            that: _argocd_env_exec_value == "3m"
+            fail_msg: "env var ARGOCD_EXEC_TIMEOUT is not set correctly ({{ _argocd_env_exec_value }})"
+          vars:
+            _argocd_env_exec_value: "{{ _argocd_env_exec_item[0].value }}"
+
         - name: Query argocd ingress metadata
           kubernetes.core.k8s_info:
             kind: Ingress
@@ -361,38 +393,6 @@
           delay: "{{ _delay }}"
           until: _argocd_health_check is succeeded
           changed_when: false
-
-        - name: Query argocd reposerver deployment
-          kubernetes.core.k8s_info:
-            kind: Deployment
-            name: argocd-repo-server
-            namespace: argocd
-            kubeconfig: "{{ _config_path }}"
-          register: _deployment_query
-          retries: "{{ _retry }}"
-          delay: "{{ _delay }}"
-          until: _deployment_query.resources | length > 0
-          delegate_to: localhost
-
-        - name: Set argocd deployment env facts
-          ansible.builtin.set_fact:
-            _argocd_env_exec_item: "{{ _reposerver_env_exec_item }}"
-          vars:
-            _reposerver_def: "{{ _deployment_query.resources[0] }}"
-            _reposerver_env: "{{ _reposerver_def.spec.template.spec.containers[0].env }}"
-            _reposerver_env_exec_item: "{{ _reposerver_env | selectattr('name', 'equalto', 'ARGOCD_EXEC_TIMEOUT') }}"
-
-        - name: Check argocd exec timeout parameter
-          ansible.builtin.assert:
-            that: _argocd_env_exec_item | length > 0
-            fail_msg: "env var ARGOCD_EXEC_TIMEOUT is not set"
-
-        - name: Check argocd exec timeout value
-          ansible.builtin.assert:
-            that: _argocd_env_exec_value == "3m"
-            fail_msg: "env var ARGOCD_EXEC_TIMEOUT is not set correctly ({{ _argocd_env_exec_value }})"
-          vars:
-            _argocd_env_exec_value: "{{ _argocd_env_exec_item[0].value }}"
 
         - name: Query argocd access secret
           kubernetes.core.k8s_info:
