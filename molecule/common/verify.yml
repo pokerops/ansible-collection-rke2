@@ -439,6 +439,15 @@
                 - _app_data | length > 0
                 - _app_failed | length == 0
 
+            - name: Debug argocd applications
+              ansible.builtin.debug:
+                msg: "The following argocd applications have been deployed successfully [{{ _app_success | join(', ') }}]"
+              vars:
+                _app_data: "{{ _argocd_app_data.stdout | from_json }}"
+                _app_healthy: "{{ _app_data['items'] | selectattr('status.health.status', 'equalto', 'Healthy') }}"
+                _app_sync: "{{ _app_healthy | selectattr('status.sync.status', 'equalto', 'Synced') }}"
+                _app_success: "{{ _app_sync | map(attribute='metadata.name') }}"
+
           rescue:
             - name: Debug failed applications
               ansible.builtin.fail:

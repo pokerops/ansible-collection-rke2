@@ -14,9 +14,18 @@ spec:
     targetRevision: "10.0.8"
     helm:
       valuesObject:
+        deployNodeAgent: true
         configuration:
+          defaultVolumesToFsBackup: true
           backupStorageLocation: []
           volumeSnapshotLocation: []
+        initContainers:
+          - name: velero-plugin-for-aws
+            image: velero/velero-plugin-for-aws:v1.8.0
+            imagePullPolicy: IfNotPresent
+            volumeMounts:
+              - mountPath: /target
+                name: plugins
   destination:
     server: https://kubernetes.default.svc
     namespace: velero
