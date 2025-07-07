@@ -55,6 +55,12 @@ Cluster wide parameters
 [1] rke2_certmanager_acme_email is required whenever rke2_certmanager_acme_secret is set
 [2] rke2_argocd_values default is as follows:
 
+Velero S3 backup parameters
+
+| Parameter         | Default | Type   | Description                            | Required |
+| :---------------- | ------: | :----- | :------------------------------------- | :------- |
+| rke2_cluster_name |     n/a | string | Cluster name, immutable after creation | yes      |
+
 ```yaml
 redis-ha:
   enabled: true
@@ -95,6 +101,7 @@ global:
 - pokerops.rke2.secrets: Deploy cluster secrets
 - pokerops.rke2.init: Deploy base cluster components
 - pokerops.rke2.update: Start rke2 cluster services
+- pokerops.rke2.velero.s3: Start rke2 cluster services
 
 ## Testing
 

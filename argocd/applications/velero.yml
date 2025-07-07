@@ -15,6 +15,7 @@ spec:
     helm:
       valuesObject:
         deployNodeAgent: true
+        features: enableCSI
         configuration:
           defaultVolumesToFsBackup: true
           backupStorageLocation: []
