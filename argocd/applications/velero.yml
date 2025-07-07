@@ -16,6 +16,7 @@ spec:
       valuesObject:
         deployNodeAgent: true
         features: enableCSI
+        snapshotsEnabled: false
         configuration:
           defaultVolumesToFsBackup: true
           backupStorageLocation: []
@@ -36,3 +37,12 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+---
+kind: VolumeSnapshotClass
+apiVersion: snapshot.storage.k8s.io/v1
+metadata:
+  name: velero-longhorn-snapshots
+  labels:
+    velero.io/csi-volumesnapshot-class: "true"
+driver: driver.longhorn.io
+deletionPolicy: Retain
