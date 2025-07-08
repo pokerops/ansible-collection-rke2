@@ -1,0 +1,123 @@
+---
+dependency:
+  name: galaxy
+  options:
+    role-file: requirements.yml
+    requirements-file: requirements.yml
+driver:
+  name: default
+platforms:
+  - name: rke2-${MOLECULE_SCENARIO_NAME}-server-01
+    image: "${MOLECULE_KVM_IMAGE}"
+    cpu: 4
+    mem: 4
+    groups:
+      - rke2_server
+  - name: rke2-${MOLECULE_SCENARIO_NAME}-agent-01
+    image: "${MOLECULE_KVM_IMAGE}"
+    cpu: 1
+    mem: 4
+    groups:
+      - rke2_agent
+  - name: rke2-${MOLECULE_SCENARIO_NAME}-agent-02
+    image: "${MOLECULE_KVM_IMAGE}"
+    cpu: 1
+    mem: 4
+    groups:
+      - rke2_agent
+  - name: rke2-${MOLECULE_SCENARIO_NAME}-agent-03
+    image: "${MOLECULE_KVM_IMAGE}"
+    cpu: 1
+    mem: 4
+    groups:
+      - rke2_agent
+provisioner:
+  name: ansible
+  playbooks:
+    create: ../common/libvirt.yml
+    prepare: ../common/prepare.yml
+    converge: ../common/install.yml
+    side_effect: backup.yml
+    cleanup: ../common/cleanup.yml
+  config_options:
+    defaults:
+      callbacks_enabled: ansible.posix.profile_tasks
+      callback_whitelist: profile_tasks, timer, yaml
+  inventory:
+    hosts:
+      all:
+        vars:
+          ansible_ssh_extra_args: "-o ControlPersist=no -o ControlPath=none"
+          libvirt_user: molecule
+          libvirt_address: "172.31.252.1/24"
+          libvirt_platforms: "{{ molecule_yml.platforms }}"
+          molecule_net_prefix: "{{ libvirt_address | ansible.utils.ipaddr('prefix') }}"
+          molecule_pool_prefix: "{{ (molecule_net_prefix | int) + 2 }}"
+          molecule_pool_private: "{{ libvirt_address | ansible.utils.ipsubnet(molecule_pool_prefix, 2) }}"
+          molecule_pool_public: "{{ libvirt_address | ansible.utils.ipsubnet(molecule_pool_prefix, 3) }}"
+          molecule_install_dir: "{{ lookup('ansible.builtin.env', 'MOLECULE_OUTPUT_DIR', default='/tmp/logs') }}"
+          molecule_install_log: "{{ molecule_install_dir }}/${MOLECULE_SCENARIO_NAME}"
+          molecule_local_kubeconfig: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}/.kubeconfig"
+          # Optional rke2 params
+          rke2_argocd_apps_pokerops_revision: "{{ lookup('ansible.builtin.env', 'MOLECULE_REVISION', default='HEAD') }}"
+          # Required rke2 params
+          rke2_cluster_name: rke2.pokerops.net
+          rke2_ippool_private: "{{ molecule_pool_private }}"
+          rke2_ippool_public: "{{ molecule_pool_public }}"
+          rke2_api_url: "https://api.{{ rke2_cluster_name }}:6443"
+          rke2_token: "secret"
+          # Velero params
+          rke2_secrets:
+            - name: velero-s3-auth
+              namespace: velero
+              data:
+                AWS_ACCESS_KEY_ID: "{{ lookup('ansible.builtin.env', 'AWS_ACCESS_KEY_ID') }}"
+                AWS_SECRET_ACCESS_KEY: "{{ lookup('ansible.builtin.env', 'AWS_SECRET_ACCESS_KEY') }}"
+          rke2_argocd_apps_values_extra:
+            applications:
+              velero:
+                project: default
+                source:
+                  repoURL: https://github.com/pokerops/ansible-collection-rke2.git
+                  targetRevision: "{{ rke2_argocd_apps_pokerops_revision }}"
+                  path: argocd/molecule/velero
+                  directory:
+                    recurse: false
+                destination:
+                  server: https://kubernetes.default.svc
+                  namespace: default
+                syncPolicy:
+                  automated:
+                    prune: true
+                    selfHeal: true
+                  syncOptions:
+                    - ApplyOutOfSyncOnly=true
+                revisionHistoryLimit:
+          # Test rke2 params
+          rke2_retry_num: 20
+          rke2_skip_deploy: false
+          rke2_velero_s3: "{{ rke2_cluster_name | replace('.', '-') }}"
+          rke2_velero_s3_region: us-east-1
+          rke2_velero_s3_bucket: "{{ rke2_velero_s3 }}-bucket"
+          rke2_velero_s3_policy: "{{ rke2_velero_s3 }}-policy"
+          rke2_velero_s3_user: "{{ rke2_velero_s3 }}-user"
+          rke2_velero_s3_storage: "default"
+verifier:
+  name: ansible
+scenario:
+  prepare_sequence:
+    - prepare
+  converge_sequence:
+    - converge
+  destroy_sequence:
+    - destroy
+  cleanup_sequence:
+    - cleanup
+  test_sequence:
+    - dependency
+    - create
+    - prepare
+    - converge
+    - side_effect
+    - verify
+    - cleanup
