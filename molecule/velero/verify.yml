@@ -581,14 +581,14 @@
       retries: 30
       delay: 10
 
-    - name: Restore PostgreSQL cluster
+    - name: Restore PostgreSQL cluster PVs
       kubernetes.core.k8s:
         kubeconfig: "{{ kubeconfig_path }}"
         definition:
           apiVersion: velero.io/v1
           kind: Restore
           metadata:
-            name: "{{ restore_name }}"
+            name: "{{ restore_name }}-pv"
             namespace: velero
             labels:
               app.kubernetes.io/managed-by: ansible
@@ -599,14 +599,16 @@
               - "{{ postgres_namespace }}"
             restorePVs: true
             includeClusterResources: true
+            includedResources:
+              - persistentvolumes
         state: present
 
-    - name: Wait for PostgreSQL cluster restore to complete
+    - name: Wait for PV restore to complete
       kubernetes.core.k8s_info:
         kubeconfig: "{{ kubeconfig_path }}"
         api_version: velero.io/v1
         kind: Restore
-        name: "{{ restore_name }}"
+        name: "{{ restore_name }}-pv"
         namespace: velero
       register: pv_restore_status
       until:
@@ -616,13 +618,25 @@
       delay: 10
       ignore_errors: true
 
-    - name: Verify cluster restore completed successfully
+    - name: Verify PV restore completed successfully
       assert:
         that:
           - pv_restore_status.resources[0].status.phase == "Completed"
         fail_msg: |
           PV restore failed with status: {{ pv_restore_status.resources[0].status.phase }}
           Errors: {{ pv_restore_status.resources[0].status.errors | default([]) }}
+
+    - name: Query restored PVs
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig_path }}"
+        api_version: v1
+        kind: PersistentVolume
+        namespace: "{{ postgres_namespace }}"
+      register: restored_pvs
+
+    - name: Display restored PVs
+      ansible.builtin.debug:
+        msg: "Restored PVs: {{ restored_pvs.resources | map(attribute='metadata.name') | list }}"
 
     - name: Restore PostgreSQL CRD and secrets
       kubernetes.core.k8s:
@@ -643,6 +657,7 @@
             restorePVs: false
             includeClusterResources: false
             includedResources:
+              - secrets
               - postgresqls.acid.zalan.do
         state: present
 
