@@ -3,10 +3,15 @@
   hosts: all
   become: true
   tasks:
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+      changed_when: false
+      when: ansible_os_family == 'Debian'
+
     - name: Install gpg agent
       ansible.builtin.apt:
         package: gpg-agent
-        update_cache: true
       changed_when: false
       when: ansible_os_family == 'Debian'
 
