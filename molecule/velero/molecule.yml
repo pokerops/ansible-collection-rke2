@@ -105,6 +105,9 @@ provisioner:
 verifier:
   name: ansible
 scenario:
+  create_sequence:
+    - dependency
+    - create
   prepare_sequence:
     - prepare
   converge_sequence:

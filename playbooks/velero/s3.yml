@@ -83,11 +83,11 @@
               aws_access_key_id={{ rke2_velero_s3_access_key_id }}
               aws_secret_access_key={{ rke2_velero_s3_secret_access_key }}
 
-        - name: Wait for BackupStorageLocation crd
+        - name: Wait for BackupStorageLocations crd
           kubernetes.core.k8s_info:
             kubeconfig: "{{ _config_path }}"
-            kind: BackupStorageLocation
-            name: velero.io/v1
+            kind: CustomResourceDefinition
+            name: backupstoragelocations.velero.io
           retries: "{{ _rke2_retry_num }}"
           delay: "{{ _rke2_retry_delay }}"
           register: backupstoragelocation_crd
