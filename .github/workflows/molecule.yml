@@ -59,7 +59,7 @@ jobs:
         run: devbox run -- make debug
 
       - name: Run molecule tests
-        run: devbox run -- dotenv run make ${{ matrix.image }} test
+        run: devbox run -- make ${{ matrix.image }} test
         env:
           MOLECULE_REVISION: ${{ github.head_ref || github.ref_name }}
           MOLECULE_KVM_IMAGE: ${{ matrix.image }}
