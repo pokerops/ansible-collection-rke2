@@ -775,7 +775,7 @@
         query: |
           SELECT table_name 
           FROM information_schema.tables 
-          WHERE table_schema = 'public' 
+          WHERE table_schema = 'public'
           ORDER BY table_name;
       register: pagila_tables_after
 
@@ -791,7 +791,7 @@
         login_user: "{{ postgres_user }}"
         login_password: "{{ postgres_password }}"
         query: |
-          SELECT 
+          SELECT
             'actor' as table_name, COUNT(*) as row_count FROM actor
           UNION ALL
           SELECT 
