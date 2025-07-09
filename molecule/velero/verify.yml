@@ -376,9 +376,9 @@
         login_user: "{{ postgres_user }}"
         login_password: "{{ postgres_password }}"
         query: |
-          SELECT table_name 
-          FROM information_schema.tables 
-          WHERE table_schema = 'public' 
+          SELECT table_name
+          FROM information_schema.tables
+          WHERE table_schema = 'public'
           ORDER BY table_name;
       register: pagila_tables_before
 
@@ -394,13 +394,13 @@
         login_user: "{{ postgres_user }}"
         login_password: "{{ postgres_password }}"
         query: |
-          SELECT 
+          SELECT
             'actor' as table_name, COUNT(*) as row_count FROM actor
           UNION ALL
-          SELECT 
+          SELECT
             'film' as table_name, COUNT(*) as row_count FROM film
           UNION ALL
-          SELECT 
+          SELECT
             'customer' as table_name, COUNT(*) as row_count FROM customer
           ORDER BY table_name;
       register: pagila_data_counts_before
@@ -773,8 +773,8 @@
         login_user: "{{ postgres_user }}"
         login_password: "{{ postgres_password }}"
         query: |
-          SELECT table_name 
-          FROM information_schema.tables 
+          SELECT table_name
+          FROM information_schema.tables
           WHERE table_schema = 'public'
           ORDER BY table_name;
       register: pagila_tables_after
@@ -794,10 +794,10 @@
           SELECT
             'actor' as table_name, COUNT(*) as row_count FROM actor
           UNION ALL
-          SELECT 
+          SELECT
             'film' as table_name, COUNT(*) as row_count FROM film
           UNION ALL
-          SELECT 
+          SELECT
             'customer' as table_name, COUNT(*) as row_count FROM customer
           ORDER BY table_name;
       register: pagila_data_counts_after
