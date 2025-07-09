@@ -66,6 +66,8 @@ jobs:
           MOLECULE_SCENARIO: ${{ matrix.scenario }}
           MOLECULE_OUTPUT_DIR: /tmp/logs
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
       - name: Upload install logs
         uses: actions/upload-artifact@v4
