@@ -85,7 +85,7 @@
 
         - name: Wait for BackupStorageLocation crd
           kubernetes.core.k8s_info:
-            kubeconfig: "{{ rke2_config_path }}"
+            kubeconfig: "{{ _config_path }}"
             kind: BackupStorageLocation
             name: velero.io/v1
           retries: "{{ _rke2_retry_num }}"
