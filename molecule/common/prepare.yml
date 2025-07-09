@@ -3,15 +3,44 @@
   hosts: all
   become: true
   tasks:
-    - name: Slurp apt configuration
-      ansible.builtin.slurp:
-        src: /etc/apt/sources.list.d/ubuntu.sources
-      register: _apt_config
-
     - name: Debug apt configuration
-      ansible.builtin.debug:
-        msg: "{{ _apt_config.content | b64decode }}"
-      when: _apt_config.stat.exists
+      when: ansible_os_family == 'Debian'
+      block:
+        - name: Stat apt configuration
+          ansible.builtin.stat:
+            path: /etc/apt/sources.list
+          register: _apt_config
+
+        - name: Debug apt configuration
+          when: _apt_config.stat.exists
+          block:
+            - name: Slurp apt configuration
+              ansible.builtin.slurp:
+                src: /etc/apt/sources.list.d/ubuntu.sources
+              register: _apt_config_slurp
+
+            - name: Debug apt configuration
+              ansible.builtin.debug:
+                msg: |
+                  {{ _apt_config_slurp.content | b64decode }}
+
+        - name: Stat apt configuration
+          ansible.builtin.stat:
+            path: /etc/apt/sources.list
+          register: _apt_config
+
+        - name: Debug apt configuration
+          when: _apt_config.stat.exists
+          block:
+            - name: Slurp apt configuration
+              ansible.builtin.slurp:
+                src: /etc/apt/sources.list.d/ubuntu.sources
+              register: _apt_config_slurp
+
+            - name: Debug apt configuration
+              ansible.builtin.debug:
+                msg: |
+                  {{ _apt_config_slurp.content | b64decode }}
 
     - name: Update apt cache
       ansible.builtin.apt:
