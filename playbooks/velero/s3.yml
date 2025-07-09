@@ -21,8 +21,8 @@
           - rke2_velero_s3_access_key_id != ""
           - rke2_velero_s3_secret_access_key != ''
         fail_msg: >
-          S3 access variables are not set. 
-          Please define variables rke2_velero_s3_access_key_id and rke2_velero_s3_secret_access_key 
+          S3 access variables are not set.
+          Please define variables rke2_velero_s3_access_key_id and rke2_velero_s3_secret_access_key
           or AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY envvars
 
     - name: Create local tempdir
