@@ -40,6 +40,8 @@ jobs:
         include:
           - scenario: components
             image: noble
+          - scenario: velero
+            image: noble
     steps:
       - name: Check out the codebase
         uses: actions/checkout@v4

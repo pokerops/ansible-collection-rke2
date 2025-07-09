@@ -20,6 +20,16 @@ Default installation uses [ArgoCD Applications](https://argo-cd.readthedocs.io/e
 - [MySQL Operator](https://github.com/mysql/mysql-operator)
 - [PGDG Operator](https://github.com/cloudnative-pg/cloudnative-pg)
 
+## To Do
+
+- Rename Velero scenario to PostgreSQL backup and restore
+- Add Molecule test scenario for Kafka backup and restore
+- Add Molecule test scenario for MySQL backup and restore
+- Add Molecule test scenario for Sealed Secrets backup and restore
+- Add Grafana operator to base cluster deployment
+- Add Grafana deployment to base cluster components
+- Add Molecule test scenario for Grafana backup and restore
+
 ## Collection Variables
 
 The following is the list of parameters intended for end-user manipulation:
