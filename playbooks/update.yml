@@ -267,14 +267,13 @@
                 kubeconfig: "{{ _kubeconfig_path }}"
               vars:
                 _hostname: "{{ inventory_hostname }}"
-                _pod_resources: "{{ k8s_pod_info.resources | list }}"
+                _pod_resources: "{{ k8s_pod_info.resources | default([]) | list }}"
                 _node_resources: "{{ _pod_resources | selectattr('spec.nodeName', 'defined') }}"
                 _node_filter: "{{ _node_resources | selectattr('spec.nodeName', 'equalto', _hostname) }}"
                 _pod_node: "{{ _node_filter | list }}"
                 _pod_status: "{{ _pod_node | map(attribute='status') | selectattr('phase', 'defined') }}"
                 _pod_running: "{{ _pod_status | selectattr('phase', 'equalto', 'Running') }}"
                 _pod_containers: "{{ _pod_running | map(attribute='conditions') | flatten }}"
-                _pod_ready: "{{ _pod_containers | selectattr('type', 'equalto', 'ContainersReady') }}"
                 _pod_failed: "{{ _pod_containers | selectattr('status', 'equalto', 'False') }}"
                 _pod_failed_reason: "{{ _pod_failed | selectattr('reason', 'defined') }}"
                 _pod_noreason: "{{ _pod_failed | rejectattr('reason', 'defined') }}"
@@ -282,7 +281,9 @@
               register: k8s_pod_info
               retries: "{{ _rke2_retry_num }}"
               delay: "{{ _rke2_retry_delay }}"
-              until: (_pod_noreason + _pod_notready) | length == 0
+              until:
+                - _pod_resources | length > 0
+                - (_pod_noreason + _pod_notready) | length == 0
 
             - name: Wait for cluster api to be available
               ansible.builtin.wait_for:

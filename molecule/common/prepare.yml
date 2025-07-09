@@ -5,12 +5,13 @@
   tasks:
     - name: Slurp apt configuration
       ansible.builtin.slurp:
-        src: /etc/apt/sources.list
+        src: /etc/apt/sources.list.d/ubuntu.sources
       register: _apt_config
 
     - name: Debug apt configuration
       ansible.builtin.debug:
         msg: "{{ _apt_config.content | b64decode }}"
+      when: _apt_config.stat.exists
 
     - name: Update apt cache
       ansible.builtin.apt:
