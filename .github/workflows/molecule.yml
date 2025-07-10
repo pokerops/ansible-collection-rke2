@@ -40,7 +40,7 @@ jobs:
         include:
           - scenario: components
             image: noble
-          - scenario: velero
+          - scenario: zalando
             image: noble
 
     steps:

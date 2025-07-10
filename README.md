@@ -18,11 +18,10 @@ Default installation uses [ArgoCD Applications](https://argo-cd.readthedocs.io/e
 - [Kubernetes Reflector](https://github.com/emberstack/kubernetes-reflector)
 - [Strimzi Operator](https://strimzi.io/)
 - [MySQL Operator](https://github.com/mysql/mysql-operator)
-- [PGDG Operator](https://github.com/cloudnative-pg/cloudnative-pg)
+- [Zalando Operator](https://github.com/zalando/postgres-operator)
 
 ## To Do
 
-- Rename Velero scenario to PostgreSQL backup and restore
 - Add Molecule test scenario for Kafka backup and restore
 - Add Molecule test scenario for MySQL backup and restore
 - Add Molecule test scenario for Sealed Secrets backup and restore
