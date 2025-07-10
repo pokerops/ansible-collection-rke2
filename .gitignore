@@ -1,5 +1,6 @@
 # files
 .kubeconfig
+.env
 
 # directories
 .venv/

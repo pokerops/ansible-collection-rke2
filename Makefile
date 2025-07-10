@@ -72,7 +72,7 @@ test: lint
 	ANSIBLE_COLLECTIONS_PATH=$(MAKEFILE_DIR) \
 	MOLECULE_REVISION=${MOLECULE_REVISION} \
 	MOLECULE_KVM_IMAGE=${MOLECULE_KVM_IMAGE} \
-	uv run molecule test -s ${MOLECULE_SCENARIO}
+	uv run dotenv molecule test -s ${MOLECULE_SCENARIO}
 
 install:
 	@uv sync
@@ -110,7 +110,7 @@ dependency create prepare converge idempotence side-effect verify destroy cleanu
 	ANSIBLE_COLLECTIONS_PATH=$(MAKEFILE_DIR) \
 	MOLECULE_REVISION=${MOLECULE_REVISION} \
 	MOLECULE_KVM_IMAGE=${MOLECULE_KVM_IMAGE} \
-	uv run molecule $@ -s ${MOLECULE_SCENARIO} ${LOGIN_ARGS}
+	uv run dotenv molecule $@ -s ${MOLECULE_SCENARIO} ${LOGIN_ARGS}
 
 clean: destroy reset
 	@uv env remove $$(which python) >/dev/null 2>&1 || exit 0

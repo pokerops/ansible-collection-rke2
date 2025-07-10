@@ -1,0 +1,140 @@
+---
+- name: Deploy Velero backup destination
+  hosts: "{{ rke2_server_group }}"
+  run_once: true
+  vars_files:
+    - ../../playbooks/vars/main.yml
+  tasks:
+    - name: Load AWS access key id
+      ansible.builtin.set_fact:
+        rke2_velero_s3_access_key_id: "{{ lookup('env', 'AWS_ACCESS_KEY_ID', default='') }}"
+      when: rke2_velero_s3_access_key_id is not defined
+
+    - name: Load AWS access secret key
+      ansible.builtin.set_fact:
+        rke2_velero_s3_secret_access_key: "{{ lookup('env', 'AWS_SECRET_ACCESS_KEY', default='') }}"
+      when: rke2_velero_s3_secret_access_key is not defined
+
+    - name: Ensure AWS environment variables are set
+      ansible.builtin.assert:
+        that:
+          - rke2_velero_s3_access_key_id != ""
+          - rke2_velero_s3_secret_access_key != ''
+        fail_msg: >
+          S3 access variables are not set.
+          Please define variables rke2_velero_s3_access_key_id and rke2_velero_s3_secret_access_key
+          or AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY envvars
+
+    - name: Create local tempdir
+      ansible.builtin.tempfile:
+        state: directory
+        suffix: kubeconfig
+      register: _tempdir
+      delegate_to: localhost
+      changed_when: false
+
+    - name: Slurp kubeconfig cluster file
+      ansible.builtin.slurp:
+        src: /etc/rancher/rke2/rke2.yaml
+      register: _kubeconfig_slurp
+      become: true
+
+    - name: Set kubeconfig facts
+      ansible.builtin.set_fact:
+        _config_path: "{{ _tempdir.path }}/{{ inventory_hostname }}.yaml"
+        _config_data: "{{ _config_raw | combine(_config_override) | to_nice_json(indent=2) }}"
+      vars:
+        _config_raw: "{{ _kubeconfig_slurp['content'] | b64decode | from_yaml }}"
+        _config_cluster: "{{ _config_raw.clusters[0] }}"
+        _config_override:
+          clusters:
+            - name: "{{ _config_cluster.name }}"
+              cluster:
+                server: "{{ _rke2_api_url }}"
+                certificate-authority-data: "{{ _config_cluster.cluster['certificate-authority-data'] }}"
+
+    - name: Create velero S3 cluster configuration
+      delegate_to: localhost
+      block:
+        - name: Copy kubeconfig to local tempdir
+          ansible.builtin.copy:
+            dest: "{{ _config_path }}"
+            content: "{{ _config_data }}"
+            mode: "u=rw,go=r"
+          delegate_to: localhost
+          changed_when: false
+
+        - name: Create S3 credentials secret
+          kubernetes.core.k8s:
+            kubeconfig: "{{ _config_path }}"
+            definition:
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: velero-s3-auth
+                namespace: velero
+              type: Opaque
+              data:
+                cloud: "{{ _secret | b64encode }}"
+            state: present
+          vars:
+            _secret: |
+              [default]
+              aws_access_key_id={{ rke2_velero_s3_access_key_id }}
+              aws_secret_access_key={{ rke2_velero_s3_secret_access_key }}
+
+        - name: Wait for BackupStorageLocations crd
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ _config_path }}"
+            kind: CustomResourceDefinition
+            name: backupstoragelocations.velero.io
+          retries: "{{ _rke2_retry_num }}"
+          delay: "{{ _rke2_retry_delay }}"
+          register: backupstoragelocation_crd
+          until: backupstoragelocation_crd.resources | length > 0
+
+        - name: Create S3 BackupStorageLocation
+          kubernetes.core.k8s:
+            kubeconfig: "{{ _config_path }}"
+            state: present
+            definition:
+              apiVersion: velero.io/v1
+              kind: BackupStorageLocation
+              metadata:
+                name: "{{ rke2_velero_s3_storage }}"
+                namespace: velero
+                labels:
+                  app.kubernetes.io/name: velero
+                  app.kubernetes.io/component: backup-storage-location
+                  app.kubernetes.io/managed-by: ansible
+              spec:
+                provider: "{{ rke2_velero_s3_provider | default('aws') }}"
+                default: true
+                validationFrequency: "{{ rke2_velero_s3_validation_frequency | default('24h') }}"
+                objectStorage:
+                  bucket: "{{ rke2_velero_s3_bucket }}"
+                config:
+                  region: "{{ rke2_velero_s3_region }}"
+                  s3ForcePathStyle: "" # set to "true" when using MinIO or other S3-compatible services
+                  s3Url: ""
+                  insecureSkipTLSVerify: "true"
+                credential:
+                  name: velero-s3-auth
+                  key: cloud
+
+        - name: Verify BackupStorageLocation is available
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ _config_path }}"
+            api_version: velero.io/v1
+            kind: BackupStorageLocation
+            name: "{{ rke2_velero_s3_storage }}"
+            namespace: velero
+          vars:
+            _bsl_data: "{{ _bsl_status.resources[0] }}"
+          until:
+            - _bsl_status.resources | length > 0
+            - _bsl_data.status.phase is defined
+            - _bsl_data.status.phase == "Available"
+          register: _bsl_status
+          retries: "{{ _rke2_retry_num }}"
+          delay: "{{ _rke2_retry_delay }}"

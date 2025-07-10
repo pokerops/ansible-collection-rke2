@@ -10,10 +10,11 @@
     "gnumake@latest",
     "yq-go@latest",
     "uv@latest",
-    "velero@latest"
+    "velero@latest",
+    "postgresql@latest"
   ],
   "shell": {
     "init_hook": [". .venv/bin/activate"],
-    "scripts": {}
+    "scripts":   {}
   }
 }

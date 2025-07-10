@@ -18,6 +18,7 @@ spec:
           jobEnabled: false
         persistence:
           defaultClass: true
+          reclaimPolicy: Retain
         ingress:
           enabled: true
           tls: true

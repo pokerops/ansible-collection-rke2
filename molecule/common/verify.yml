@@ -131,35 +131,9 @@
       when: rke2_component_check | default(True) | bool
       run_once: true
       block:
-        - name: Create local tempdir
-          ansible.builtin.tempfile:
-            state: directory
-            suffix: kubeconfig
-          register: _tempdir
-          delegate_to: localhost
-          changed_when: false
-
         - name: Set kubeconfig facts
           ansible.builtin.set_fact:
-            _config_path: "{{ _tempdir.path }}/config.yaml"
-            _config_data: "{{ _config_raw | combine(_config_override) | to_nice_json(indent=2) }}"
-          vars:
-            _config_raw: "{{ _kubeconfig_slurp['content'] | b64decode | from_yaml }}"
-            _config_cluster: "{{ _config_raw.clusters[0] }}"
-            _config_override:
-              clusters:
-                - name: "{{ _config_cluster.name }}"
-                  cluster:
-                    server: "https://{{ ansible_default_ipv4.address }}:6443"
-                    certificate-authority-data: "{{ _config_cluster.cluster['certificate-authority-data'] }}"
-
-        - name: Copy kubeconfig to local tempdir
-          ansible.builtin.copy:
-            dest: "{{ _config_path }}"
-            content: "{{ _config_data }}"
-            mode: "u=rw,go=r"
-          delegate_to: localhost
-          changed_when: false
+            _config_path: "{{ molecule_local_kubeconfig }}"
 
         - name: Validate secret namespaces
           ansible.builtin.assert:
@@ -439,6 +413,15 @@
                 - _app_data | length > 0
                 - _app_failed | length == 0
 
+            - name: Debug argocd applications
+              ansible.builtin.debug:
+                msg: "The following argocd applications have been deployed successfully [{{ _app_success | join(', ') }}]"
+              vars:
+                _app_data: "{{ _argocd_app_data.stdout | from_json }}"
+                _app_healthy: "{{ _app_data['items'] | selectattr('status.health.status', 'equalto', 'Healthy') }}"
+                _app_sync: "{{ _app_healthy | selectattr('status.sync.status', 'equalto', 'Synced') }}"
+                _app_success: "{{ _app_sync | map(attribute='metadata.name') }}"
+
           rescue:
             - name: Debug failed applications
               ansible.builtin.fail:
@@ -449,13 +432,6 @@
                 _app_outofsync: "{{ _app_unhealthy | rejectattr('status.sync.status', 'equalto', 'Synced') }}"
                 _app_failed: "{{ _app_unhealthy + _app_outofsync }}"
                 _app_names: "{{ _app_failed | map(attribute='metadata.name') }}"
-
-      always:
-        - name: Remove local tempdir
-          ansible.builtin.file:
-            path: "{{ _tempdir.path }}"
-            state: absent
-          changed_when: false
 
 - name: Verify RKE2 cluster update status
   hosts: rke2_server:rke2_agent

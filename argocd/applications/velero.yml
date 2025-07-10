@@ -14,9 +14,20 @@ spec:
     targetRevision: "10.0.8"
     helm:
       valuesObject:
+        deployNodeAgent: true
+        features: enableCSI
+        snapshotsEnabled: false
         configuration:
+          defaultVolumesToFsBackup: true
           backupStorageLocation: []
           volumeSnapshotLocation: []
+        initContainers:
+          - name: velero-plugin-for-aws
+            image: velero/velero-plugin-for-aws:v1.8.0
+            imagePullPolicy: IfNotPresent
+            volumeMounts:
+              - mountPath: /target
+                name: plugins
   destination:
     server: https://kubernetes.default.svc
     namespace: velero
@@ -26,3 +37,12 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+---
+kind: VolumeSnapshotClass
+apiVersion: snapshot.storage.k8s.io/v1
+metadata:
+  name: velero-longhorn-snapshots
+  labels:
+    velero.io/csi-volumesnapshot-class: "true"
+driver: driver.longhorn.io
+deletionPolicy: Retain

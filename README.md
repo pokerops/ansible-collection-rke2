@@ -20,6 +20,16 @@ Default installation uses [ArgoCD Applications](https://argo-cd.readthedocs.io/e
 - [MySQL Operator](https://github.com/mysql/mysql-operator)
 - [PGDG Operator](https://github.com/cloudnative-pg/cloudnative-pg)
 
+## To Do
+
+- Rename Velero scenario to PostgreSQL backup and restore
+- Add Molecule test scenario for Kafka backup and restore
+- Add Molecule test scenario for MySQL backup and restore
+- Add Molecule test scenario for Sealed Secrets backup and restore
+- Add Grafana operator to base cluster deployment
+- Add Grafana deployment to base cluster components
+- Add Molecule test scenario for Grafana backup and restore
+
 ## Collection Variables
 
 The following is the list of parameters intended for end-user manipulation:
@@ -54,6 +64,12 @@ Cluster wide parameters
 
 [1] rke2_certmanager_acme_email is required whenever rke2_certmanager_acme_secret is set
 [2] rke2_argocd_values default is as follows:
+
+Velero S3 backup parameters
+
+| Parameter         | Default | Type   | Description                            | Required |
+| :---------------- | ------: | :----- | :------------------------------------- | :------- |
+| rke2_cluster_name |     n/a | string | Cluster name, immutable after creation | yes      |
 
 ```yaml
 redis-ha:
@@ -95,6 +111,7 @@ global:
 - pokerops.rke2.secrets: Deploy cluster secrets
 - pokerops.rke2.init: Deploy base cluster components
 - pokerops.rke2.update: Start rke2 cluster services
+- pokerops.rke2.velero.s3: Start rke2 cluster services
 
 ## Testing
 
