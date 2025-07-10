@@ -17,7 +17,6 @@ Default installation uses [ArgoCD Applications](https://argo-cd.readthedocs.io/e
 - [Keel](https://keel.sh/)
 - [Kubernetes Reflector](https://github.com/emberstack/kubernetes-reflector)
 - [Strimzi Operator](https://strimzi.io/)
-- [MySQL Operator](https://github.com/mysql/mysql-operator)
 - [Zalando Operator](https://github.com/zalando/postgres-operator)
 
 ## To Do
