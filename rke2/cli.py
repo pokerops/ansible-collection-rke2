@@ -20,10 +20,36 @@ DEFAULT_GALAXY_PATH = Path("galaxy.yml")
 DEFAULT_ARGOCD_PATH = Path("roles/components/defaults/main/argocd.yml")
 VERSION_REGEX = r"v?[0-9]+\.[0-9]+\.[0-9]+$"
 
+
 type Version = str
 type Versions = list[Version]
 type HelmChartVersions = dict[str, Versions]
 type LogLevel = int
+
+
+class GithubChart(pydantic.BaseModel):
+    """Pydantic model representing a GitHub Helm chart."""
+
+    organization: str
+    repository: str
+
+    def chart(self) -> str:
+        """Return the chart URL."""
+        return f"oci://ghcr.io/{self.organization}/helm-charts/{self.repository}"
+
+    def latest(self) -> str:
+        """Return the releases URL."""
+        session = create_http_session()
+        response = session.get(f"https://api.github.com/repos/{self.organization}/{self.repository}/releases/latest")
+        response.raise_for_status()
+        release_data = response.json()  # pyright: ignore[reportAny]
+        chart_version = str(release_data["tag_name"])  # pyright: ignore[reportAny]
+        return chart_version
+
+
+GITHUB_CHARTS = [
+    GithubChart(organization="grafana", repository="grafana-operator"),
+]
 
 
 class Application(pydantic.BaseModel):
@@ -31,7 +57,7 @@ class Application(pydantic.BaseModel):
 
     class Spec(pydantic.BaseModel):
         class Source(pydantic.BaseModel):
-            repoURL: str
+            repoURL: str | None = None
             chart: str
             targetRevision: str = "HEAD"
 
@@ -109,7 +135,7 @@ def argocd_application(file: Path) -> Application | None:
             app: Application = Application(**app_data)  # pyright: ignore[reportAny]
             if app.apiVersion.startswith("argoproj.io/") and app.kind == "Application":
                 return app
-    except (yaml.YAMLError, FileNotFoundError):
+    except (yaml.YAMLError, FileNotFoundError, pydantic.ValidationError):
         pass
     except AttributeError as e:
         typer.echo(f"Error parsing file {file}: {e}")
@@ -119,9 +145,11 @@ def argocd_application(file: Path) -> Application | None:
 def argocd_application_chart(file: Path) -> Application | None:
     """Check if a file is an ArgoCD Application manifest with a Helm chart."""
     try:
+        valid_protocols = ["http://", "https://", "oci://"]
         app = argocd_application(file)
-        if app and app.spec.source.repoURL.startswith("http") and app.spec.source.chart:
-            return app
+        if app and app.spec and app.spec.source and app.spec.source.repoURL and app.spec.source.chart:
+            if any([app.spec.source.repoURL.startswith(proto) for proto in valid_protocols]):
+                return app
     except AttributeError as e:
         typer.echo(f"Error parsing file {file}: {e}")
     return None
@@ -153,17 +181,31 @@ def argocd_application_helm_index(session: requests.Session, app: Application) -
         try:
             chart_name = app.spec.source.chart
             chart_repo = app.spec.source.repoURL
-            helm_config = ["--registry-config", str(config_registry), "--repository-config", str(config_repository), "--repository-cache", str(config_cache)]
-            _ = run(["helm", "repo", "add", chart_name, chart_repo] + helm_config, check=True, capture_output=True, text=True)
-            _ = run(["helm", "repo", "update", chart_name] + helm_config, check=True, capture_output=True, text=True)
-            result = run(["helm", "search", "repo", f"{chart_name}/{chart_name}", "--output", "json"] + helm_config, check=True, capture_output=True, text=True)
-            chart_data = yaml.safe_load(result.stdout.strip())  # pyright: ignore[reportAny]
-            chart = HelmChart(**chart_data[0])  # pyright: ignore[reportAny]
-            return chart
+            if not chart_repo:
+                typer.echo(f"Skipping chart {chart_name} due to missing repoURL.")
+                return None
+            if chart_repo.startswith("http"):
+                helm_config = f"--registry-config {config_registry} --repository-config {config_repository} --repository-cache {config_cache}"
+                cmd_add = f"helm repo add {chart_name} {chart_repo} {helm_config}"
+                _ = run(cmd_add.split(), check=True, capture_output=True, text=True)
+                cmd_update = f"helm repo update {chart_name} {helm_config}"
+                _ = run(cmd_update.split(), check=True, capture_output=True, text=True)
+                cmd_search = f"helm search repo {chart_name}/{chart_name} --output json {helm_config}"
+                result = run(cmd_search.split(), check=True, capture_output=True, text=True)
+                chart_data = yaml.safe_load(result.stdout.strip())  # pyright: ignore[reportAny]
+                chart = HelmChart(**chart_data[0])  # pyright: ignore[reportAny]
+                return chart
+            elif chart_repo in [gh.chart() for gh in GITHUB_CHARTS]:
+                github_repos = [gh for gh in GITHUB_CHARTS if gh.chart() == chart_repo]
+                chart_version = github_repos[0].latest()
+                return HelmChart(
+                    name=chart_name,
+                    version=chart_version,
+                )
         except (CalledProcessError, yaml.YAMLError, FileNotFoundError):
             typer.echo(f"Error fetching Helm chart index for {app.spec.source.repoURL}")
             return None
-        except AttributeError as e:
+        except (AttributeError, requests.HTTPError) as e:
             typer.echo(f"Error parsing Helm index data: {e}")
             return None
 
@@ -233,10 +275,10 @@ def update(
         typer.echo(f"No YAML files found in {', '.join([str(d) for d in directories])}")
         return
 
-    charts = [chart for file in yaml_files if (chart := argocd_application_chart(file))]
+    helm_charts = [chart for file in yaml_files if (chart := argocd_application_chart(file))]
     session = create_http_session()
-    indices = [argocd_application_helm_index(session, chart) for chart in charts]
-    for index, chart in zip(indices, charts):
+    indices = [argocd_application_helm_index(session, chart) for chart in helm_charts]
+    for index, chart in zip(indices, helm_charts):
         _name = chart.spec.source.chart
         if index is None:
             typer.echo(f"Skipping chart {_name} update due to index fetch error.")

@@ -13,3 +13,18 @@
         source:
           helm:
             valuesObject: "{{ rke2_longhorn_values }}"
+
+- name: Deploy longhorn snapshotclass
+  kubernetes.core.k8s:
+    state: present
+    apply: true
+    kubeconfig: "{{ rke2_config_path }}"
+    resource_definition:
+      kind: VolumeSnapshotClass
+      apiVersion: snapshot.storage.k8s.io/v1
+      metadata:
+        name: longhorn-snapshots
+        labels:
+          velero.io/csi-volumesnapshot-class: "true"
+      driver: driver.longhorn.io
+      deletionPolicy: Retain
