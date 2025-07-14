@@ -11,7 +11,8 @@
     "yq-go@latest",
     "uv@latest",
     "velero@latest",
-    "postgresql@latest"
+    "postgresql@latest",
+    "libisoburn@latest"
   ],
   "shell": {
     "init_hook": [". .venv/bin/activate"],
