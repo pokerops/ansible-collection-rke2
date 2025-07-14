@@ -237,6 +237,122 @@
         }
       }
     },
+    "libisoburn@latest": {
+      "last_modified": "2025-07-07T01:36:15Z",
+      "resolved": "github:NixOS/nixpkgs/2defa37146df235ef62f566cde69930a86f14df1#libisoburn",
+      "source": "devbox-search",
+      "version": "1.5.6",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/3r7glwphdn991id5pjh7sc5dcvla3c06-libisoburn-1.5.6",
+              "default": true
+            },
+            {
+              "name": "man",
+              "path": "/nix/store/da6xyjkhwbw2m1crdbp2r6wdvj32fkcy-libisoburn-1.5.6-man",
+              "default": true
+            },
+            {
+              "name": "info",
+              "path": "/nix/store/m6xw69q673146kkf5sk3s7vlnljk51dv-libisoburn-1.5.6-info"
+            },
+            {
+              "name": "lib",
+              "path": "/nix/store/5yv2hqx6vma2nilr2bgwwac69pb2nikw-libisoburn-1.5.6-lib"
+            },
+            {
+              "name": "dev",
+              "path": "/nix/store/r9aqvn4wylppbxgdfdd9qcfpm0dbv640-libisoburn-1.5.6-dev"
+            }
+          ],
+          "store_path": "/nix/store/3r7glwphdn991id5pjh7sc5dcvla3c06-libisoburn-1.5.6"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/6hhjiahwdlrliavch9rkbvr1520rv8yh-libisoburn-1.5.6",
+              "default": true
+            },
+            {
+              "name": "man",
+              "path": "/nix/store/98xnjgfvprhmf3xhvy7mx6h71d58ygik-libisoburn-1.5.6-man",
+              "default": true
+            },
+            {
+              "name": "dev",
+              "path": "/nix/store/cgjr9wy4lc4vxji6143v55z43rrf8bh7-libisoburn-1.5.6-dev"
+            },
+            {
+              "name": "info",
+              "path": "/nix/store/2p4743sm5a170yb2s3bw9c668w2nm1qy-libisoburn-1.5.6-info"
+            },
+            {
+              "name": "lib",
+              "path": "/nix/store/4g42asc0fg784bdj51ppykxnyj1sa5kb-libisoburn-1.5.6-lib"
+            }
+          ],
+          "store_path": "/nix/store/6hhjiahwdlrliavch9rkbvr1520rv8yh-libisoburn-1.5.6"
+        },
+        "x86_64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/30hv1q5i46li4cmrh5zchb1igr64jqyv-libisoburn-1.5.6",
+              "default": true
+            },
+            {
+              "name": "man",
+              "path": "/nix/store/ii8vchsjgx6s5nixxpcngynzxyr1xk1i-libisoburn-1.5.6-man",
+              "default": true
+            },
+            {
+              "name": "dev",
+              "path": "/nix/store/asa7d795zm0n1dj1hajf9zcb5wvrqynw-libisoburn-1.5.6-dev"
+            },
+            {
+              "name": "info",
+              "path": "/nix/store/203l3qws9cn1sldahv13ixpr646vrwmh-libisoburn-1.5.6-info"
+            },
+            {
+              "name": "lib",
+              "path": "/nix/store/m4sp9cmg9vl0giv8xkb749jf76qv85fv-libisoburn-1.5.6-lib"
+            }
+          ],
+          "store_path": "/nix/store/30hv1q5i46li4cmrh5zchb1igr64jqyv-libisoburn-1.5.6"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/3r935bs7gzial7bw9s1s2kg03q7wbv9f-libisoburn-1.5.6",
+              "default": true
+            },
+            {
+              "name": "man",
+              "path": "/nix/store/wi7fd4kzxvvhi9s5c2z6lwz9w4l1xshn-libisoburn-1.5.6-man",
+              "default": true
+            },
+            {
+              "name": "dev",
+              "path": "/nix/store/im8dmaay3pznq6wnr1wx3xhvnlr921pp-libisoburn-1.5.6-dev"
+            },
+            {
+              "name": "info",
+              "path": "/nix/store/3hlviirfk4cb2bkxyyf2ji4dcmy40bap-libisoburn-1.5.6-info"
+            },
+            {
+              "name": "lib",
+              "path": "/nix/store/66vza6hq6i9hphq75ww33ydx6ka4plwk-libisoburn-1.5.6-lib"
+            }
+          ],
+          "store_path": "/nix/store/3r935bs7gzial7bw9s1s2kg03q7wbv9f-libisoburn-1.5.6"
+        }
+      }
+    },
     "libvirt@latest": {
       "last_modified": "2025-05-12T14:38:58Z",
       "resolved": "github:NixOS/nixpkgs/eaeed9530c76ce5f1d2d8232e08bec5e26f18ec1#libvirt",
