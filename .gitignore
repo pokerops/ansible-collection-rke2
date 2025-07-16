@@ -1,13 +1,14 @@
 # files
 .kubeconfig
 .env
+.python-version
 
 # directories
 .venv/
 .ansible/
 .devbox/
-.python-version
 ansible_collections/
+libvirt/
 
 # globs
 **/__pycache__/**
