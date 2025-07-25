@@ -38,7 +38,7 @@ provisioner:
     prepare: ../common/prepare.yml
     converge: ../common/install.yml
     side_effect: backup.yml
-    cleanup: ../common/cleanup.yml
+    destroy: ../common/destroy.yml
   config_options:
     defaults:
       callbacks_enabled: ansible.posix.profile_tasks
@@ -124,4 +124,3 @@ scenario:
     - side_effect
     - verify
     - destroy
-    - cleanup

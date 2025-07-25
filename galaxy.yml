@@ -19,5 +19,10 @@ documentation: http://github.com/pokerops/ansible-collection-rke2
 homepage: http://github.com/pokerops/ansible-collection-rke2
 issues: http://github.com/pokerops/ansible-collection-rke2/issues
 build_ignore:
+  - .git
   - .devbox
   - .venv
+  - .ansible
+  - ansible_collections
+  - argocd
+  - libvirt

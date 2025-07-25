@@ -2,9 +2,6 @@
 roles:
   - name: lablabs.rke2
 collections:
-  - name: pokerops.rke2
-    source: .
-    type: dir
   - name: nephelaiio.plugins
   - name: nephelaiio.consul
   - name: nephelaiio.libvirt
