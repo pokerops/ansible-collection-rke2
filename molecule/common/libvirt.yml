@@ -1,3 +1,6 @@
 ---
+- name: Import libvirt prepare playbook
+  import_playbook: nephelaiio.libvirt.prepare
+
 - name: Import libvirt create playbook
   import_playbook: nephelaiio.libvirt.create

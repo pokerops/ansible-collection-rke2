@@ -38,7 +38,6 @@ provisioner:
     prepare: ../common/prepare.yml
     converge: ../common/install.yml
     side_effect: ../common/deploy.yml
-    cleanup: ../common/cleanup.yml
     destroy: ../common/destroy.yml
     verify: ../common/verify.yml
   config_options:
@@ -84,8 +83,6 @@ scenario:
     - converge
   destroy_sequence:
     - destroy
-  cleanup_sequence:
-    - cleanup
   test_sequence:
     - dependency
     - create
@@ -93,4 +90,4 @@ scenario:
     - converge
     - side_effect
     - verify
-    - cleanup
+    - destroy

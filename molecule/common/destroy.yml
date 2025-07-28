@@ -1,4 +1,120 @@
 ---
+- name: Archive RKE2 install logs
+  hosts: rke2_server
+  gather_facts: true
+  become: true
+  vars:
+    _logfile: "{{ molecule_install_log | default('/tmp/install') }}"
+  tasks:
+    - name: Ping host
+      ansible.builtin.ping:
+      register: _ping_check
+      ignore_unreachable: true
+      failed_when: false
+
+    - name: End play for unreachable hosts
+      ansible.builtin.meta: end_host
+      when: _ping_check is unreachable
+
+    - name: Gather facts
+      ansible.builtin.setup:
+
+    - name: Create install log directory
+      ansible.builtin.file:
+        dest: "{{ _logfile | dirname }}"
+        state: directory
+        mode: "u=rwx,go=rx"
+      delegate_to: localhost
+      run_once: true
+
+    - name: Archive hostfile
+      block:
+        - name: Slurp hostfile
+          ansible.builtin.slurp:
+            src: /etc/hosts
+          register: _rke2_hostfile_slurp
+
+        - name: Create hostfile archive
+          ansible.builtin.copy:
+            dest: "{{ _logfile }}.{{ inventory_hostname }}.hostfile"
+            content: "{{ _rke2_hostfile_slurp['content'] | b64decode }}"
+            mode: "u=rw,go=r"
+          delegate_to: localhost
+
+    - name: Archive RKE2 install logs
+      block:
+        - name: Stat cluster configuration
+          ansible.builtin.stat:
+            path: /etc/rancher/rke2/config.yaml
+          register: _rke2_clusterconfig_stat
+
+        - name: Archive cluster configuration
+          when: _rke2_clusterconfig_stat.stat.exists
+          block:
+            - name: Slurp cluster configuration
+              ansible.builtin.slurp:
+                src: /etc/rancher/rke2/config.yaml
+              register: _rke2_clusterconfig_slurp
+
+            - name: Create cluster configuration archive
+              ansible.builtin.copy:
+                dest: "{{ _logfile }}.{{ inventory_hostname }}.config.yaml.{{ ansible_date_time.iso8601_basic_short }}"
+                content: "{{ _rke2_clusterconfig_slurp['content'] | b64decode }}"
+                mode: "u=rw,go=r"
+              delegate_to: localhost
+
+        - name: Query systemd logs
+          ansible.builtin.shell: journalctl -rxu rke2-server
+          register: _rke2_journalctl
+          changed_when: false
+
+        - name: Create systemd log archive
+          ansible.builtin.copy:
+            dest: "{{ _logfile }}.{{ inventory_hostname }}.journalctl.{{ ansible_date_time.iso8601_basic_short }}"
+            content: "{{ _rke2_journalctl.stdout }}"
+            mode: "u=rw,go=r"
+          delegate_to: localhost
+
+        - name: Stat install kubeconfig
+          ansible.builtin.stat:
+            path: /etc/rancher/rke2/rke2.yaml
+          register: _rke2_kubeconfig_stat
+
+        - name: Archive install kubeconfig
+          when: _rke2_kubeconfig_stat.stat.exists
+          block:
+            - name: Slurp install kubeconfig
+              ansible.builtin.slurp:
+                src: /etc/rancher/rke2/rke2.yaml
+              register: _rke2_kubeconfig_slurp
+
+            - name: Create install kubeconfig archive
+              ansible.builtin.copy:
+                dest: "{{ _logfile }}.{{ inventory_hostname }}.kubeconfig.install.{{ ansible_date_time.iso8601_basic_short }}"
+                content: "{{ _rke2_kubeconfig_slurp['content'] | b64decode }}"
+                mode: "u=rw,go=r"
+              delegate_to: localhost
+
+        - name: Stat user kubeconfig
+          ansible.builtin.stat:
+            path: "~{{ ansible_user_id }}/.kube/config"
+          register: _rke2_kubeconfig_stat
+
+        - name: Archive user kubeconfig
+          when: _rke2_kubeconfig_stat.stat.exists
+          block:
+            - name: Slurp user kubeconfig
+              ansible.builtin.slurp:
+                src: "~{{ ansible_user_id }}/.kube/config"
+              register: _rke2_kubeconfig_slurp
+
+            - name: Create install kubeconfig archive
+              ansible.builtin.copy:
+                dest: "{{ _logfile }}.{{ inventory_hostname }}.kubeconfig.user.{{ ansible_date_time.iso8601_basic_short }}"
+                content: "{{ _rke2_kubeconfig_slurp['content'] | b64decode }}"
+                mode: "u=rw,go=r"
+              delegate_to: localhost
+
 - name: Clean ingress hostfile entries
   hosts: rke2_server
   run_once: true
@@ -6,14 +122,15 @@
   vars_files:
     - ../../playbooks/vars/main.yml
   tasks:
-    - name: Ping host to ensure connectivity
+    - name: Ping host
       ansible.builtin.ping:
-      register: _ping_query
-      ignore_errors: true
+      register: _ping_check
+      ignore_unreachable: true
+      failed_when: false
 
-    - name: End play for unreachable cluster
-      ansible.builtin.meta: end_play
-      when: _ping_query is unreachable
+    - name: End play for unreachable hosts
+      ansible.builtin.meta: end_host
+      when: _ping_check is unreachable
 
     - name: Query cluster ingresses
       ansible.builtin.command:
