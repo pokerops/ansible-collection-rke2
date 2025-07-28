@@ -28,12 +28,12 @@ rke2_argocd_values:
         nginx.ingress.kubernetes.io/ssl-redirect: "true"
         nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
         nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
-      certificate:
-        enabled: true
-        domain: "{{ rke2_argocd_hostname }}"
-        issuer:
-          name: "{{ rke2_certmanager_issuer_name }}"
-          kind: ClusterIssuer
+    certificate:
+      enabled: true
+      domain: "{{ rke2_argocd_hostname }}"
+      issuer:
+        name: "{{ rke2_certmanager_issuer_name }}"
+        kind: ClusterIssuer
   repoServer:
     replicas: "{{ rke2_argocd_reposerver_replicas }}"
   applicationSet:
