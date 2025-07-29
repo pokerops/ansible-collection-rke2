@@ -24,7 +24,7 @@
         _ingress_all: "{{ _ingress_data['items'] }}"
         _ingress_lbs: "{{ _ingress_all | selectattr('status.loadBalancer', 'defined') | map(attribute='status.loadBalancer') }}"
         _ingress_ready: "{{ _ingress_lbs | selectattr('ingress', 'defined') | map(attribute='ingress') | list }}"
-      when: (_ingress_all | length) == (_ingress_ready | length)
+      when: (_ingress_all | length) != (_ingress_ready | length)
 
     - name: Set ingress facts
       ansible.builtin.set_fact:
