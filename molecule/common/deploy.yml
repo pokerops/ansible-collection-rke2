@@ -21,6 +21,7 @@
         _ingress_ingress: "{{ _ingress_lbs | selectattr('ingress', 'defined') | map(attribute='ingress') | list }}"
       ignore_errors: true
       failed_when: (_ingress_items | length) == (_ingress_ingress | length)
+      become: true
 
     - name: Exit on ingress deployment failure
       ansible.builtin.meta: end_play
