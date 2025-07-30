@@ -1,10 +1,27 @@
 ---
-- name: Deploy certmanager application
+- name: Deploy cert-manager chart
   kubernetes.core.k8s:
     state: present
-    apply: true
     kubeconfig: "{{ rke2_config_path }}"
-    resource_definition: "{{ lookup('ansible.builtin.template', 'templates/certmanager.yml' ) | from_yaml }}"
+    resource_definition:
+      apiVersion: helm.cattle.io/v1
+      kind: HelmChart
+      metadata:
+        name: cert-manager
+        namespace: kube-system
+      spec:
+        chart: "{{ rke2_certmanager_chart.name }}"
+        targetNamespace: "{{ rke2_certmanager_chart.namespace }}"
+        createNamespace: true
+        repo: "{{ rke2_certmanager_chart.repo }}"
+        valuesContent: |-
+          crds:
+            enabled: true
+          podDnsPolicy: None
+          podDnsConfig:
+            nameservers:
+              - 1.1.1.1
+              - 8.8.8.8
 
 - name: Wait for cluster-issuer crd
   kubernetes.core.k8s_info:
@@ -36,7 +53,7 @@
 
     - name: Create certmanager secret
       kubernetes.core.k8s:
-        namespace: cert-manager
+        namespace: "{{ rke2_certmanager_chart.namespace }}"
         apply: true
         kubeconfig: "{{ rke2_config_path }}"
         state: present
@@ -53,7 +70,7 @@
 
     - name: Create LetsEncrypt issuer
       kubernetes.core.k8s:
-        namespace: cert-manager
+        namespace: "{{ rke2_certmanager_chart.namespace }}"
         kubeconfig: "{{ rke2_config_path }}"
         apply: true
         state: present
@@ -83,7 +100,7 @@
     - name: Create bootstrap issuer
       kubernetes.core.k8s:
         name: bootstrap-issuer
-        namespace: cert-manager
+        namespace: "{{ rke2_certmanager_chart.namespace }}"
         kubeconfig: "{{ rke2_config_path }}"
         apply: true
         state: present
@@ -99,7 +116,7 @@
 
     - name: Create self-signed ca certificate
       kubernetes.core.k8s:
-        namespace: cert-manager
+        namespace: "{{ rke2_certmanager_chart.namespace }}"
         kubeconfig: "{{ rke2_config_path }}"
         apply: true
         state: present
@@ -123,6 +140,7 @@
 
     - name: Create self-signed cluster issuer
       kubernetes.core.k8s:
+        namespace: "{{ rke2_certmanager_chart.namespace }}"
         kubeconfig: "{{ rke2_config_path }}"
         apply: true
         state: present

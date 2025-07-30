@@ -1,7 +1,7 @@
 ---
 - name: Archive RKE2 install logs
   hosts: rke2_server
-  gather_facts: true
+  gather_facts: false
   become: true
   vars:
     _logfile: "{{ molecule_install_log | default('/tmp/install') }}"

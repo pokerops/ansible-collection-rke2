@@ -94,7 +94,7 @@ provisioner:
                     - ApplyOutOfSyncOnly=true
                 revisionHistoryLimit:
           # Test rke2 params
-          rke2_retry_num: 20
+          rke2_retry_num: 30
           rke2_skip_deploy: false
           rke2_velero_s3: "{{ rke2_cluster_name | replace('.', '-') }}"
           rke2_velero_s3_region: us-east-1

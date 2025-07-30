@@ -8,5 +8,4 @@ collections:
   - name: nephelaiio.plugins
   - name: nephelaiio.consul
   - name: nephelaiio.libvirt
-  - name: community.molecule
   - name: ansible.utils

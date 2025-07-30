@@ -510,15 +510,25 @@
             wait: true
             wait_timeout: 300
 
+        - name: Query existing PVCs
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ kubeconfig_path }}"
+            api_version: v1
+            kind: PersistentVolumeClaim
+            namespace: "{{ postgres_namespace }}"
+          register: existing_pvcs
+
         - name: Force delete all PVCs
           kubernetes.core.k8s:
             kubeconfig: "{{ kubeconfig_path }}"
             api_version: v1
             kind: PersistentVolumeClaim
             namespace: "{{ postgres_namespace }}"
+            name: "{{ item }}"
             state: absent
             wait: false
           ignore_errors: true
+          loop: "{{ existing_pvcs.resources | map(attribute='metadata.name') }}"
 
         - name: Wait for PVC deletion to complete
           kubernetes.core.k8s_info:
@@ -544,10 +554,10 @@
             api_version: v1
             kind: PersistentVolume
             namespace: "{{ postgres_namespace }}"
-            name: "{{ item.metadata.name }}"
+            name: "{{ item }}"
             state: absent
             wait: true
-          loop: "{{ existing_pvs.resources }}"
+          loop: "{{ existing_pvs.resources | map(attribute='metadata.name') }}"
 
         - name: Delete PostgreSQL namespace
           kubernetes.core.k8s:
