@@ -30,17 +30,37 @@ type LogLevel = int
 class GithubChart(pydantic.BaseModel):
     """Pydantic model representing a GitHub Helm chart."""
 
-    organization: str
-    repository: str
+    project: str
+    _repository: str
+    _organization: str
+    _chart: str
+    _project: str
+
+    def __init__(self, project: str) -> None:
+        """Initialize GithubChart organization."""
+        super().__init__(project=project)
+        match project:
+            case "grafana-operator":
+                self._repository = project
+                self._organization = "grafana"
+                chart_path = "helm_charts"
+            case "kserve-crd":
+                self._repository = "kserve"
+                self._organization = "kserve"
+                chart_path = "charts"
+            case _:
+                raise ValueError(f"Unsupported repository: {project}")
+        self._chart = f"oci://ghcr.io/{self._organization}/{chart_path}/{project}"
+        self._project = f"https://api.github.com/repos/{self._organization}/{self._repository}/releases/latest"
 
     def chart(self) -> str:
         """Return the chart URL."""
-        return f"oci://ghcr.io/{self.organization}/helm-charts/{self.repository}"
+        return self._chart
 
     def latest(self) -> str:
         """Return the releases URL."""
         session = create_http_session()
-        response = session.get(f"https://api.github.com/repos/{self.organization}/{self.repository}/releases/latest")
+        response = session.get(self._project)
         response.raise_for_status()
         release_data = response.json()  # pyright: ignore[reportAny]
         chart_version = str(release_data["tag_name"])  # pyright: ignore[reportAny]
@@ -48,7 +68,8 @@ class GithubChart(pydantic.BaseModel):
 
 
 GITHUB_CHARTS = [
-    GithubChart(organization="grafana", repository="grafana-operator"),
+    GithubChart(project="grafana-operator"),
+    GithubChart(project="kserve-crd"),
 ]
 
 
@@ -178,6 +199,7 @@ def argocd_application_helm_index(session: requests.Session, app: Application) -
         create_file(config_repository)
         create_file(config_registry)
         _ = os.makedirs(config_cache, exist_ok=True)
+        github_charts = [gh.chart() for gh in GITHUB_CHARTS]
         try:
             chart_name = app.spec.source.chart
             chart_repo = app.spec.source.repoURL
@@ -195,13 +217,16 @@ def argocd_application_helm_index(session: requests.Session, app: Application) -
                 chart_data = yaml.safe_load(result.stdout.strip())  # pyright: ignore[reportAny]
                 chart = HelmChart(**chart_data[0])  # pyright: ignore[reportAny]
                 return chart
-            elif chart_repo in [gh.chart() for gh in GITHUB_CHARTS]:
+            elif chart_repo in github_charts:
                 github_repos = [gh for gh in GITHUB_CHARTS if gh.chart() == chart_repo]
                 chart_version = github_repos[0].latest()
                 return HelmChart(
                     name=chart_name,
                     version=chart_version,
                 )
+            else:
+                typer.echo(f"Unsupported Helm chart repository URL: {chart_repo}")
+                return None
         except (CalledProcessError, yaml.YAMLError, FileNotFoundError):
             typer.echo(f"Error fetching Helm chart index for {app.spec.source.repoURL}")
             return None
