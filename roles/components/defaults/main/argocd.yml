@@ -28,6 +28,7 @@ rke2_argocd_values:
         nginx.ingress.kubernetes.io/ssl-redirect: "true"
         nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
         nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+      tls: true
     certificate:
       enabled: true
       domain: "{{ rke2_argocd_hostname }}"
@@ -49,7 +50,7 @@ rke2_argocd_apps_chart:
   namespace: "argocd"
   repo: "https://argoproj.github.io/argo-helm"
   release: "2.0.2"
-rke2_argocd_apps_pokerops_revision: 0.4.3
+rke2_argocd_apps_pokerops_revision: 0.4.4
 rke2_argocd_apps_values_extra: {}
 rke2_argocd_apps_values_base:
   applications:
@@ -74,6 +75,5 @@ rke2_argocd_apps_values_base:
       info:
         - name: url
           value: https://github.com/pokerops/ansible-collection-rke2
-rke2_argocd_apps_values:
-  "{{ rke2_argocd_apps_values_base | combine(rke2_argocd_apps_values_extra,
+rke2_argocd_apps_values: "{{ rke2_argocd_apps_values_base | combine(rke2_argocd_apps_values_extra,
   recursive=True) }}"
