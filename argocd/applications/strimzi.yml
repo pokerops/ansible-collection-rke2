@@ -11,7 +11,7 @@ spec:
   source:
     chart: strimzi-kafka-operator
     repoURL: https://strimzi.io/charts/
-    targetRevision: "0.46.1"
+    targetRevision: "0.47.0"
     helm:
       valuesObject:
         watchAnyNamespace: true
