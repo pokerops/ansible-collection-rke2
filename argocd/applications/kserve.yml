@@ -10,7 +10,7 @@ spec:
   project: default
   source:
     chart: kserve
-    repoURL: oci://ghcr.io/kserve/charts/kserve-crd
+    repoURL: oci://ghcr.io/kserve/charts/kserve
     targetRevision: "v0.15.2"
     helm:
       valuesObject:
