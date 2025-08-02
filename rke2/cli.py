@@ -4,7 +4,6 @@ import os
 import tempfile
 from itertools import chain
 from pathlib import Path
-from re import match
 from subprocess import CalledProcessError, run
 from typing import Annotated
 

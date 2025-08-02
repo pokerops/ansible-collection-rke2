@@ -50,7 +50,7 @@ rke2_argocd_apps_chart:
   namespace: "argocd"
   repo: "https://argoproj.github.io/argo-helm"
   release: "2.0.2"
-rke2_argocd_apps_pokerops_revision: 0.4.6
+rke2_argocd_apps_pokerops_revision: 0.4.7
 rke2_argocd_apps_values_extra: {}
 rke2_argocd_apps_values_base:
   applications:
