@@ -19,7 +19,7 @@ spec:
             deploymentMode: RawDeployment
             gateway:
               ingressGateway:
-                ingressClassName: nginx-private
+                className: nginx-private
   destination:
     server: https://kubernetes.default.svc
     namespace: kserve
