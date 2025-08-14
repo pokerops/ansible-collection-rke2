@@ -93,6 +93,10 @@ requirements: install
 		--force-with-deps .
 	@find ./ -name "*.ymle*" -delete
 
+deploy:
+	uv run ansible-galaxy collection install \
+		--force-with-deps .
+
 build: requirements
 	@uv run rke2 build
 	@git status --porcelain | wc -l | grep -q '^0$$' || (echo "Uncommitted build detected, please run build stage and commit changes" && exit 1)
