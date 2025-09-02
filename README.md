@@ -58,7 +58,7 @@ Cluster wide parameters
 | rke2_argocd_applicationset_replicas |                                  2 | int    | ArgoCD applicationset replicas, override for default ArgoCD chart values | no       |
 | rke2_argocd_apps_pokerops_revision  |                               HEAD | string | PokerOps ArgoCD revision, used to deploy base cluster assets             | no       |
 | rke2_longhorn_hostname              | "longhorn.{{ rke2_cluster_name }}" | string | Longhorn UI hostname                                                     | no       |
-| rke2_nolog                          |                               true | bool   | Debug task output                                                        | no       |
+| rke2_nolog                          |                               true | bool   | Toggle flag for logging sensitive statements                             | no       |
 
 [1] rke2_certmanager_acme_email is required whenever rke2_certmanager_acme_secret is set
 [2] rke2_argocd_values default is as follows:
