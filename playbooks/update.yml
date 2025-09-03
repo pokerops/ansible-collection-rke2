@@ -171,13 +171,13 @@
                     name: "{{ inventory_hostname }}"
                     state: drain
                     kubeconfig: "{{ _kubeconfig_path }}"
+                    pod_selectors: "{{ _rke2_drain_pod_selectors }}"
                     delete_options:
                       delete_emptydir_data: true
                       ignore_daemonsets: true
                       force: true
                       wait_sleep: 10
                       wait_timeout: "{{ _rke2_evict_timeout }}"
-                      pod_selectors: "{{ _rke2_drain_pod_selectors }}"
                   delegate_to: localhost
 
             - name: Query cluster node status
