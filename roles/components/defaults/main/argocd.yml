@@ -50,8 +50,9 @@ rke2_argocd_apps_chart:
   namespace: "argocd"
   repo: "https://argoproj.github.io/argo-helm"
   release: "2.0.2"
-rke2_argocd_apps_pokerops_revision: 0.4.11
+rke2_argocd_apps_pokerops_revision: 0.4.12
 rke2_argocd_apps_values_extra: {}
+rke2_argocd_apps_directory_include: "{*.yml,*.yaml}"
 rke2_argocd_apps_values_base:
   applications:
     cluster:
@@ -62,6 +63,8 @@ rke2_argocd_apps_values_base:
         path: argocd/applications/
         directory:
           recurse: false
+          include: "{{ rke2_argocd_apps_directory_include }}"
+          exclude: "{{ rke2_argocd_apps_directory_exclude | default(omit) }}"
       destination:
         server: https://kubernetes.default.svc
         namespace: default
