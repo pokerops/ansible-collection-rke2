@@ -167,15 +167,18 @@
 
               rescue:
                 - name: Force cluster node drain
-                  ansible.builtin.shell: |
-                    kubectl drain {{ inventory_hostname }} \
-                      --delete-emptydir-data=true \
-                      --force=true \
-                      --ignore-daemonsets=true \
-                      --timeout={{ _rke2_evict_timeout }}s \
-                      --pod-selector={{ _rke2_drain_pod_selectors | join(',') }}
+                  kubernetes.core.k8s_drain:
+                    name: "{{ inventory_hostname }}"
+                    state: drain
+                    kubeconfig: "{{ _kubeconfig_path }}"
+                    delete_options:
+                      delete_emptydir_data: true
+                      ignore_daemonsets: true
+                      force: true
+                      wait_sleep: 10
+                      wait_timeout: "{{ _rke2_evict_timeout }}"
+                      pod_selectors: "{{ _rke2_drain_pod_selectors }}"
                   delegate_to: localhost
-                  tags: skip_ansible_lint
 
             - name: Query cluster node status
               kubernetes.core.k8s_info:
