@@ -174,7 +174,7 @@
                       --ignore-daemonsets=true \
                       --timeout={{ _rke2_evict_timeout }}s \
                       --pod-selector={{ _rke2_drain_pod_selectors | join(',') }}
-                  delegate_to: "{{ _rke2_play_master if _rke2_play_master != inventory_hostname else _rke2_play_standby }}"
+                  delegate_to: localhost
                   tags: skip_ansible_lint
 
             - name: Query cluster node status
