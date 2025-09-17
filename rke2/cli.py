@@ -189,7 +189,7 @@ def create_file(path: Path, content: str | None = None) -> None:
         typer.echo(f"Error writing to file {path}: {e}")
 
 
-def argocd_application_helm_index(session: requests.Session, app: Application) -> HelmChart | None:
+def argocd_application_helm_index(app: Application) -> HelmChart | None:
     """Retrieve and parse Helm repository using Helm commands"""
     with tempfile.TemporaryDirectory() as temp_dir:
         config_repository = Path(temp_dir) / "repository.yaml"
@@ -300,8 +300,7 @@ def update(
         return
 
     helm_charts = [chart for file in yaml_files if (chart := argocd_application_chart(file))]
-    session = create_http_session()
-    indices = [argocd_application_helm_index(session, chart) for chart in helm_charts]
+    indices = [argocd_application_helm_index(chart) for chart in helm_charts]
     for index, chart in zip(indices, helm_charts):
         _name = chart.spec.source.chart
         if index is None:

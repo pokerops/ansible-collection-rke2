@@ -1,6 +1,24 @@
 ---
-- name: Deploy RKE2 cluster components
+- name: Test Cluster API
   hosts: "{{ rke2_server_group }}"
+  vars_files:
+    - main.yml
+  tasks:
+    - name: Test kubectl cluster access
+      ansible.builtin.command:
+        cmd: "kubectl get nodes --kubeconfig /etc/rancher/rke2/rke2.yaml"
+      register: _kubectl_get_nodes
+      ignore_errors: true
+      become: true
+
+    - name: Group online servers if cluster API is accessible
+      ansible.builtin.group_by:
+        key: "rke2_server_{{ _online | bool | ternary('online', 'offline') }}"
+      vars:
+        _online: "{{ _kubectl_get_nodes.rc is succeeded }}"
+
+- name: Deploy RKE2 cluster components
+  hosts: _rke_server_online
   vars_files:
     - main.yml
   tasks:
