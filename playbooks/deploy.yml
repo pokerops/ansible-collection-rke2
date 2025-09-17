@@ -10,6 +10,7 @@
       register: _kubectl_get_nodes
       ignore_errors: true
       become: true
+      changed_when: false
 
     - name: Group online servers if cluster API is accessible
       ansible.builtin.group_by:
