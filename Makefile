@@ -119,6 +119,9 @@ publish: build
 	uv run ansible-galaxy collection publish --api-key ${GALAXY_API_KEY} \
 		"${COLLECTION_NAMESPACE}-${COLLECTION_NAME}-${COLLECTION_VERSION}.tar.gz"
 
+local:
+	uv run ansible-galaxy collection install --force .
+
 version:
 	@uv run molecule --version
 

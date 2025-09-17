@@ -56,18 +56,6 @@
     - name: Create velero S3 cluster configuration
       delegate_to: localhost
       block:
-        - name: Create Velero namespace
-          kubernetes.core.k8s:
-            kubeconfig: "{{ _config_path }}"
-            definition:
-              apiVersion: v1
-              kind: Namespace
-              metadata:
-                name: velero
-                labels:
-                  app.kubernetes.io/name: velero
-            state: present
-
         - name: Copy kubeconfig to local tempdir
           ansible.builtin.copy:
             dest: "{{ _config_path }}"
