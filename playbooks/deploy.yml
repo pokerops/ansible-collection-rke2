@@ -19,7 +19,7 @@
         _online: "{{ _kubectl_get_nodes is succeeded }}"
 
 - name: Deploy RKE2 cluster components
-  hosts: _rke_server_online
+  hosts: _rke2_server_online
   vars_files:
     - main.yml
   tasks:
