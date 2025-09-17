@@ -16,7 +16,7 @@
       ansible.builtin.group_by:
         key: "rke2_server_{{ _online | bool | ternary('online', 'offline') }}"
       vars:
-        _online: "{{ _kubectl_get_nodes.rc is succeeded }}"
+        _online: "{{ _kubectl_get_nodes is succeeded }}"
 
 - name: Deploy RKE2 cluster components
   hosts: _rke_server_online
