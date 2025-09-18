@@ -435,12 +435,14 @@
                 _app_names: "{{ _app_failed | map(attribute='metadata.name') }}"
 
           always:
+            - name: Debug cluster status location
+              ansible.builtin.debug:
+                msg: "Cluster application status data saved to {{ molecule_install_dir }}/cluster_applications.json"
+
             - name: Debug cluster status
               ansible.builtin.copy:
                 content: "{{ _argocd_app_data.stdout | from_json | to_nice_json }}"
                 dest: "{{ molecule_install_dir }}/cluster_applications.json"
-              vars:
-                molecule_artifact_dir: "{{ molecule_install_dir }}"
               delegate_to: localhost
 
 - name: Verify RKE2 cluster update status
