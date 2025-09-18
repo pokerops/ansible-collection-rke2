@@ -412,10 +412,11 @@
               until:
                 - _app_data | length > 0
                 - _app_failed | length == 0
+              no_log: true
 
             - name: Debug argocd applications
               ansible.builtin.debug:
-                msg: "The following argocd applications have been deployed successfully [{{ _app_success | join(', ') }}]"
+                msg: "The following argocd applications have been deployed successfully [{{ _app_success | unique | join(', ') }}]"
               vars:
                 _app_data: "{{ _argocd_app_data.stdout | from_json }}"
                 _app_healthy: "{{ _app_data['items'] | selectattr('status.health.status', 'equalto', 'Healthy') }}"
@@ -425,13 +426,22 @@
           rescue:
             - name: Debug failed applications
               ansible.builtin.fail:
-                msg: "The following argocd applications are in failed status [{{ _app_names | join(', ') }}]"
+                msg: "The following argocd applications are in failed status [{{ _app_names | unique | join(', ') }}]"
               vars:
                 _app_data: "{{ _argocd_app_data.stdout | from_json }}"
                 _app_unhealthy: "{{ _app_data['items'] | rejectattr('status.health.status', 'equalto', 'Healthy') }}"
                 _app_outofsync: "{{ _app_unhealthy | rejectattr('status.sync.status', 'equalto', 'Synced') }}"
                 _app_failed: "{{ _app_unhealthy + _app_outofsync }}"
                 _app_names: "{{ _app_failed | map(attribute='metadata.name') }}"
+
+          always:
+            - name: Debug cluster status
+              ansible.builtin.copy:
+                content: "{{ _argocd_app_data.stdout | from_json | to_nice_json }}"
+                dest: "{{ molecule_install_dir }}/cluster_applications.json"
+              vars:
+                molecule_artifact_dir: "{{ molecule_install_dir }}"
+              delegate_to: localhost
 
 - name: Verify RKE2 cluster update status
   hosts: rke2_server:rke2_agent
