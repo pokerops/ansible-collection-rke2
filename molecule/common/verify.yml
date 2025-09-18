@@ -437,12 +437,20 @@
           always:
             - name: Debug cluster status location
               ansible.builtin.debug:
-                msg: "Cluster application status data saved to {{ molecule_install_dir }}/cluster_applications.json"
+                msg: "Cluster application status data saved to {{ molecule_logdir }}/cluster_applications.json"
+
+            - name: Create logdir
+              ansible.builtin.file:
+                path: "{{ molecule_logdir }}"
+                state: directory
+                owner: "{{ lookup('ansible.builtin.env', 'USER') }}"
+                mode: "u=rwx,g=rx,o="
+              run_once: true
 
             - name: Debug cluster status
               ansible.builtin.copy:
                 content: "{{ _argocd_app_data.stdout | from_json | to_nice_json }}"
-                dest: "{{ molecule_install_dir }}/cluster_applications.json"
+                dest: "{{ molecule_logdir }}/cluster_applications.json"
               delegate_to: localhost
 
 - name: Verify RKE2 cluster update status
