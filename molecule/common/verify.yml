@@ -1,5 +1,5 @@
 ---
-- name: Verify multipath deactivation
+- name: Verify OS configuration
   hosts: rke2_server:rke2_agent
   any_errors_fatal: true
   vars:
@@ -38,6 +38,81 @@
               - _multipath_start is failed
               - _multipath_start.stderr | regex_search('.* ' + _multipath_service + ' is masked.')
             fail_msg: "Got service start error {{ _multipath_start.stderr }}"
+
+    - name: Verify swap is disabled
+      ansible.builtin.assert:
+        that: ansible_swaptotal_mb == 0
+        fail_msg: "Swap is enabled with {{ ansible_swaptotal_mb }}MB"
+
+    - name: Query nofile soft limits
+      ansible.builtin.command:
+        cmd: "ulimit -Sn"
+      register: _nofile_limit
+      changed_when: false
+
+    - name: Verify nofile soft limits
+      ansible.builtin.assert:
+        that: _value == _expected
+        fail_msg: "nofile soft limit is set to {{ _value }}, expected {{ _expected }}"
+      vars:
+        _value: "{{ _nofile_limit.stdout | int }}"
+        _expected: "{{ _rke2_limits_nofile | int }}"
+
+    - name: Query nofile hard limits
+      ansible.builtin.command:
+        cmd: "ulimit -Hn"
+      register: _nofile_hard_limit
+      changed_when: false
+
+    - name: Verify nofile hard limits
+      ansible.builtin.assert:
+        that: _value == _expected
+        fail_msg: "nofile hard limit is set to {{ _value }}, expected {{ _expected }}"
+      vars:
+        _value: "{{ _nofile_hard_limit.stdout | int }}"
+        _expected: "{{ _rke2_limits_nofile | int }}"
+
+    - name: Query inotify max_user_instances
+      ansible.builtin.sysctl:
+        name: fs.inotify.max_user_instances
+      register: _inotify_max_user_instances
+      changed_when: false
+
+    - name: Verify inotify max_user_instances
+      ansible.builtin.assert:
+        that: _value == _expected
+        fail_msg: "fs.inotify.max_user_instances is set to {{ _value }}, expected {{ _expected }}"
+      vars:
+        _value: "{{ _inotify_max_user_instances.value | int }}"
+        _expected: "{{ _rke2_sysctl_inotify_max_user_instances | int }}"
+
+    - name: Query inotify max_user_watches
+      ansible.builtin.sysctl:
+        name: fs.inotify.max_user_watches
+      register: _inotify_max_user_watches
+      changed_when: false
+
+    - name: Verify inotify max_user_watches
+      ansible.builtin.assert:
+        that: _value == _expected
+        fail_msg: "fs.inotify.max_user_watches is set to {{ _value }}, expected {{ _expected }}"
+      vars:
+        _value: "{{ _inotify_max_user_watches.value | int }}"
+        _expected: "{{ _rke2_sysctl_inotify_max_user_watches | int }}"
+
+    - name: Query inotify max_queued_events
+      ansible.builtin.sysctl:
+        name: fs.inotify.max_queued_events
+      register: _inotify_max_queued_events
+      changed_when: false
+
+    - name: Verify inotify max_queued_events
+      ansible.builtin.assert:
+        that: _value == _expected
+        fail_msg: "fs.inotify.max_queued_events is set to {{ _value }}, expected {{ _expected }}"
+      vars:
+        _value: "{{ _inotify_max_queued_events.value | int }}"
+        _expected: "{{ _rke2_sysctl_inotify_max_queued_events | int }}"
 
 - name: Verify RKE2 install
   hosts: rke2_server
@@ -443,8 +518,9 @@
               ansible.builtin.file:
                 path: "{{ molecule_logdir }}"
                 state: directory
-                owner: "{{ lookup('ansible.builtin.env', 'USER') }}"
-                mode: "u=rwx,g=rx,o="
+                owner: root
+                group: root
+                mode: "u=rwx,go=rx"
               run_once: true
 
             - name: Debug cluster status
