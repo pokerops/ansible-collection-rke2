@@ -5,6 +5,7 @@ MAKEFILE_DIR := $(dir $(MAKEFILE_PATH))
 
 MOLECULE_SCENARIO ?= components
 MOLECULE_REVISION ?= $$(git rev-parse --abbrev-ref HEAD)
+MOLECULE_OUTPUT_DIR ?= /tmp/logs
 DEBIAN_RELEASE ?= bookworm
 UBUNTU_RELEASE ?= noble
 EL_RELEASE ?= 9
