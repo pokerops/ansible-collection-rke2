@@ -517,23 +517,27 @@
               ansible.builtin.debug:
                 msg: "Cluster application status data saved to {{ molecule_logdir }}/cluster_applications.json"
 
-            - name: Create logdir
-              ansible.builtin.file:
-                path: "{{ molecule_logdir }}"
-                state: directory
-                owner: root
-                group: root
+            - name: Store cluster status artifact
               run_once: true
-              become: true
+              block:
+                - name: Destroy logdir
+                  ansible.builtin.file:
+                    path: "{{ molecule_logdir }}"
+                    state: absent
+                  become: true
+                  delegate_to: localhost
 
-            - name: Debug cluster status
-              ansible.builtin.copy:
-                content: "{{ _argocd_app_data.stdout | from_json | to_nice_json }}"
-                owner: root
-                group: root
-                dest: "{{ molecule_logdir }}/cluster_applications.json"
-              delegate_to: localhost
-              become: true
+                - name: Create logdir
+                  ansible.builtin.file:
+                    path: "{{ molecule_logdir }}"
+                    state: directory
+                  delegate_to: localhost
+
+                - name: Debug cluster status
+                  ansible.builtin.copy:
+                    content: "{{ _argocd_app_data.stdout | from_json | to_nice_json }}"
+                    dest: "{{ molecule_logdir }}/cluster_applications.json"
+                  delegate_to: localhost
 
 - name: Verify RKE2 cluster update status
   hosts: rke2_server:rke2_agent
