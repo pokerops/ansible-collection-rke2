@@ -523,14 +523,17 @@
                 state: directory
                 owner: root
                 group: root
-                mode: "u=rwx,go=rx"
               run_once: true
+              become: true
 
             - name: Debug cluster status
               ansible.builtin.copy:
                 content: "{{ _argocd_app_data.stdout | from_json | to_nice_json }}"
+                owner: root
+                group: root
                 dest: "{{ molecule_logdir }}/cluster_applications.json"
               delegate_to: localhost
+              become: true
 
 - name: Verify RKE2 cluster update status
   hosts: rke2_server:rke2_agent
