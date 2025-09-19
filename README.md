@@ -13,10 +13,12 @@ An opinionated [ansible collection](https://galaxy.ansible.com/ui/repo/published
 
 Default installation uses [ArgoCD Applications](https://argo-cd.readthedocs.io/en/stable/user-guide/auto_sync/) to deploy and manage the following components:
 
-- [Sealed Secrets](https://github.com/bitnami-labs/sealed-secrets)
 - [Keel](https://keel.sh/)
+- [KServe](https://kserve.github.io/website/)
 - [Kubernetes Reflector](https://github.com/emberstack/kubernetes-reflector)
+- [Sealed Secrets](https://github.com/bitnami-labs/sealed-secrets)
 - [Strimzi Operator](https://strimzi.io/)
+- [Velero](https://velero.io/)
 - [Zalando Operator](https://github.com/zalando/postgres-operator)
 
 ## To Do
