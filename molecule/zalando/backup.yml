@@ -45,8 +45,8 @@
             object: "{{ rke2_velero_test_object_key }}"
             content: "{{ test_file_content }}"
             mode: put
-            aws_access_key: "{{ rke2_velero_s3_access_key_id }}"
-            aws_secret_key: "{{ rke2_velero_s3_secret_access_key }}"
+            access_key: "{{ rke2_velero_s3_access_key_id }}"
+            secret_key: "{{ rke2_velero_s3_secret_access_key }}"
             region: "{{ rke2_velero_s3_region }}"
           register: upload_result
 
@@ -56,8 +56,8 @@
             object: "{{ rke2_velero_test_object_key }}"
             mode: get
             dest: "{{ temp_file.path }}"
-            aws_access_key: "{{ rke2_velero_s3_access_key_id }}"
-            aws_secret_key: "{{ rke2_velero_s3_secret_access_key }}"
+            access_key: "{{ rke2_velero_s3_access_key_id }}"
+            secret_key: "{{ rke2_velero_s3_secret_access_key }}"
             region: "{{ rke2_velero_s3_region }}"
           register: download_result
 
@@ -78,8 +78,8 @@
             bucket: "{{ rke2_velero_s3_bucket }}"
             object: "{{ rke2_velero_test_object_key }}"
             mode: delobj
-            aws_access_key: "{{ rke2_velero_s3_access_key_id }}"
-            aws_secret_key: "{{ rke2_velero_s3_secret_access_key }}"
+            access_key: "{{ rke2_velero_s3_access_key_id }}"
+            secret_key: "{{ rke2_velero_s3_secret_access_key }}"
             region: "{{ rke2_velero_s3_region }}"
 
       rescue:
@@ -88,8 +88,8 @@
             bucket: "{{ rke2_velero_s3_bucket }}"
             object: "{{ rke2_velero_test_object_key }}"
             mode: delobj
-            aws_access_key: "{{ rke2_velero_s3_access_key_id }}"
-            aws_secret_key: "{{ rke2_velero_s3_secret_access_key }}"
+            access_key: "{{ rke2_velero_s3_access_key_id }}"
+            secret_key: "{{ rke2_velero_s3_secret_access_key }}"
             region: "{{ rke2_velero_s3_region }}"
           ignore_errors: true
 

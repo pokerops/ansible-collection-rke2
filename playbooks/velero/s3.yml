@@ -88,7 +88,7 @@
             kubeconfig: "{{ _config_path }}"
             kind: CustomResourceDefinition
             name: backupstoragelocations.velero.io
-          retries: "{{ _rke2_retry_num }}"
+          retries: "{{ _rke2_retry_num * 2 }}"
           delay: "{{ _rke2_retry_delay }}"
           register: backupstoragelocation_crd
           until: backupstoragelocation_crd.resources | length > 0

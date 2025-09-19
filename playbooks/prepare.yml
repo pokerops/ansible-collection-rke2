@@ -76,3 +76,27 @@
         limit_type: "-"
         limit_item: nofile
         value: "{{ _rke2_limits_nofile }}"
+
+    - name: Set fs.inotify.max_user_instances
+      ansible.posix.sysctl:
+        name: fs.inotify.max_user_instances
+        value: "{{ _rke2_sysctl_inotify_max_user_instances }}"
+        state: present
+        sysctl_set: true
+        reload: true
+
+    - name: Set fs.inotify.max_user_watches
+      ansible.posix.sysctl:
+        name: fs.inotify.max_user_watches
+        value: "{{ _rke2_sysctl_inotify_max_user_watches }}"
+        sysctl_set: true
+        state: present
+        reload: true
+
+    - name: Set fs.inotify.max_queued_events
+      ansible.posix.sysctl:
+        name: fs.inotify.max_queued_events
+        value: "{{ _rke2_sysctl_inotify_max_queued_events }}"
+        sysctl_set: true
+        state: present
+        reload: true

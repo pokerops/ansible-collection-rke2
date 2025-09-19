@@ -5,6 +5,7 @@ MAKEFILE_DIR := $(dir $(MAKEFILE_PATH))
 
 MOLECULE_SCENARIO ?= components
 MOLECULE_REVISION ?= $$(git rev-parse --abbrev-ref HEAD)
+MOLECULE_LOGDIR ?= /tmp/logs
 DEBIAN_RELEASE ?= bookworm
 UBUNTU_RELEASE ?= noble
 EL_RELEASE ?= 9
@@ -31,9 +32,10 @@ LOGIN_ARGS ?=
 all: install version lint test
 
 ubuntu:
-	make dependency create prepare \
-		MOLECULE_KVM_IMAGE=${UBUNTU_KVM_IMAGE} \
-		MOLECULE_SCENARIO=${MOLECULE_SCENARIO}
+	MOLECULE_KVM_IMAGE=${UBUNTU_KVM_IMAGE} \
+	MOLECULE_LOGDIR=${MOLECULE_LOGDIR} \
+	MOLECULE_SCENARIO=${MOLECULE_SCENARIO} \
+		make dependency create prepare
 
 noble ubuntu2404:
 	make ubuntu UBUNTU_RELEASE=noble MOLECULE_SCENARIO=${MOLECULE_SCENARIO}
@@ -47,6 +49,7 @@ focal ubuntu2004:
 debian:
 	make dependency create prepare \
 		MOLECULE_KVM_IMAGE=${DEBIAN_KVM_IMAGE} \
+		MOLECULE_LOGDIR=${MOLECULE_LOGDIR} \
 		MOLECULE_SCENARIO=${MOLECULE_SCENARIO}
 
 bookworm debian12:
@@ -55,6 +58,7 @@ bookworm debian12:
 alma:
 	make dependency create prepare \
 		MOLECULE_KVM_IMAGE=${ALMA_KVM_IMAGE} \
+		MOLECULE_LOGDIR=${MOLECULE_LOGDIR} \
 		MOLECULE_SCENARIO=${MOLECULE_SCENARIO}
 
 alma9:
@@ -63,6 +67,7 @@ alma9:
 rocky:
 	make dependency create prepare \
 		MOLECULE_KVM_IMAGE=${ROCKY_KVM_IMAGE} \
+		MOLECULE_LOGDIR=${MOLECULE_LOGDIR} \
 		MOLECULE_SCENARIO=${MOLECULE_SCENARIO}
 
 rocky9:
@@ -70,9 +75,10 @@ rocky9:
 
 test: lint
 	ANSIBLE_COLLECTIONS_PATH=$(MAKEFILE_DIR) \
+	MOLECULE_LOGDIR=${MOLECULE_LOGDIR} \
 	MOLECULE_REVISION=${MOLECULE_REVISION} \
 	MOLECULE_KVM_IMAGE=${MOLECULE_KVM_IMAGE} \
-	uv run dotenv molecule test -s ${MOLECULE_SCENARIO}
+		uv run dotenv molecule test -s ${MOLECULE_SCENARIO}
 
 install:
 	@uv sync
@@ -110,6 +116,7 @@ dependency create prepare converge idempotence side-effect verify destroy cleanu
 	ANSIBLE_COLLECTIONS_PATH=$(MAKEFILE_DIR) \
 	MOLECULE_REVISION=${MOLECULE_REVISION} \
 	MOLECULE_KVM_IMAGE=${MOLECULE_KVM_IMAGE} \
+	MOLECULE_LOGDIR=${MOLECULE_LOGDIR} \
 	uv run dotenv molecule $@ -s ${MOLECULE_SCENARIO} ${LOGIN_ARGS}
 
 clean: destroy reset
@@ -118,6 +125,9 @@ clean: destroy reset
 publish: build
 	uv run ansible-galaxy collection publish --api-key ${GALAXY_API_KEY} \
 		"${COLLECTION_NAMESPACE}-${COLLECTION_NAME}-${COLLECTION_VERSION}.tar.gz"
+
+local:
+	uv run ansible-galaxy collection install --force .
 
 version:
 	@uv run molecule --version

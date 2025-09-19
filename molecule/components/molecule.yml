@@ -57,8 +57,8 @@ provisioner:
           molecule_pool_prefix: "{{ (molecule_metallb_prefix | int) + 1 }}"
           molecule_pool_private: "{{ libvirt_address | ansible.utils.ipsubnet(molecule_pool_prefix, 0) }}"
           molecule_pool_public: "{{ libvirt_address | ansible.utils.ipsubnet(molecule_pool_prefix, 1) }}"
-          molecule_install_dir: "{{ lookup('ansible.builtin.env', 'MOLECULE_OUTPUT_DIR', default='/tmp/logs') }}"
-          molecule_install_log: "{{ molecule_install_dir }}/${MOLECULE_SCENARIO_NAME}"
+          molecule_logdir: "{{ lookup('ansible.builtin.env', 'MOLECULE_LOGDIR', default='/tmp/logs') }}"
+          molecule_install_log: "{{ molecule_logdir }}/${MOLECULE_SCENARIO_NAME}"
           molecule_local_kubeconfig: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}/.kubeconfig"
           # Optional rke2 params
           rke2_argocd_apps_pokerops_revision: "{{ lookup('ansible.builtin.env', 'MOLECULE_REVISION', default='HEAD') }}"

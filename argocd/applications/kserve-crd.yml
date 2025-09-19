@@ -9,8 +9,8 @@ metadata:
 spec:
   project: default
   source:
-    chart: kserve-crd
-    repoURL: oci://ghcr.io/kserve/charts/kserve-crd
+    chart: kserve-crd-minimal
+    repoURL: oci://ghcr.io/kserve/charts/kserve-crd-minimal
     targetRevision: "v0.15.2"
   destination:
     server: https://kubernetes.default.svc
