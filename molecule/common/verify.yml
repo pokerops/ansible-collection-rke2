@@ -45,7 +45,7 @@
         fail_msg: "Swap is enabled with {{ ansible_swaptotal_mb }}MB"
 
     - name: Query nofile soft limits
-      ansible.builtin.command:
+      ansible.builtin.shell:
         cmd: "ulimit -Sn"
       register: _nofile_limit
       changed_when: false
@@ -59,7 +59,7 @@
         _expected: "{{ _rke2_limits_nofile | int }}"
 
     - name: Query nofile hard limits
-      ansible.builtin.command:
+      ansible.builtin.shell:
         cmd: "ulimit -Hn"
       register: _nofile_hard_limit
       changed_when: false
