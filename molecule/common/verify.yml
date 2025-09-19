@@ -494,23 +494,23 @@
 
             - name: Debug argocd applications
               ansible.builtin.debug:
-                msg: "The following argocd applications have been deployed successfully [{{ _app_success | unique | join(', ') }}]"
+                msg: "The following argocd applications have been deployed successfully [{{ _app_success | join(', ') }}]"
               vars:
                 _app_data: "{{ _argocd_app_data.stdout | from_json }}"
                 _app_healthy: "{{ _app_data['items'] | selectattr('status.health.status', 'equalto', 'Healthy') }}"
                 _app_sync: "{{ _app_healthy | selectattr('status.sync.status', 'equalto', 'Synced') }}"
-                _app_success: "{{ _app_sync | map(attribute='metadata.name') }}"
+                _app_success: "{{ _app_sync | map(attribute='metadata.name') | unique }}"
 
           rescue:
             - name: Debug failed applications
               ansible.builtin.fail:
-                msg: "The following argocd applications are in failed status [{{ _app_names | unique | join(', ') }}]"
+                msg: "The following argocd applications are in failed status [{{ _app_names | join(', ') }}]"
               vars:
                 _app_data: "{{ _argocd_app_data.stdout | from_json }}"
                 _app_unhealthy: "{{ _app_data['items'] | rejectattr('status.health.status', 'equalto', 'Healthy') }}"
-                _app_outofsync: "{{ _app_unhealthy | rejectattr('status.sync.status', 'equalto', 'Synced') }}"
-                _app_failed: "{{ _app_unhealthy + _app_outofsync }}"
-                _app_names: "{{ _app_failed | map(attribute='metadata.name') }}"
+                _app_outofsync: "{{ _app_data['items'] | rejectattr('status.sync.status', 'equalto', 'Synced') }}"
+                _app_failed: "{{ (_app_unhealthy + _app_outofsync }}"
+                _app_names: "{{ _app_failed | map(attribute='metadata.name') | unique }}"
 
           always:
             - name: Debug cluster status location
