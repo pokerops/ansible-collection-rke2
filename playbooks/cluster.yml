@@ -42,6 +42,21 @@
         rke2_registry_mirrors: "{{ rke2_defaults_registry_mirrors }}"
       when: rke2_registry_mirrors is not defined
 
+    - name: Set RKE2 role defaults
+      ansible.builtin.set_fact:
+        rke2_etcd_snapshot_file: false
+      when: rke2_etcd_snapshot_file is not defined
+
+    - name: Set RKE2 role defaults
+      ansible.builtin.set_fact:
+        rke2_custom_manifests: []
+      when: rke2_custom_manifests is not defined
+
+    - name: Set RKE2 role defaults
+      ansible.builtin.set_fact:
+        rke2_static_pods: []
+      when: rke2_static_pods is not defined
+
     - name: Install RKE2
       ansible.builtin.include_role:
         name: pokerops.rke2.rke2
