@@ -44,7 +44,7 @@
 
     - name: Set RKE2 role defaults
       ansible.builtin.set_fact:
-        rke2_etcd_snapshot_file: false
+        rke2_etcd_snapshot_file: ""
       when: rke2_etcd_snapshot_file is not defined
 
     - name: Set RKE2 role defaults
