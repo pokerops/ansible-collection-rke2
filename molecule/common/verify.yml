@@ -36,7 +36,7 @@
           ansible.builtin.assert:
             that:
               - _multipath_start is failed
-              - _multipath_start.stderr | regex_search('.* ' + _multipath_service + ' is masked.')
+              - _multipath_start.stderr | regex_search('.* ' + _multipath_service + ' is masked.') != None
             fail_msg: "Got service start error {{ _multipath_start.stderr }}"
 
     - name: Verify swap is disabled
