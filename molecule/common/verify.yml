@@ -52,11 +52,8 @@
 
     - name: Verify nofile soft limits
       ansible.builtin.assert:
-        that: (_value | int) == (_expected | int)
+        that: (_nofile_limit.stdout | int) == 1048576
         fail_msg: "nofile soft limit is set to {{ _value }}, expected {{ _expected }}"
-      vars:
-        _value: "{{ _nofile_limit.stdout }}"
-        _expected: "1048576"
 
     - name: Query nofile hard limits
       ansible.builtin.shell:
@@ -66,11 +63,8 @@
 
     - name: Verify nofile hard limits
       ansible.builtin.assert:
-        that: _value == _expected
+        that: (_nofile_hard_limit.stdout | int) == 1048576
         fail_msg: "nofile hard limit is set to {{ _value }}, expected {{ _expected }}"
-      vars:
-        _value: "{{ _nofile_hard_limit.stdout | int }}"
-        _expected: "1048576"
 
     - name: Query inotify max_user_instances
       ansible.builtin.command:
