@@ -78,6 +78,4 @@ rke2_argocd_apps_values_base:
       info:
         - name: url
           value: https://github.com/pokerops/ansible-collection-rke2
-rke2_argocd_apps_values:
-  "{{ rke2_argocd_apps_values_base | combine(rke2_argocd_apps_values_extra,
-  recursive=True) }}"
+rke2_argocd_apps_values: "{{ rke2_argocd_apps_values_base | combine(rke2_argocd_apps_values_extra, recursive=True) }}"
