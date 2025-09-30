@@ -1,7 +1,5 @@
 .PHONY: all ${MAKECMDGOALS}
 
-MAKEFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
-MAKEFILE_DIR := $(dir $(MAKEFILE_PATH))
 
 MOLECULE_SCENARIO ?= components
 MOLECULE_REVISION ?= $$(git rev-parse --abbrev-ref HEAD)
@@ -74,7 +72,6 @@ rocky9:
 	make rocky EL_RELEASE=9 MOLECULE_SCENARIO=${MOLECULE_SCENARIO}
 
 test: lint
-	ANSIBLE_COLLECTIONS_PATH=$(MAKEFILE_DIR) \
 	MOLECULE_LOGDIR=${MOLECULE_LOGDIR} \
 	MOLECULE_REVISION=${MOLECULE_REVISION} \
 	MOLECULE_KVM_IMAGE=${MOLECULE_KVM_IMAGE} \
@@ -85,7 +82,6 @@ install:
 
 lint: install
 	uv run yamllint . -c .yamllint
-	ANSIBLE_COLLECTIONS_PATH=$(MAKEFILE_DIR) \
 	uv run ansible-lint -p playbooks/ --exclude ".ansible/*"
 
 requirements: install
@@ -94,7 +90,6 @@ requirements: install
 		--force --no-deps \
 		--roles-path ${ROLE_DIR} \
 		--role-file ${ROLE_FILE}
-	ANSIBLE_COLLECTIONS_PATH=$(MAKEFILE_DIR) \
 	uv run ansible-galaxy collection install \
 		--force-with-deps .
 	@find ./ -name "*.ymle*" -delete
@@ -116,12 +111,21 @@ ifeq (login,$(firstword $(MAKECMDGOALS)))
 endif
 
 dependency create prepare converge idempotence side-effect verify destroy cleanup reset list login:
-	rm -rf ansible_collections/ 
-	ANSIBLE_COLLECTIONS_PATH=$(MAKEFILE_DIR) \
+	rm -rf ansible_collections/
+	find .venv -type d -name ansible_collections | xargs -r -- rm -r
+	MOLECULE_HOME=$$(mktemp -d); \
+	if [ -z "$${CI:-}" ]; then \
+		export MOLECULE_EPHEMERAL_DIR=$$(mktemp -d); \
+	fi; \
+	HOME=$${MOLECULE_HOME} \
 	MOLECULE_REVISION=${MOLECULE_REVISION} \
 	MOLECULE_KVM_IMAGE=${MOLECULE_KVM_IMAGE} \
 	MOLECULE_LOGDIR=${MOLECULE_LOGDIR} \
-	uv run dotenv molecule $@ -s ${MOLECULE_SCENARIO} ${LOGIN_ARGS}
+	uv run dotenv molecule $@ -s ${MOLECULE_SCENARIO} ${LOGIN_ARGS}; \
+	if [ -z "$${CI:-}" ]; then \
+		rm -r $${MOLECULE_EPHEMERAL_DIR}; \
+	fi; \
+	rm -r $${MOLECULE_HOME};
 
 clean: destroy reset
 	@uv env remove $$(which python) >/dev/null 2>&1 || exit 0

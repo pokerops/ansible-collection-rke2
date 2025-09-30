@@ -9,3 +9,4 @@ collections:
   - name: nephelaiio.consul
   - name: nephelaiio.libvirt
   - name: ansible.utils
+  - name: ansible.posix
