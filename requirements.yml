@@ -10,3 +10,5 @@ collections:
   - name: nephelaiio.libvirt
   - name: ansible.utils
   - name: ansible.posix
+  - name: community.general
+  - name: kubernetes.core

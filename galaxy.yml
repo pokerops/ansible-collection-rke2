@@ -14,6 +14,10 @@ tags:
 dependencies:
   "nephelaiio.plugins": "*"
   "nephelaiio.consul": "*"
+  "ansible.utils": "*"
+  "ansible.posix": "*"
+  "community.general": "*"
+  "kubernetes.core": "*"
 repository: http://github.com/pokerops/ansible-collection-rke2
 documentation: http://github.com/pokerops/ansible-collection-rke2
 homepage: http://github.com/pokerops/ansible-collection-rke2
