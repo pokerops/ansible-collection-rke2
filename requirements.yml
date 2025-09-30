@@ -11,4 +11,5 @@ collections:
   - name: ansible.utils
   - name: ansible.posix
   - name: community.general
+  - name: community.postgresql
   - name: kubernetes.core
