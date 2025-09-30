@@ -52,10 +52,10 @@
 
     - name: Verify nofile soft limits
       ansible.builtin.assert:
-        that: _value == _expected
+        that: (_value | int) == (_expected | int)
         fail_msg: "nofile soft limit is set to {{ _value }}, expected {{ _expected }}"
       vars:
-        _value: "{{ _nofile_limit.stdout | int }}"
+        _value: "{{ _nofile_limit.stdout }}"
         _expected: "1048576"
 
     - name: Query nofile hard limits
