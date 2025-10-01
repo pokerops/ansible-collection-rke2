@@ -30,6 +30,7 @@ jobs:
     name: molecule
     runs-on: libvirt
     strategy:
+      max-parallel: 1
       matrix:
         scenario:
           - install
