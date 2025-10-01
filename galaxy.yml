@@ -18,6 +18,7 @@ dependencies:
   "ansible.posix": "*"
   "community.general": "*"
   "kubernetes.core": "*"
+  "amazon.aws": "*"
 repository: http://github.com/pokerops/ansible-collection-rke2
 documentation: http://github.com/pokerops/ansible-collection-rke2
 homepage: http://github.com/pokerops/ansible-collection-rke2

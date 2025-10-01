@@ -8,6 +8,7 @@ collections:
   - name: nephelaiio.plugins
   - name: nephelaiio.consul
   - name: nephelaiio.libvirt
+  - name: amazon.aws
   - name: ansible.utils
   - name: ansible.posix
   - name: community.general
