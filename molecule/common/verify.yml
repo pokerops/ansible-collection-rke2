@@ -44,6 +44,9 @@
         that: ansible_swaptotal_mb == 0
         fail_msg: "Swap is enabled with {{ ansible_swaptotal_mb }}MB"
 
+    - name: Reset connection
+      meta: reset_connection
+
     - name: Query nofile soft limits
       ansible.builtin.shell:
         cmd: "ulimit -Sn"
