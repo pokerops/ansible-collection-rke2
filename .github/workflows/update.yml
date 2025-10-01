@@ -1,5 +1,5 @@
 ---
-name: molecule
+name: update
 
 env:
   DEVBOX_VERSION: ${{ vars.DEVBOX_VERSION }}
@@ -9,40 +9,24 @@ on:
     branches:
       - master
     paths:
-      - "molecule/**"
-      - "playbooks/**"
-      - "requirements.yml"
-      - "roles.yml"
-      - "roles/components/**"
-      - "Makefile"
-      - "pyproject.toml"
-      - "poetry.lock"
-      - "devbox.json"
-      - "devbox.lock"
-      - .github/workflows/molecule.yml
+      - "*"
+      - "!README.md"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  molecule:
-    name: molecule
+  install:
+    name: install
     runs-on: libvirt
     strategy:
+      max-parallel: 1
       matrix:
         scenario:
-          - install
           - update
         image:
           - noble
-          - jammy
-        include:
-          - scenario: components
-            image: noble
-          - scenario: zalando
-            image: noble
-
     steps:
       - name: Check out the codebase
         uses: actions/checkout@v4

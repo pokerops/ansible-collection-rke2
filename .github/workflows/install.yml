@@ -1,0 +1,64 @@
+---
+name: install
+
+env:
+  DEVBOX_VERSION: ${{ vars.DEVBOX_VERSION }}
+
+on:
+  pull_request:
+    branches:
+      - master
+    paths:
+      - "*"
+      - "!README.md"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  install:
+    name: install
+    runs-on: libvirt
+    strategy:
+      max-parallel: 1
+      matrix:
+        scenario:
+          - install
+        image:
+          - noble
+          - jammy
+    steps:
+      - name: Check out the codebase
+        uses: actions/checkout@v4
+
+      - name: Install devbox
+        uses: jetify-com/devbox-install-action@v0.13.0
+        with:
+          enable-cache: true
+
+      - name: Install test requirements
+        run: devbox run -- make requirements
+
+      - name: Debug test environment
+        run: devbox run -- make debug
+
+      - name: Run molecule tests
+        run: devbox run -- make ${{ matrix.image }} test
+        env:
+          MOLECULE_REVISION: ${{ github.head_ref || github.ref_name }}
+          MOLECULE_KVM_IMAGE: ${{ matrix.image }}
+          MOLECULE_SCENARIO: ${{ matrix.scenario }}
+          MOLECULE_OUTPUT_DIR: /tmp/logs
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Upload install logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: install-${{ matrix.scenario }}-${{ matrix.image }}.log
+          path: |
+            /tmp/logs/*
+          if-no-files-found: ignore
+        if: always()

@@ -4,7 +4,7 @@
     state: present
     kubeconfig: "{{ rke2_config_path }}"
     resource_definition:
-      apiVersion: v1
+      apiVersion: "v1"
       kind: Namespace
       metadata:
         name: "{{ rke2_argocd_chart.namespace }}"
@@ -15,7 +15,7 @@
     apply: true
     kubeconfig: "{{ rke2_config_path }}"
     resource_definition:
-      apiVersion: helm.cattle.io/v1
+      apiVersion: "helm.cattle.io/v1"
       kind: HelmChart
       metadata:
         name: argocd
@@ -45,7 +45,7 @@
         state: present
         kubeconfig: "{{ rke2_config_path }}"
         resource_definition:
-          apiVersion: argoproj.io/v1alpha1
+          apiVersion: "argoproj.io/v1alpha1"
           kind: AppProject
           metadata:
             name: default
@@ -66,7 +66,7 @@
         apply: true
         kubeconfig: "{{ rke2_config_path }}"
         resource_definition:
-          apiVersion: helm.cattle.io/v1
+          apiVersion: "helm.cattle.io/v1"
           kind: HelmChart
           metadata:
             name: argocd-apps
