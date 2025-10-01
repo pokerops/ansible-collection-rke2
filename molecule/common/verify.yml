@@ -81,10 +81,10 @@
 
     - name: Verify inotify max_user_instances
       ansible.builtin.assert:
-        that: _value == _expected
+        that: (_value | int) == (_expected | int)
         fail_msg: "fs.inotify.max_user_instances is set to {{ _value }}, expected {{ _expected }}"
       vars:
-        _value: "{{ _inotify_max_user_instances.stdout.split()[-1] | int }}"
+        _value: "{{ _inotify_max_user_instances.stdout.split()[-1] }}"
         _expected: "524288"
 
     - name: Query inotify max_user_watches
@@ -96,10 +96,10 @@
 
     - name: Verify inotify max_user_watches
       ansible.builtin.assert:
-        that: _value == _expected
+        that: (_value | int) == (_expected | int)
         fail_msg: "fs.inotify.max_user_watches is set to {{ _value }}, expected {{ _expected }}"
       vars:
-        _value: "{{ _inotify_max_user_watches.stdout.split()[-1] | int }}"
+        _value: "{{ _inotify_max_user_watches.stdout.split()[-1] }}"
         _expected: "1048576"
 
     - name: Query inotify max_queued_events
@@ -111,10 +111,10 @@
 
     - name: Verify inotify max_queued_events
       ansible.builtin.assert:
-        that: _value == _expected
+        that: (_value | int) == (_expected | int)
         fail_msg: "fs.inotify.max_queued_events is set to {{ _value }}, expected {{ _expected }}"
       vars:
-        _value: "{{ _inotify_max_queued_events.stdout.split()[-1] | int }}"
+        _value: "{{ _inotify_max_queued_events.stdout.split()[-1] }}"
         _expected: "1048576"
 
 - name: Verify RKE2 install
