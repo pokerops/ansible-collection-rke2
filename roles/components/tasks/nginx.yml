@@ -13,6 +13,10 @@
       spec:
         source:
           helm:
+            controller:
+              kind: DaemonSet
+            service:
+              externalTrafficPolicy: Local
             valuesObject:
               controller:
                 metrics:
