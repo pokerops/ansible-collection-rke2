@@ -120,7 +120,7 @@
   run_once: true
   gather_facts: false
   vars_files:
-    - ../../playbooks/vars/main.yml
+    - ../../../playbooks/vars/main.yml
   tasks:
     - name: Ping host
       ansible.builtin.ping:
@@ -160,7 +160,7 @@
 - name: Clean api hostfile entries
   hosts: localhost
   vars_files:
-    - ../../playbooks/vars/main.yml
+    - ../../../playbooks/vars/main.yml
   become: true
   tasks:
     - name: Destroy api host file entry
