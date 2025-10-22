@@ -18,6 +18,8 @@ rules:
     level: error
   line-length:
     max: 160
+    ignore:
+      - .github/workflows/*.yml
   truthy: disable
   comments-indentation: false
   comments:

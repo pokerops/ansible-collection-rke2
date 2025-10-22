@@ -1,26 +1,10 @@
 ---
 name: build
-
-env:
-  DEVBOX_VERSION: ${{ vars.DEVBOX_VERSION }}
-
+permissions:
+  contents: read
 on:
   pull_request:
-    branches:
-      - master
-
+    branches: ["main", "master"]
 jobs:
   build:
-    name: build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out the codebase.
-        uses: actions/checkout@v4
-
-      - name: Install devbox
-        uses: jetify-com/devbox-install-action@v0.13.0
-        with:
-          enable-cache: true
-
-      - name: Build collection
-        run: devbox run -- make build
+    uses: pokerops/ansible-utils/.github/workflows/build.yml@master
