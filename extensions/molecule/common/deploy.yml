@@ -8,7 +8,7 @@
   hosts: rke2_server
   run_once: true
   vars_files:
-    - ../../playbooks/vars/main.yml
+    - ../../../playbooks/vars/main.yml
   tasks:
     - name: Query cluster ingresses
       ansible.builtin.command:
