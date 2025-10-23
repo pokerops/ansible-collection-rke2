@@ -1,8 +1,6 @@
-include .devbox/virtenv/pokerops.ansible-utils.molecule/Makefile
+include ${MAKEFILE}
 
-deploy:
-	uv run ansible-galaxy collection install \
-		--force-with-deps .
+MOLECULE_REVISION ?= $$(git rev-parse --abbrev-ref HEAD)
 
 build: requirements
 	@uv run rke2 build
@@ -10,6 +8,3 @@ build: requirements
 
 update:
 	@uv run rke2 update
-
-local:
-	uv run ansible-galaxy collection install --force .

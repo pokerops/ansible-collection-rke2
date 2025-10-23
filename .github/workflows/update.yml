@@ -33,6 +33,7 @@ jobs:
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       MOLECULE_OUTPUT_DIR: /tmp/logs
       GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+      MOLECULE_REVISION: ${{ github.head_ref || github.ref_name }}
     steps:
       - name: Run devbox tests
         uses: pokerops/ansible-utils@master
