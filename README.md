@@ -53,6 +53,7 @@ Cluster wide parameters
 | rke2_argocd_apps_deploy             |                               true | dict   | Toggle flag for ArgoCD Applications chart deployment                     | no       |
 | rke2_argocd_apps_values             |                                n/a | dict   | Helm chart values for ArgoCD Applications chart                          | no       |
 | rke2_argocd_values_configs          |                                 {} | dict   | ArgoCD configs, override for default ArgoCD chart values                 | no       |
+| rke2_argocd_values_notifications    |                                 {} | dict   | ArgoCD notifications, override for default ArgoCD chart values           | no       |
 | rke2_argocd_exec_timeout            |                                 3m | string | ArgoCD exec timeout, override for default ArgoCD chart values            | no       |
 | rke2_argocd_redis_ha_enabled        |                               true | bool   | ArgoCD Redis HA toggle, override for default ArgoCD chart values         | no       |
 | rke2_argocd_controller_replicas     |                                  2 | int    | ArgoCD controller replicas, override for default ArgoCD chart values     | no       |
