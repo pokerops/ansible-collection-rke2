@@ -3,6 +3,8 @@
   hosts: rke2_server
   gather_facts: false
   become: true
+  vars_files:
+    - ../../playbooks/vars/main.yml
   vars:
     _logfile: "{{ molecule_install_log | default('/tmp/install') }}"
   tasks:
@@ -45,7 +47,7 @@
       block:
         - name: Stat cluster configuration
           ansible.builtin.stat:
-            path: /etc/rancher/rke2/config.yaml
+            path: "{{ _rke2_config_path }}/config.yaml"
           register: _rke2_clusterconfig_stat
 
         - name: Archive cluster configuration
@@ -53,7 +55,7 @@
           block:
             - name: Slurp cluster configuration
               ansible.builtin.slurp:
-                src: /etc/rancher/rke2/config.yaml
+                src: "{{ _rke2_config_path }}/config.yaml"
               register: _rke2_clusterconfig_slurp
 
             - name: Create cluster configuration archive
@@ -77,7 +79,7 @@
 
         - name: Stat install kubeconfig
           ansible.builtin.stat:
-            path: /etc/rancher/rke2/rke2.yaml
+            path: "{{ _rke2_config_path }}/rke2.yaml"
           register: _rke2_kubeconfig_stat
 
         - name: Archive install kubeconfig
@@ -85,7 +87,7 @@
           block:
             - name: Slurp install kubeconfig
               ansible.builtin.slurp:
-                src: /etc/rancher/rke2/rke2.yaml
+                src: "{{ _rke2_config_path }}/rke2.yaml"
               register: _rke2_kubeconfig_slurp
 
             - name: Create install kubeconfig archive
@@ -134,7 +136,7 @@
 
     - name: Query cluster ingresses
       ansible.builtin.command:
-        cmd: "/var/lib/rancher/rke2/bin/kubectl get ingresses -A -o json --kubeconfig /etc/rancher/rke2/rke2.yaml"
+        cmd: "{{ _rke2_bin_path }}/kubectl get ingresses -A -o json --kubeconfig {{ _rke2_config_path }}/rke2.yaml"
       register: _ingress_query
       ignore_errors: true
 
