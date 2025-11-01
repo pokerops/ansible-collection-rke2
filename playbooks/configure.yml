@@ -71,7 +71,7 @@
       loop: "{{ groups[rke2_agent_group] }}"
       run_once: true
 
-    - name: Taint server nodes to prevent workload scheduling
+    - name: Taint dedicated server nodes to prevent workload scheduling
       ansible.builtin.command:
         cmd: "{{ _rke2_bin_path }}/kubectl taint node {{ item }} node-role.kubernetes.io/control-plane:NoSchedule --overwrite"
       loop: "{{ groups[rke2_server_group] }}"
