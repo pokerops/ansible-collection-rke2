@@ -50,6 +50,7 @@ provisioner:
     prepare: ../common/prepare.yml
     converge: ../common/install.yml
     destroy: ../common/destroy.yml
+    side_effect: ../common/configure.yml
   config_options:
     defaults:
       callbacks_enabled: ansible.posix.profile_tasks

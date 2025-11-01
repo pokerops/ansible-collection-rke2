@@ -1,9 +1,7 @@
 ---
 name: update
-
 env:
   DEVBOX_VERSION: ${{ vars.DEVBOX_VERSION }}
-
 on:
   pull_request:
     branches:
@@ -11,11 +9,9 @@ on:
     paths:
       - "*"
       - "!README.md"
-
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
-
 jobs:
   install:
     name: install

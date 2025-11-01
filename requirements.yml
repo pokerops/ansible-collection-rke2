@@ -1,6 +1,4 @@
 ---
-roles:
-  - name: lablabs.rke2
 collections:
   - name: pokerops.rke2
     source: .

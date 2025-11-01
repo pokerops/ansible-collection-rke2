@@ -8,11 +8,11 @@
   hosts: rke2_server
   run_once: true
   vars_files:
-    - ../../../playbooks/vars/main.yml
+    - ../../playbooks/vars/main.yml
   tasks:
     - name: Query cluster ingresses
       ansible.builtin.command:
-        cmd: "/var/lib/rancher/rke2/bin/kubectl get ingresses -A -o json --kubeconfig /etc/rancher/rke2/rke2.yaml"
+        cmd: "{{ _rke2_bin_path }}/kubectl get ingresses -A -o json --kubeconfig {{ _rke2_config_path }}/rke2.yaml"
       register: _ingress_query
       changed_when: false
       become: true

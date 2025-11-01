@@ -8,3 +8,11 @@ on:
 jobs:
   build:
     uses: pokerops/ansible-utils/.github/workflows/build.yml@master
+  build-check:
+    name: check
+    runs-on: package
+    steps:
+      - name: Run devbox tests
+        uses: pokerops/ansible-utils@master
+        with:
+          run: devbox run -- make build-check
