@@ -369,6 +369,47 @@
                 _job_failed: "{{ _job_unhealthy + _job_outofsync }}"
                 _job_names: "{{ _job_failed | map(attribute='metadata.name') }}"
 
+        - name: Verify server node taints
+          block:
+            - name: Query server node taints
+              ansible.builtin.shell:
+                cmd: "/var/lib/rancher/rke2/bin/kubectl get nodes -l node-role.kubernetes.io/control-plane=true -o json | jq -r '.items[].spec.taints // []'"
+              register: _server_taints
+              changed_when: false
+
+            - name: Verify control plane taint exists
+              ansible.builtin.assert:
+                that: _taint_exists
+                fail_msg: "Server nodes do not have the required node-role.kubernetes.io/control-plane:NoSchedule taint"
+              vars:
+                _taints: "{{ _server_taints.stdout | from_json }}"
+                _taint_exists: "{{ _taints | selectattr('key', 'equalto', 'node-role.kubernetes.io/control-plane') | selectattr('effect', 'equalto', 'NoSchedule') | length > 0 }}"
+
+        - name: Verify no workload pods on server nodes
+          block:
+            - name: Query all pods on server nodes
+              ansible.builtin.shell:
+                cmd: '/var/lib/rancher/rke2/bin/kubectl get pods -A -o json | jq -r ''''.items[] | select(.spec.nodeName != null) | select(.metadata.ownerReferences[0].kind != "DaemonSet") | {name: .metadata.name, namespace: .metadata.namespace, node: .spec.nodeName}'''
+              register: _pods_on_nodes
+              changed_when: false
+
+            - name: Query server node names
+              ansible.builtin.shell:
+                cmd: "/var/lib/rancher/rke2/bin/kubectl get nodes -l node-role.kubernetes.io/control-plane=true -o json | jq -r '.items[].metadata.name'"
+              register: _server_query
+              changed_when: false
+
+            - name: Check for workload pods on server nodes
+              ansible.builtin.assert:
+                that: _workload_pods_on_servers | length == 0
+                fail_msg: "Found {{ _workload_pods_on_servers | length }} non-system pods scheduled on server nodes: {{ _workload_pods_on_servers }}"
+              vars:
+                _system_namespaces:
+                  - kube-system
+                _pods_all: "{{ _pods_on_nodes.stdout_lines | map('from_json') | list }}"
+                _pods_on_servers: "{{ _pods_all | selectattr('node', 'in', _server_query.stdout_lines }}"
+                _workload_pods_on_servers: "{{ _pods_on_servers | rejectattr('namespace', 'in', _system_namespaces) | list }}"
+
         - name: Set test facts
           ansible.builtin.set_fact:
             _volume_test_namespace: longhorn-test
