@@ -226,22 +226,25 @@
 
         - name: Set pod facts
           ansible.builtin.set_fact:
-            _pods_workload: "{{ _kubectl_node_pods | rejectattr('spec.namespace', 'equalto', 'kube-system') }}"
+            _pods_workload: "{{ _kubectl_node_pods | rejectattr('metadata.namespace', 'equalto', 'kube-system') }}"
           vars:
             _kubectl_pod_data: "{{ _kubectl_pods.stdout | from_json }}"
             _kubectl_pod_list: "{{ _kubectl_pod_data['items'] }}"
             _kubectl_node_pods: "{{ _kubectl_pod_list | selectattr('spec.nodeName', 'equalto', inventory_hostname) }}"
 
     - name: Query cluster status
-      ansible.builtin.shell:
-        cmd: "{{ _rke2_bin_path }}/kubectl get cs -o json | jq '.items | map(.conditions | map(.type) | .[])'"
-        executable: /bin/bash
+      ansible.builtin.command:
+        cmd: "{{ _rke2_bin_path }}/kubectl get cs -o json"
       register: _kubectl_status
       changed_when: false
 
     - name: Check cluster status
       ansible.builtin.assert:
-        that: _kubectl_status.stdout | reject('equalto', 'Healthy') | length == 0
+        that: _kubectl_status_conditions | reject('equalto', 'Healthy') | length == 0
+      vars:
+        _kubectl_status_data: "{{ _kubectl_status.stdout | from_json }}"
+        _kubectl_status_list: "{{ _kubectl_status_data['items'] }}"
+        _kubectl_status_conditions: "{{ _kubectl_status_list | map(attribute='conditions') | map('map', attribute='type') | flatten }}"
 
     - name: Validate cluster components
       when: rke2_component_check | default(True) | bool
