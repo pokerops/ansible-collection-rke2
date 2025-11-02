@@ -9,8 +9,8 @@ jobs:
   build:
     uses: pokerops/ansible-utils/.github/workflows/build.yml@master
   build-check:
-    name: check
-    runs-on: package
+    name: build-check
+    runs-on: ubuntu-latest
     steps:
       - name: Run devbox tests
         uses: pokerops/ansible-utils@master
