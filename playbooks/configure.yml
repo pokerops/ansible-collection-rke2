@@ -1,0 +1,78 @@
+---
+- name: Configure RKE2 cluster members
+  hosts: "{{ rke2_server_group }}"
+  any_errors_fatal: true
+  vars_files:
+    - main.yml
+  tasks:
+    - name: Configure user kubeconfig
+      block:
+        - name: Query user id
+          ansible.builtin.command: id -un
+          register: user_query
+          changed_when: false
+
+        - name: Create user kubeconfig directory
+          ansible.builtin.file:
+            path: "~/.kube"
+            state: directory
+            mode: "u=rwx,go="
+
+        - name: Slurp cluster kubeconfig
+          ansible.builtin.slurp:
+            src: "{{ _rke2_config_path }}/rke2.yaml"
+          register: _rke2_kubeconfig_slurp
+          become: true
+
+        - name: Prepare cluster kubeconfig
+          ansible.builtin.set_fact:
+            _rke2_kubeconfig_user: "{{ _kubeconfig_data | combine(_kubeconfig_override) }}"
+          vars:
+            _kubeconfig_data: "{{ _rke2_kubeconfig_slurp.content | b64decode | from_yaml }}"
+            _kubeconfig_cluster: "{{ _kubeconfig_data.clusters[0] }}"
+            _kubeconfig_override:
+              clusters:
+                - name: "{{ _kubeconfig_cluster.name }}"
+                  cluster:
+                    server: "{{ _rke2_api_url }}"
+                    certificate-authority-data: "{{ _kubeconfig_cluster.cluster['certificate-authority-data'] }}"
+
+        - name: Create user kubeconfig
+          ansible.builtin.copy:
+            dest: "{{ _rke2_kubeconfig }}"
+            content: "{{ _rke2_kubeconfig_user }}"
+            owner: "{{ user_query.stdout }}"
+            group: "{{ user_query.stdout }}"
+            mode: "u=rw,go="
+            remote_src: true
+
+    - name: Configure user profile
+      ansible.builtin.copy:
+        dest: /etc/profile.d/rke2.sh
+        content: |
+          rke2_bin_path="{{ _rke2_bin_path }}"
+          if [ -n "${PATH##*${rke2_bin_path}}" ] && [ -n "${PATH##*${rke2_bin_path}:*}" ]; then
+              export PATH="$PATH:${rke2_bin_path}"
+          fi
+        owner: root
+        group: root
+        mode: "u=rw,go=r"
+      become: true
+
+- name: Configure RKE2 node roles and taints
+  hosts: "{{ rke2_server_group }}"
+  any_errors_fatal: true
+  vars_files:
+    - main.yml
+  tasks:
+    - name: Label agent nodes with role
+      ansible.builtin.command:
+        cmd: "{{ _rke2_bin_path }}/kubectl label node {{ item }} node-role.kubernetes.io/worker=true --overwrite"
+      loop: "{{ groups[rke2_agent_group] }}"
+      run_once: true
+
+    - name: Taint server nodes to prevent workload scheduling
+      ansible.builtin.command:
+        cmd: "{{ _rke2_bin_path }}/kubectl taint node {{ item }} node-role.kubernetes.io/control-plane:NoSchedule --overwrite"
+      loop: "{{ groups[rke2_server_group] }}"
+      run_once: true

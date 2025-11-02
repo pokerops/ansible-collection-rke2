@@ -4,6 +4,8 @@
   any_errors_fatal: true
   vars:
     _multipath_service: multipathd.service
+  vars_files:
+    - ../../playbooks/vars/main.yml
   tasks:
     - name: Query service facts
       ansible.builtin.service_facts:
@@ -129,6 +131,8 @@
     _members: "{{ _servers + _agents }}"
     _retry: 20
     _delay: 30
+  vars_files:
+    - ../../playbooks/vars/main.yml
   tasks:
     - name: Install jq
       ansible.builtin.package:
@@ -137,7 +141,7 @@
 
     - name: Slurp kubeconfig cluster file
       ansible.builtin.slurp:
-        src: /etc/rancher/rke2/rke2.yaml
+        src: "{{ _rke2_config_path }}/rke2.yaml"
       register: _kubeconfig_slurp
       become: true
 
@@ -165,48 +169,82 @@
         _kubeconfig_server_expected: "https://api.rke2.pokerops.net:6443"
 
     - name: Query cluster nodes
-      ansible.builtin.shell:
-        cmd: "/var/lib//rancher/rke2/bin/kubectl get node -o name | cut -d'/' -f2"
+      ansible.builtin.command:
+        cmd: "{{ _rke2_bin_path }}/kubectl get node -o json"
         executable: /bin/bash
       register: _kubectl_nodes
       changed_when: false
 
     - name: Set cluster facts
       ansible.builtin.set_fact:
-        _nodes: "{{ _kubectl_nodes.stdout_lines }}"
+        _nodes_self: "{{ _kubectl_node_list | selectattr('metadata.name', 'equalto', inventory_hostname) | first }}"
+        _nodes_all: "{{ _kubectl_node_list | map(attribute='metadata.name') }}"
+      vars:
+        _kubectl_node_data: "{{ _kubectl_nodes.stdout | from_json }}"
+        _kubectl_node_list: "{{ _kubectl_node_data['items'] }}"
 
-    - name: Debug cluster nodes
-      debug:
-        var: _nodes
+    - name: Debug cluster facts
+      run_once: true
+      block:
+        - name: Debug cluster nodes
+          ansible.builtin.debug:
+            var: _nodes_all
 
-    - name: Debug cluster members
-      debug:
-        var: _members
+        - name: Debug cluster members
+          ansible.builtin.debug:
+            var: _members
 
     - name: Verify cluster nodes
       block:
         - name: Check cluster node status
           ansible.builtin.assert:
-            that: _members | difference(_nodes) | length == 0
+            that: _members | difference(_nodes_all) | length == 0
 
       rescue:
         - name: Debug unregistered nodes
           ansible.builtin.debug:
-            msg: "Nodes [{{ ', '.join(_members | difference(_nodes)) }}] are not registered to the cluster"
+            msg: "Nodes [{{ ', '.join(_members | difference(_nodes_all)) }}] are not registered to the cluster"
 
         - name: Fail cluster node check
           ansible.builtin.fail:
 
+    - name: Verify control plane taint exists
+      ansible.builtin.assert:
+        that: _taints_noschedule | length > 0
+        fail_msg: "Node does not have the required node-role.kubernetes.io/control-plane:NoSchedule taint"
+      vars:
+        _taints_control_plane: "{{ _nodes_self.spec.taints | selectattr('key', 'equalto', 'node-role.kubernetes.io/control-plane') }}"
+        _taints_noschedule: "{{ _taints_control_plane | selectattr('effect', 'equalto', 'NoSchedule') }}"
+
+    - name: Verify no workload pods are scheduled on server nodes
+      block:
+        - name: Query pods on server nodes
+          ansible.builtin.command:
+            cmd: "/var/lib/rancher/rke2/bin/kubectl get pods -A -o json"
+          register: _kubectl_pods
+          changed_when: false
+
+        - name: Set pod facts
+          ansible.builtin.set_fact:
+            _pods_workload: "{{ _kubectl_node_pods | rejectattr('metadata.namespace', 'equalto', 'kube-system') }}"
+          vars:
+            _kubectl_pod_data: "{{ _kubectl_pods.stdout | from_json }}"
+            _kubectl_pod_list: "{{ _kubectl_pod_data['items'] }}"
+            _kubectl_node_pods: "{{ _kubectl_pod_list | selectattr('spec.nodeName', 'equalto', inventory_hostname) }}"
+
     - name: Query cluster status
-      ansible.builtin.shell:
-        cmd: "kubectl get cs -o json | jq '.items | map(.conditions | map(.type) | .[])'"
-        executable: /bin/bash
+      ansible.builtin.command:
+        cmd: "{{ _rke2_bin_path }}/kubectl get cs -o json"
       register: _kubectl_status
       changed_when: false
 
     - name: Check cluster status
       ansible.builtin.assert:
-        that: _kubectl_status.stdout | reject('equalto', 'Healthy') | length == 0
+        that: _kubectl_status_conditions | reject('equalto', 'Healthy') | length == 0
+      vars:
+        _kubectl_status_data: "{{ _kubectl_status.stdout | from_json }}"
+        _kubectl_status_list: "{{ _kubectl_status_data['items'] }}"
+        _kubectl_status_conditions: "{{ _kubectl_status_list | map(attribute='conditions') | map('map', attribute='type') | flatten }}"
 
     - name: Validate cluster components
       when: rke2_component_check | default(True) | bool
@@ -272,7 +310,7 @@
           block:
             - name: Verify cluster pod status
               ansible.builtin.shell:
-                cmd: "/var/lib//rancher/rke2/bin/kubectl get pod -o json | jq '.items'"
+                cmd: "{{ _rke2_bin_path }}/kubectl get pod -o json | jq '.items'"
               register: _argocd_pod_data
               retries: "{{ _retry }}"
               delay: "{{ _delay }}"
@@ -304,7 +342,7 @@
           block:
             - name: Verify cluster job status
               ansible.builtin.shell:
-                cmd: "/var/lib//rancher/rke2/bin/kubectl get job -o json | jq '.items'"
+                cmd: "{{ _rke2_bin_path }}/kubectl get job -o json | jq '.items'"
               register: _argocd_job_data
               retries: "{{ _retry }}"
               delay: "{{ _delay }}"
@@ -397,7 +435,7 @@
           block:
             - name: Verify persistent claim status
               ansible.builtin.shell:
-                cmd: "/var/lib//rancher/rke2/bin/kubectl get pvc -o json | jq '.items'"
+                cmd: "{{ _rke2_bin_path }}/kubectl get pvc -o json | jq '.items'"
               register: _argocd_pvc_data
               retries: "{{ _retry }}"
               delay: "{{ _delay }}"
@@ -481,7 +519,7 @@
           block:
             - name: Verify argocd application status
               ansible.builtin.shell:
-                cmd: /var/lib//rancher/rke2/bin/kubectl get applications -n argocd -o json
+                cmd: "{{ _rke2_bin_path }}/kubectl get applications -n argocd -o json"
               register: _argocd_app_data
               retries: "{{ _retry }}"
               delay: "{{ _delay }}"

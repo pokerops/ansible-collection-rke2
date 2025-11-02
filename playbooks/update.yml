@@ -49,7 +49,7 @@
 
         - name: Slurp kubeconfig cluster file
           ansible.builtin.slurp:
-            src: /etc/rancher/rke2/rke2.yaml
+            src: "{{ _rke2_config_path }}/rke2.yaml"
           register: _rke2_kubeconfig_slurp
           become: true
 

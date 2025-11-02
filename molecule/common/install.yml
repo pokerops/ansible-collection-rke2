@@ -6,15 +6,15 @@
   import_playbook: pokerops.rke2.install
 
 - name: Cache cluster kubeconfig
-  hosts: "{{ rke2_server_group }}"
+  hosts: rke2_server
   gather_facts: false
   run_once: true
   vars_files:
-    - ../../../playbooks/vars/main.yml
+    - ../../playbooks/vars/main.yml
   tasks:
     - name: Slurp kubeconfig cluster file
       ansible.builtin.slurp:
-        src: /etc/rancher/rke2/rke2.yaml
+        src: "{{ _rke2_config_path }}/rke2.yaml"
       register: _kubeconfig_slurp
       become: true
 
