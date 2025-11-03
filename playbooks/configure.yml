@@ -73,9 +73,9 @@
 
     - name: Taint dedicated server nodes to prevent workload scheduling
       ansible.builtin.command:
-        cmd: "{{ _rke2_bin_path }}/kubectl taint node {{ item }} {{ taint }} --overwrite"
+        cmd: "{{ _rke2_bin_path }}/kubectl taint node {{ item }} node-role.kubernetes.io/control-plane:NoSchedule{{ modifier }} --overwrite"
       vars:
         is_agent: "{{ rke2_agent_group in groups }}"
-        taint: "node-role.kubernetes.io/control-plane:NoSchedule{{ '-' if (is_agent | bool) else '' }}"
+        modifier: "{{ '-' if is_agent else '' }}"
       loop: "{{ groups[rke2_server_group] }}"
       run_once: true
