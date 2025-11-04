@@ -211,10 +211,12 @@
     - name: Verify control plane taint exists
       ansible.builtin.assert:
         that: _taints_noschedule | length > 0
-        fail_msg: "Node does not have the required node-role.kubernetes.io/control-plane:NoSchedule taint"
+        fail_msg: "Node does not have the required {{ _taint_key }}:{{ _taint_value }} taint"
       vars:
-        _taints_control_plane: "{{ _nodes_self.spec.taints | selectattr('key', 'equalto', 'node-role.kubernetes.io/control-plane') }}"
-        _taints_noschedule: "{{ _taints_control_plane | selectattr('effect', 'equalto', 'NoSchedule') }}"
+        _taint_key: "role.kubernetes.io/control-plane"
+        _taint_value: "NoSchedule"
+        _taints_control_plane: "{{ _nodes_self.spec.taints | selectattr('key', 'equalto', _taint_key) }}"
+        _taints_noschedule: "{{ _taints_control_plane | selectattr('effect', 'equalto', _taint_value) }}"
 
     - name: Verify no workload pods are scheduled on server nodes
       block:
