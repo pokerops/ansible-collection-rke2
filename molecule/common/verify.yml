@@ -234,6 +234,11 @@
             _kubectl_pod_list: "{{ _kubectl_pod_data['items'] }}"
             _kubectl_node_pods: "{{ _kubectl_pod_list | selectattr('spec.nodeName', 'equalto', inventory_hostname) }}"
 
+        - name: Verify no workload pods are scheduled
+          ansible.builtin.assert:
+            that: _pods_workload | length == 0
+            fail_msg: "Workload pods are scheduled on control plane node {{ inventory_hostname }}: {{ _pods_workload | map(attribute='metadata.name') | join(', ') }}"
+
     - name: Query cluster status
       ansible.builtin.command:
         cmd: "{{ _rke2_bin_path }}/kubectl get cs -o json"
