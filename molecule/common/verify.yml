@@ -237,7 +237,9 @@
         - name: Verify no workload pods are scheduled
           ansible.builtin.assert:
             that: _pods_workload | length == 0
-            fail_msg: "Workload pods are scheduled on control plane node {{ inventory_hostname }}: {{ _pods_workload | map(attribute='metadata.name') | join(', ') }}"
+            fail_msg: "Workload pods are scheduled on control plane node {{ inventory_hostname }}: {{ _pods_message }}"
+          vars:
+            _pods_message: "{{ _pods_workload | map(attribute='metadata.name') | join(', ') }}"
 
     - name: Query cluster status
       ansible.builtin.command:
