@@ -41,6 +41,7 @@ rke2_argocd_values:
     replicas: "{{ rke2_argocd_applicationset_replicas }}"
   configs: "{{ rke2_argocd_values_configs | default({}) }}"
   notifications: "{{ rke2_argocd_values_notifications | default({}) }}"
+  clusterCredentials: "{{ rke2_argocd_values_cluster_credentials | default({}) }}"
   global:
     env:
       - name: ARGOCD_EXEC_TIMEOUT
