@@ -41,7 +41,6 @@ rke2_argocd_values:
     replicas: "{{ rke2_argocd_applicationset_replicas }}"
   configs: "{{ rke2_argocd_values_configs | default({}) }}"
   notifications: "{{ rke2_argocd_values_notifications | default({}) }}"
-  clusterCredentials: "{{ rke2_argocd_values_cluster_credentials | default({}) }}"
   global:
     env:
       - name: ARGOCD_EXEC_TIMEOUT
@@ -52,7 +51,7 @@ rke2_argocd_apps_chart:
   namespace: "argocd"
   repo: "https://argoproj.github.io/argo-helm"
   release: "2.0.2"
-rke2_argocd_apps_pokerops_revision: 0.6.6
+rke2_argocd_apps_pokerops_revision: 0.6.7
 rke2_argocd_apps_values_extra: {}
 rke2_argocd_apps_directory_include: "{*.yml,*.yaml}"
 rke2_argocd_apps_directory_exclude: ""
