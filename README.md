@@ -35,35 +35,34 @@ The following is the list of parameters intended for end-user manipulation:
 
 Cluster wide parameters
 
-| Parameter                              |                            Default | Type   | Description                                                              | Required |
-| :------------------------------------- | ---------------------------------: | :----- | :----------------------------------------------------------------------- | :------- |
-| rke2_cluster_name                      |                                n/a | string | Cluster name, immutable after creation                                   | yes      |
-| rke2_version                           |                     v1.33.0+rke2r1 | string | RKE2 version to deploy                                                   | no       |
-| rke2_nolog                             |                               true | bool   | Toggle flag for logging sensitive statements                             | no       |
-| rke2_config_hostnames                  |                               true | bool   | Toggle flag for cluster hostfile entry configuration                     | no       |
-| rke2_retry_num                         |                                 10 | bool   | Max number of task retries                                               | no       |
-| rke2_retry_delay                       |                                 30 | bool   | Task delay on retries                                                    | no       |
-| rke2_evict_timeout                     |                                300 | bool   | Node drain eviction timeout in seconds                                   | no       |
-| rke2_ippool_private                    |                                n/a | string | Private IP pool CIDR                                                     | yes      |
-| rke2_ippool_public                     |                                n/a | string | Public IP pool CIDR                                                      | no       |
-| rke2_certmanager_acme_secret           |                                n/a | string | Secret name for ACME challenge                                           | no       |
-| rke2_certmanager_acme_email            |                                n/a | string | Email for ACME challenge                                                 | no [1]   |
-| rke2_argocd_hostname                   |   "argocd.{{ rke2_cluster_name }}" | string | ArgoCD hostname                                                          | no       |
-| rke2_argocd_values                     |                         object [2] | dict   | Helm chart values for ArgoCD chart                                       | no       |
-| rke2_argocd_apps_deploy                |                               true | dict   | Toggle flag for ArgoCD Applications chart deployment                     | no       |
-| rke2_argocd_apps_values                |                                n/a | dict   | Helm chart values for ArgoCD Applications chart                          | no       |
-| rke2_argocd_values_configs             |                                 {} | dict   | ArgoCD configs, override for default ArgoCD chart values                 | no       |
-| rke2_argocd_values_notifications       |                                 {} | dict   | ArgoCD notifications, override for default ArgoCD chart values           | no       |
-| rke2_argocd_values_cluster_credentials |                                 {} | dict   | ArgoCD Cluster Credentials, override for default ArgoCD chart values     | no       |
-| rke2_argocd_exec_timeout               |                                 3m | string | ArgoCD exec timeout, override for default ArgoCD chart values            | no       |
-| rke2_argocd_redis_ha_enabled           |                               true | bool   | ArgoCD Redis HA toggle, override for default ArgoCD chart values         | no       |
-| rke2_argocd_controller_replicas        |                                  2 | int    | ArgoCD controller replicas, override for default ArgoCD chart values     | no       |
-| rke2_argocd_server_replicas            |                                  2 | int    | ArgoCD server replicas, override for default ArgoCD chart values         | no       |
-| rke2_argocd_reposerver_replicas        |                                  2 | int    | ArgoCD repo server replicas, override for default ArgoCD chart values    | no       |
-| rke2_argocd_applicationset_replicas    |                                  2 | int    | ArgoCD applicationset replicas, override for default ArgoCD chart values | no       |
-| rke2_argocd_apps_pokerops_revision     |                               HEAD | string | PokerOps ArgoCD revision, used to deploy base cluster assets             | no       |
-| rke2_longhorn_hostname                 | "longhorn.{{ rke2_cluster_name }}" | string | Longhorn UI hostname                                                     | no       |
-| rke2_nolog                             |                               true | bool   | Toggle flag for logging sensitive statements                             | no       |
+| Parameter                           |                            Default | Type   | Description                                                              | Required |
+| :---------------------------------- | ---------------------------------: | :----- | :----------------------------------------------------------------------- | :------- |
+| rke2_cluster_name                   |                                n/a | string | Cluster name, immutable after creation                                   | yes      |
+| rke2_version                        |                     v1.33.0+rke2r1 | string | RKE2 version to deploy                                                   | no       |
+| rke2_nolog                          |                               true | bool   | Toggle flag for logging sensitive statements                             | no       |
+| rke2_config_hostnames               |                               true | bool   | Toggle flag for cluster hostfile entry configuration                     | no       |
+| rke2_retry_num                      |                                 10 | bool   | Max number of task retries                                               | no       |
+| rke2_retry_delay                    |                                 30 | bool   | Task delay on retries                                                    | no       |
+| rke2_evict_timeout                  |                                300 | bool   | Node drain eviction timeout in seconds                                   | no       |
+| rke2_ippool_private                 |                                n/a | string | Private IP pool CIDR                                                     | yes      |
+| rke2_ippool_public                  |                                n/a | string | Public IP pool CIDR                                                      | no       |
+| rke2_certmanager_acme_secret        |                                n/a | string | Secret name for ACME challenge                                           | no       |
+| rke2_certmanager_acme_email         |                                n/a | string | Email for ACME challenge                                                 | no [1]   |
+| rke2_argocd_hostname                |   "argocd.{{ rke2_cluster_name }}" | string | ArgoCD hostname                                                          | no       |
+| rke2_argocd_values                  |                         object [2] | dict   | Helm chart values for ArgoCD chart                                       | no       |
+| rke2_argocd_apps_deploy             |                               true | dict   | Toggle flag for ArgoCD Applications chart deployment                     | no       |
+| rke2_argocd_apps_values             |                                n/a | dict   | Helm chart values for ArgoCD Applications chart                          | no       |
+| rke2_argocd_values_configs          |                                 {} | dict   | ArgoCD configs, override for default ArgoCD chart values                 | no       |
+| rke2_argocd_values_notifications    |                                 {} | dict   | ArgoCD notifications, override for default ArgoCD chart values           | no       |
+| rke2_argocd_exec_timeout            |                                 3m | string | ArgoCD exec timeout, override for default ArgoCD chart values            | no       |
+| rke2_argocd_redis_ha_enabled        |                               true | bool   | ArgoCD Redis HA toggle, override for default ArgoCD chart values         | no       |
+| rke2_argocd_controller_replicas     |                                  2 | int    | ArgoCD controller replicas, override for default ArgoCD chart values     | no       |
+| rke2_argocd_server_replicas         |                                  2 | int    | ArgoCD server replicas, override for default ArgoCD chart values         | no       |
+| rke2_argocd_reposerver_replicas     |                                  2 | int    | ArgoCD repo server replicas, override for default ArgoCD chart values    | no       |
+| rke2_argocd_applicationset_replicas |                                  2 | int    | ArgoCD applicationset replicas, override for default ArgoCD chart values | no       |
+| rke2_argocd_apps_pokerops_revision  |                               HEAD | string | PokerOps ArgoCD revision, used to deploy base cluster assets             | no       |
+| rke2_longhorn_hostname              | "longhorn.{{ rke2_cluster_name }}" | string | Longhorn UI hostname                                                     | no       |
+| rke2_nolog                          |                               true | bool   | Toggle flag for logging sensitive statements                             | no       |
 
 [1] rke2_certmanager_acme_email is required whenever rke2_certmanager_acme_secret is set
 [2] rke2_argocd_values default is as follows:
