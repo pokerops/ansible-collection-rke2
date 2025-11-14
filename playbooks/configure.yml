@@ -90,5 +90,6 @@
         is_tainted: "{{ taint_effect in taint_list }}"
         is_agent: "{{ rke2_agent_group in groups }}"
         agents: "{{ groups[rke2_agent_group] | default([]) }}"
-        condition: "{{ (is_agent and is_tainted) or (not is_agent and agents | length == 0) }}"
+        condition: "{{ (is_agent and is_tainted) or (not is_agent and (agents | length == 0)) }}"
         taint: "{{ taint_name }}:{{ taint_effect }}{{ '-' if condition else '' }}"
+      when: ((not is_tainted | bool) and (agents | length > 0)) or ((is_tainted | bool) and (agents | length == 0))
