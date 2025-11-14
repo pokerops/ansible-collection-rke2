@@ -68,7 +68,7 @@
     - name: Label agent nodes with role
       ansible.builtin.command:
         cmd: "{{ _rke2_bin_path }}/kubectl label node {{ item }} role.kubernetes.io/worker=true --overwrite"
-      loop: "{{ groups[rke2_agent_group] }}"
+      loop: "{{ groups[rke2_agent_group] | default([]) }}"
       run_once: true
 
     - name: Query node taints
