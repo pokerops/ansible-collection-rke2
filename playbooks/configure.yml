@@ -82,7 +82,7 @@
         cmd: "{{ _rke2_bin_path }}/kubectl taint node {{ inventory_hostname }} {{ taint }} --overwrite"
       vars:
         node_data: "{{ node_query.stdout | from_json }}"
-        taint_data: "{{ node_data.spec.taints | default([]) | to_json }}"
+        taint_data: "{{ node_data.spec.taints | default([]) }}"
         taint_name: "role.kubernetes.io/control-plane"
         taint_effect: NoSchedule
         taint_target: "{{ taint_data | selectattr('key', 'defined') | selectattr('key', 'equalto', taint_name) }}"
