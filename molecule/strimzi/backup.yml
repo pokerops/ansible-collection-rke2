@@ -1,0 +1,105 @@
+---
+- name: Create Velero S3 backup destination
+  hosts: localhost
+  vars:
+    rke2_velero_s3_access_key_id: "{{ lookup('env', 'AWS_ACCESS_KEY_ID', default='') }}"
+    rke2_velero_s3_secret_access_key: "{{ lookup('env', 'AWS_SECRET_ACCESS_KEY', default='') }}"
+    rke2_velero_test_object_key: velero/test-file.txt
+  tasks:
+    - name: Ensure AWS environment variables are set
+      ansible.builtin.assert:
+        that:
+          - rke2_velero_s3_access_key_id != ""
+          - rke2_velero_s3_secret_access_key != ''
+        fail_msg: "AWS environment variables are not set. Please set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY."
+
+    - name: Create S3 bucket for velero backups
+      amazon.aws.s3_bucket:
+        name: "{{ rke2_velero_s3_bucket }}"
+        state: present
+        region: "{{ rke2_velero_s3_region }}"
+        versioning: true
+        public_access:
+          block_public_acls: true
+          block_public_policy: true
+          ignore_public_acls: true
+          restrict_public_buckets: true
+
+    - name: Create temporary file
+      ansible.builtin.tempfile:
+        state: file
+        prefix: "molecule"
+        suffix: ".txt"
+      register: temp_file
+      changed_when: false
+
+    - name: Test S3 bucket permissions
+      block:
+        - name: Create test file content
+          set_fact:
+            test_file_content: "{{ ansible_date_time.iso8601 }}"
+
+        - name: Test S3 write permissions
+          amazon.aws.s3_object:
+            bucket: "{{ rke2_velero_s3_bucket }}"
+            object: "{{ rke2_velero_test_object_key }}"
+            content: "{{ test_file_content }}"
+            mode: put
+            access_key: "{{ rke2_velero_s3_access_key_id }}"
+            secret_key: "{{ rke2_velero_s3_secret_access_key }}"
+            region: "{{ rke2_velero_s3_region }}"
+          register: upload_result
+
+        - name: Test S3 read permissions
+          amazon.aws.s3_object:
+            bucket: "{{ rke2_velero_s3_bucket }}"
+            object: "{{ rke2_velero_test_object_key }}"
+            mode: get
+            dest: "{{ temp_file.path }}"
+            access_key: "{{ rke2_velero_s3_access_key_id }}"
+            secret_key: "{{ rke2_velero_s3_secret_access_key }}"
+            region: "{{ rke2_velero_s3_region }}"
+          register: download_result
+
+        - name: Slurp downloaded file content
+          ansible.builtin.slurp:
+            src: "{{ temp_file.path }}"
+          register: downloaded_content
+
+        - name: Verify content integrity
+          ansible.builtin.assert:
+            that:
+              - downloaded_content.content | b64decode == test_file_content
+            fail_msg: "Downloaded content does not match uploaded content"
+            success_msg: "Content integrity verified - read/write permissions working correctly"
+
+        - name: Test S3 delete permissions
+          amazon.aws.s3_object:
+            bucket: "{{ rke2_velero_s3_bucket }}"
+            object: "{{ rke2_velero_test_object_key }}"
+            mode: delobj
+            access_key: "{{ rke2_velero_s3_access_key_id }}"
+            secret_key: "{{ rke2_velero_s3_secret_access_key }}"
+            region: "{{ rke2_velero_s3_region }}"
+
+      rescue:
+        - name: Remove test objects on failure
+          amazon.aws.s3_object:
+            bucket: "{{ rke2_velero_s3_bucket }}"
+            object: "{{ rke2_velero_test_object_key }}"
+            mode: delobj
+            access_key: "{{ rke2_velero_s3_access_key_id }}"
+            secret_key: "{{ rke2_velero_s3_secret_access_key }}"
+            region: "{{ rke2_velero_s3_region }}"
+          ignore_errors: true
+
+      always:
+        - name: Remove temporary file
+          file:
+            path: "{{ temp_file.path }}"
+            state: absent
+          ignore_errors: true
+          changed_when: false
+
+- name: Import velero s3 playbook
+  import_playbook: pokerops.rke2.velero.s3.yml

@@ -1,0 +1,139 @@
+---
+- name: Cleanup AWS resources after testing
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Check if IAM user exists
+      amazon.aws.iam_user_info:
+        name: "{{ rke2_velero_s3_user }}"
+      register: user_check
+      ignore_errors: true
+
+    - name: Cleanup IAM user resources
+      when: user_check is succeeded and user_check.users | length > 0
+      block:
+        - name: List and delete all access keys for IAM user
+          block:
+            - name: List access keys for user
+              amazon.aws.iam_access_key_info:
+                user_name: "{{ rke2_velero_s3_user }}"
+              register: user_access_keys
+              ignore_errors: true
+
+            - name: Delete access keys
+              amazon.aws.iam_access_key:
+                user_name: "{{ rke2_velero_s3_user }}"
+                id: "{{ item.access_key_id }}"
+                state: absent
+              loop: "{{ user_access_keys.access_keys | default([]) }}"
+              when: user_access_keys.access_keys is defined
+              ignore_errors: true
+
+        - name: List attached managed policies
+          amazon.aws.iam_user_info:
+            name: "{{ rke2_velero_s3_user }}"
+          register: user_info
+          ignore_errors: true
+
+        - name: Detach managed policies from IAM user
+          amazon.aws.iam_user:
+            name: "{{ rke2_velero_s3_user }}"
+            managed_policies: []
+            state: present
+          when:
+            - user_info is succeeded
+            - user_info.users | length > 0
+          ignore_errors: true
+
+        - name: Delete IAM user
+          amazon.aws.iam_user:
+            name: "{{ rke2_velero_s3_user }}"
+            state: absent
+          ignore_errors: true
+
+    - name: Check if IAM policy exists and delete it
+      block:
+        - name: Check if managed policy exists
+          amazon.aws.iam_policy_info:
+            name: "{{ rke2_velero_s3_policy }}"
+          register: policy_check
+          ignore_errors: true
+
+        - name: Delete IAM policy
+          amazon.aws.iam_managed_policy:
+            name: "{{ rke2_velero_s3_policy }}"
+            state: absent
+          when:
+            - policy_check is succeeded
+            - policy_check.policies | length > 0
+          ignore_errors: true
+
+    - name: Check if S3 bucket exists
+      amazon.aws.s3_bucket_info:
+        name: "{{ rke2_velero_s3_bucket }}"
+      register: bucket_check
+      ignore_errors: true
+
+    - name: Cleanup S3 bucket resources
+      when: bucket_check is succeeded and rke2_velero_s3_bucket in (bucket_check.buckets | map(attribute='name') | list)
+      block:
+        - name: Empty S3 bucket before deletion
+          block:
+            - name: List all objects in bucket
+              amazon.aws.s3_object_info:
+                bucket_name: "{{ rke2_velero_s3_bucket }}"
+              register: bucket_objects
+              ignore_errors: true
+
+            - name: Delete all objects in bucket
+              amazon.aws.s3_object:
+                bucket: "{{ rke2_velero_s3_bucket }}"
+                object: "{{ item.key }}"
+                mode: delobj
+              loop: "{{ bucket_objects.s3_keys | default([]) }}"
+              when: bucket_objects.s3_keys is defined
+              ignore_errors: true
+
+            - name: List all object versions in bucket
+              amazon.aws.s3_object_info:
+                bucket_name: "{{ rke2_velero_s3_bucket }}"
+                list_versions: true
+              register: bucket_versions
+              ignore_errors: true
+
+            - name: Delete all object versions in bucket
+              amazon.aws.s3_object:
+                bucket: "{{ rke2_velero_s3_bucket }}"
+                object: "{{ item.key }}"
+                version_id: "{{ item.version_id }}"
+                mode: delobj
+              loop: "{{ bucket_versions.s3_keys | default([]) }}"
+              when:
+                - bucket_versions.s3_keys is defined
+                - item.version_id is defined
+                - item.version_id != 'null'
+              ignore_errors: true
+
+            - name: Delete all delete markers in bucket
+              amazon.aws.s3_object:
+                bucket: "{{ rke2_velero_s3_bucket }}"
+                object: "{{ item.key }}"
+                version_id: "{{ item.version_id }}"
+                mode: delobj
+              loop: "{{ bucket_versions.s3_keys | default([]) }}"
+              when:
+                - bucket_versions.s3_keys is defined
+                - item.version_id is defined
+                - item.version_id != 'null'
+                - item.is_delete_marker | default(false)
+              ignore_errors: true
+
+        - name: Delete S3 bucket
+          amazon.aws.s3_bucket:
+            name: "{{ rke2_velero_s3_bucket }}"
+            state: absent
+            force: true
+          ignore_errors: true
+
+- name: Include common destroy playbook
+  import_playbook: ../common/destroy.yml
