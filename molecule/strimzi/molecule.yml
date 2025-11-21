@@ -37,8 +37,8 @@ provisioner:
     create: ../common/libvirt.yml
     prepare: ../common/prepare.yml
     converge: ../common/install.yml
-    side_effect: backup.yml
-    destroy: ../common/destroy.yml
+    side_effect: ../common/aws_backup.yml
+    destroy: ../common/aws_destroy.yml
   config_options:
     defaults:
       callbacks_enabled: ansible.posix.profile_tasks
@@ -49,7 +49,7 @@ provisioner:
         vars:
           ansible_ssh_extra_args: "-o ControlPersist=no -o ControlPath=none"
           libvirt_user: molecule
-          libvirt_address: "172.31.252.3/24"
+          libvirt_address: "172.31.252.5/24"
           libvirt_platforms: "{{ molecule_yml.platforms }}"
           molecule_net_prefix: "{{ libvirt_address | ansible.utils.ipaddr('prefix') }}"
           molecule_pool_prefix: "{{ (molecule_net_prefix | int) + 2 }}"

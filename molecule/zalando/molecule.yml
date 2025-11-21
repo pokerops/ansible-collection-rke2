@@ -37,8 +37,8 @@ provisioner:
     create: ../common/libvirt.yml
     prepare: ../common/prepare.yml
     converge: ../common/install.yml
-    side_effect: backup.yml
-    destroy: ../common/destroy.yml
+    side_effect: ../common/aws_backup.yml
+    destroy: ../common/aws_destroy.yml
   config_options:
     defaults:
       callbacks_enabled: ansible.posix.profile_tasks
