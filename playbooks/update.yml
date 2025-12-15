@@ -118,7 +118,7 @@
 
             - name: Verify cluster node pod state
               block:
-                - name: Wait for pods to be in a running state
+                - name: Wait for pods to be in a running state and ready
                   kubernetes.core.k8s_info:
                     kind: Pod
                     kubeconfig: "{{ _kubeconfig_path }}"
