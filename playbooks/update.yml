@@ -118,7 +118,7 @@
 
             - name: Verify cluster node pod state
               block:
-                - name: Wait for pods to be in a running state
+                - name: Wait for pods to be in a running state and ready
                   kubernetes.core.k8s_info:
                     kind: Pod
                     kubeconfig: "{{ _kubeconfig_path }}"
@@ -127,6 +127,12 @@
                     pods_phase: "{{ pods_status | selectattr('status.phase', 'defined') }}"
                     pods_completed: "{{ pods_phase | rejectattr('status.phase', 'equalto', 'Running') }}"
                     pods_failed: "{{ pods_completed | rejectattr('status.phase', 'equalto', 'Succeeded') }}"
+                    pods_running: "{{ pods_status | selectattr('status.phase', 'equalto', 'Running') }}"
+                    pods_conditions: "{{ pods_running | map(attribute='status.conditions') | flatten }}"
+                    pods_condition_failed: "{{ pods_conditions | selectattr('status', 'equalto', 'False') }}"
+                    pods_condition_failed_reason: "{{ pods_condition_failed | selectattr('reason', 'defined') }}"
+                    pods_condition_noreason: "{{ pods_condition_failed | rejectattr('reason', 'defined') }}"
+                    pods_condition_notready: "{{ pods_condition_failed_reason | selectattr('reason', 'equalto', 'ContainersNotReady') }}"
                   register: pods_info
                   retries: "{{ _rke2_retry_num }}"
                   delay: "{{ _rke2_retry_delay }}"
@@ -134,6 +140,7 @@
                     - (pods_status | length) == (pods_info.resources | length)
                     - (pods_phase | length) == (pods_info.resources | length)
                     - pods_failed | length == 0
+                    - (pods_condition_noreason + pods_condition_notready) | length == 0
                   delegate_to: localhost
 
               rescue:

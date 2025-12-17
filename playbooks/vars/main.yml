@@ -12,6 +12,7 @@ rke2_defaults_drain_pod_selectors:
   - "longhorn.io/component!=instance-manager"
   - "app!=csi-attacher"
   - "app!=csi-provisioner"
+  - "application!=spilo"
 
 # Overridable values
 _rke2_install: "{{ lookup('ansible.builtin.env', 'RKE2_INSTALL', default=true) }}"
