@@ -389,7 +389,7 @@
                   strimzi.io/cluster: "{{ kafka_cluster_name }}"
               spec:
                 config:
-                  retention.ms: 259200000 # 3 days
+                  retention.ms: 259200000
                   segment.ms: 86400000
             state: present
             wait: true
@@ -569,8 +569,6 @@
           retries: 60
           delay: 10
 
-    # # - fail:
-
     - name: Destroy kafka cluster and PVCs
       block:
         - name: Query existing PVCs before delete all kafka
@@ -708,8 +706,6 @@
           retries: 30
           delay: 10
 
-    # # - fail:
-
     - name: Restore kafka
       block:
         - name: Disable argocd auto-sync applicationn for strimizi operator
@@ -808,7 +804,7 @@
             kubeconfig: "{{ kubeconfig_path }}"
             api_version: v1
             kind: Pod
-            namespace: "{{ kafka_namespace }}" # REVISAR SI SE PUEDE QUITAR LA CONDISION DE RUNNING PORQUE YA ESTA LA DE READY
+            namespace: "{{ kafka_namespace }}"
           register: kafka_pods
           until: >
             ( kafka_pods.resources | length > 0 ) and
