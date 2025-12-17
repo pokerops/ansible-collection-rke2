@@ -297,20 +297,28 @@
                   groupRegex: ".*"
             state: present
 
-        - name: Wait for Kafka cluster to be ready
-          kubernetes.core.k8s_info:
-            kubeconfig: "{{ kubeconfig_path }}"
-            api_version: kafka.strimzi.io/v1beta2
-            kind: Kafka
-            name: "{{ kafka_cluster_name }}"
-            namespace: "{{ kafka_namespace }}"
-          register: kafka_status
-          until: kafka_status.resources | length > 0 and
-                kafka_status.resources[0].status.conditions[0].status is defined and
-                kafka_status.resources[0].status.conditions[0].type == "Ready" and
-                kafka_status.resources[0].status.conditions[0].status == "True"
-          retries: 60
-          delay: 10
+        - name: Wait for Kafka cluster
+          block:
+            - name: Wait for Kafka cluster to be ready
+              kubernetes.core.k8s_info:
+                kubeconfig: "{{ kubeconfig_path }}"
+                api_version: kafka.strimzi.io/v1beta2
+                kind: Kafka
+                name: "{{ kafka_cluster_name }}"
+                namespace: "{{ kafka_namespace }}"
+              register: kafka_status
+              until: kafka_status.resources | length > 0 and
+                    kafka_status.resources[0].status.conditions[0].status is defined and
+                    kafka_status.resources[0].status.conditions[0].type == "Ready" and
+                    kafka_status.resources[0].status.conditions[0].status == "True"
+              retries: 60
+              delay: 30
+          rescue:
+            - name: Print kafka_status to debug
+              ansible.builtin.debug:
+                msg: "{{ kafka_status }}"
+            - name: Terminate playbook
+              fail:
 
         - name: Capture original Kafka clusterId
           ansible.builtin.set_fact:
@@ -567,7 +575,7 @@
             - backup_status.resources[0].status.phase is defined
             - backup_status.resources[0].status.phase == "Completed"
           retries: 60
-          delay: 10
+          delay: 30
 
     - name: Destroy kafka cluster and PVCs
       block:
@@ -744,7 +752,7 @@
           register: operator_pods
           until: operator_pods.resources | length == 0
           retries: 60
-          delay: 10
+          delay: 30
 
         - name: Restore Kafka namespace from Velero backup (including status)
           kubernetes.core.k8s:
@@ -785,7 +793,7 @@
                 - restore_status.resources[0].status.phase is defined
                 - restore_status.resources[0].status.phase == "Completed"
               retries: 60
-              delay: 10
+              delay: 30
           rescue:
             - name: Print restore_status to debug
               ansible.builtin.debug:
@@ -805,7 +813,7 @@
             - restored_kafka.resources | length > 0
             - restored_kafka.resources[0].status.conditions[0].status == "True"
           retries: 60
-          delay: 15
+          delay: 30
 
         - name: Wait until all pods in {{ kafka_namespace }} are Running and Ready
           kubernetes.core.k8s_info:
@@ -844,7 +852,7 @@
               | length
             )
           retries: 60
-          delay: 15
+          delay: 30
 
         - name: Scale up Strimzi Cluster Operator
           kubernetes.core.k8s:
@@ -869,7 +877,7 @@
           until: operator_pods.resources[0].status.containerStatuses[0].ready is defined and
                 operator_pods.resources[0].status.containerStatuses[0].ready == true
           retries: 60
-          delay: 10
+          delay: 30
 
         - name: Disable argocd auto-sync applicationn for strimizi operator
           kubernetes.core.k8s:
