@@ -568,7 +568,7 @@
                   - "{{ kafka_namespace }}"
                 includeClusterResources: true
                 defaultVolumesToFsBackup: true
-                ttl: "01h00m0s"
+                ttl: "72h0m0s"
             state: present
 
         - name: Wait for Velero backup to complete
