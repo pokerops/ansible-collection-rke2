@@ -55,7 +55,7 @@
               ansible.builtin.set_fact:
                 pvs: "{{ existing_pvcs.resources | map(attribute='spec.volumeName') | list  }}"
 
-            - name: PV to temove
+            - name: PV to remove
               ansible.builtin.debug:
                 msg: "{{ pvs }}"
 
@@ -583,7 +583,7 @@
           ansible.builtin.set_fact:
             pvs: "{{ existing_pvcs.resources | map(attribute='spec.volumeName') | list  }}"
 
-        - name: PV to temove
+        - name: PV to remove
           ansible.builtin.debug:
             msg: "{{ pvs }}"
 
@@ -771,19 +771,27 @@
                     - "*"
             state: present
 
-        - name: Wait for Kafka restore to complete
-          kubernetes.core.k8s_info:
-            kubeconfig: "{{ kubeconfig_path }}"
-            api_version: velero.io/v1
-            kind: Restore
-            name: "{{ restore_name }}"
-            namespace: velero
-          register: restore_status
-          until:
-            - restore_status.resources[0].status.phase is defined
-            - restore_status.resources[0].status.phase == "Completed"
-          retries: 60
-          delay: 10
+        - name: Wait for Kafka restore
+          block:
+            - name: Wait for Kafka restore to complete
+              kubernetes.core.k8s_info:
+                kubeconfig: "{{ kubeconfig_path }}"
+                api_version: velero.io/v1
+                kind: Restore
+                name: "{{ restore_name }}"
+                namespace: velero
+              register: restore_status
+              until:
+                - restore_status.resources[0].status.phase is defined
+                - restore_status.resources[0].status.phase == "Completed"
+              retries: 60
+              delay: 10
+          rescue:
+            - name: Print restore_status to debug
+              ansible.builtin.debug:
+                msg: "{{ restore_status }}"
+            - name: Terminate playbook
+              fail:
 
         - name: Wait for Kafka cluster to be restored and ready
           kubernetes.core.k8s_info:
