@@ -188,6 +188,26 @@
 
     - name: Deploy kafka
       block:
+        - name: Check strimzi operator
+          block:
+            - name: Wait until Strimzi operator pods ready
+              kubernetes.core.k8s_info:
+                kubeconfig: "{{ kubeconfig_path }}"
+                api_version: v1
+                kind: Pod
+                namespace: "{{ kafka_operator_namespace }}"
+              register: operator_pods
+              until: operator_pods.resources[0].status.containerStatuses[0].ready is defined and
+                    operator_pods.resources[0].status.containerStatuses[0].ready == true
+              retries: 60
+              delay: 15
+          rescue:
+            - name: Print operator_pods to debug
+              ansible.builtin.debug:
+                msg: "{{ operator_pods }}"
+            - name: Terminate playbook
+              fail:
+
         - name: Deploy KafkaNodePool for controllers
           kubernetes.core.k8s:
             kubeconfig: "{{ kubeconfig_path }}"
@@ -752,7 +772,7 @@
             api_version: apps/v1
             kind: Deployment
             name: strimzi-cluster-operator
-            namespace: strimzi
+            namespace: "{{ kafka_operator_namespace }}"
             definition:
               spec:
                 replicas: 0
@@ -764,7 +784,7 @@
             kubeconfig: "{{ kubeconfig_path }}"
             api_version: v1
             kind: Pod
-            namespace: strimzi
+            namespace: "{{ kafka_operator_namespace }}"
           register: operator_pods
           until: operator_pods.resources | length == 0
           retries: 60
@@ -892,7 +912,7 @@
             api_version: apps/v1
             kind: Deployment
             name: strimzi-cluster-operator
-            namespace: strimzi
+            namespace: "{{ kafka_operator_namespace }}"
             definition:
               spec:
                 replicas: 1
@@ -904,7 +924,7 @@
             kubeconfig: "{{ kubeconfig_path }}"
             api_version: v1
             kind: Pod
-            namespace: strimzi
+            namespace: "{{ kafka_operator_namespace }}"
           register: operator_pods
           until: operator_pods.resources[0].status.containerStatuses[0].ready is defined and
                 operator_pods.resources[0].status.containerStatuses[0].ready == true
