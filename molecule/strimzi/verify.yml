@@ -214,9 +214,9 @@
                     labels:
                       strimzi.io/cluster: "{{ kafka_cluster_name }}"
                     annotations:
-                      strimzi.io/next-node-ids: "[3-5]"
+                      strimzi.io/next-node-ids: "[1]"
                   spec:
-                    replicas: 3
+                    replicas: 1
                     roles:
                       - controller
                     storage:
@@ -238,9 +238,9 @@
                     labels:
                       strimzi.io/cluster: "{{ kafka_cluster_name }}"
                     annotations:
-                      strimzi.io/next-node-ids: "[0-2]"
+                      strimzi.io/next-node-ids: "[0]"
                   spec:
-                    replicas: 3
+                    replicas: 1
                     roles:
                       - broker
                     storage:
@@ -286,23 +286,17 @@
                               - broker: 0
                                 annotations:
                                   metallb.io/address-pool: metallb-private
-                              - broker: 1
-                                annotations:
-                                  metallb.io/address-pool: metallb-private
-                              - broker: 2
-                                annotations:
-                                  metallb.io/address-pool: metallb-private
                       config:
-                        offsets.topic.replication.factor: 3
-                        transaction.state.log.replication.factor: 3
-                        transaction.state.log.min.isr: 3
+                        offsets.topic.replication.factor: 1
+                        transaction.state.log.replication.factor: 1
+                        transaction.state.log.min.isr: 1
                         auto.create.topics.enable: false
                         log.retention.ms: 3600
                         log.segment.bytes: 1073741824
                         delete.topic.enable: true
-                        num.partitions: 3
-                        default.replication.factor: 3
-                        min.insync.replicas: 2
+                        num.partitions: 1
+                        default.replication.factor: 1
+                        min.insync.replicas: 1
                     entityOperator:
                       topicOperator: {}
                       userOperator: {}
@@ -354,7 +348,7 @@
 
             - name: Wait for each Kafka broker LoadBalancer to get external IP
               vars:
-                broker_ids: [0, 1, 2]
+                broker_ids: [0]
               kubernetes.core.k8s_info:
                 kubeconfig: "{{ kubeconfig_path }}"
                 api_version: v1
