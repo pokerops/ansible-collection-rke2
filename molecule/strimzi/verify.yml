@@ -227,7 +227,7 @@
                   - controller
                 storage:
                   type: persistent-claim
-                  size: 1Gi
+                  size: 2Gi
                   deleteClaim: true
                   class: longhorn
             state: present
@@ -251,7 +251,7 @@
                   - broker
                 storage:
                   type: persistent-claim
-                  size: 1Gi
+                  size: 2Gi
                   deleteClaim: true
                   class: longhorn
             state: present
@@ -337,6 +337,28 @@
             - name: Print kafka_status to debug
               ansible.builtin.debug:
                 msg: "{{ kafka_status }}"
+            - name: Get pods info
+              kubernetes.core.k8s_info:
+                kubeconfig: "{{ kubeconfig_path }}"
+                api_version: v1
+                kind: Pod
+                namespace: "{{ kafka_namespace }}"
+              register: kafka_pods
+              retries: 60
+              delay: 15
+            - name: Print kafka_pods to debug
+              ansible.builtin.debug:
+                msg: "{{ kafka_pods }}"
+            - name: Get PVCs info
+              kubernetes.core.k8s_info:
+                kubeconfig: "{{ kubeconfig_path }}"
+                api_version: v1
+                kind: PersistentVolumeClaim
+                namespace: "{{ kafka_namespace }}"
+              register: kafka_pvcs
+            - name: Print kafka_pvcs to debug
+              ansible.builtin.debug:
+                msg: "{{ kafka_pvcs }}"
             - name: Terminate playbook
               fail:
 
@@ -829,11 +851,33 @@
                 - restore_status.resources[0].status.phase is defined
                 - restore_status.resources[0].status.phase == "Completed"
               retries: 60
-              delay: 15
+              delay: 20
           rescue:
             - name: Print restore_status to debug
               ansible.builtin.debug:
                 msg: "{{ restore_status }}"
+            - name: Get pods info
+              kubernetes.core.k8s_info:
+                kubeconfig: "{{ kubeconfig_path }}"
+                api_version: v1
+                kind: Pod
+                namespace: "{{ kafka_namespace }}"
+              register: kafka_pods
+              retries: 60
+              delay: 15
+            - name: Print kafka_pods to debug
+              ansible.builtin.debug:
+                msg: "{{ kafka_pods }}"
+            - name: Get PVCs info
+              kubernetes.core.k8s_info:
+                kubeconfig: "{{ kubeconfig_path }}"
+                api_version: v1
+                kind: PersistentVolumeClaim
+                namespace: "{{ kafka_namespace }}"
+              register: kafka_pvcs
+            - name: Print kafka_pvcs to debug
+              ansible.builtin.debug:
+                msg: "{{ kafka_pvcs }}"
             - name: Terminate playbook
               fail:
 
