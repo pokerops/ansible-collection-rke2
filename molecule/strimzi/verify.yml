@@ -1049,7 +1049,7 @@
 
         - name: Print kafkatopic_status to debug
           ansible.builtin.debug:
-            msg: "{{ kafkanodepool_status }}"
+            msg: "{{ kafkatopic_status }}"
 
         - name: Get kafka pods info
           kubernetes.core.k8s_info:
