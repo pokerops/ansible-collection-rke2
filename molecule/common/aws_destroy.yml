@@ -3,70 +3,70 @@
   hosts: localhost
   gather_facts: false
   tasks:
-    - name: Check if IAM user exists
-      amazon.aws.iam_user_info:
-        name: "{{ rke2_velero_s3_user }}"
-      register: user_check
-      ignore_errors: true
+    # - name: Check if IAM user exists
+    #   amazon.aws.iam_user_info:
+    #     name: "{{ rke2_velero_s3_user }}"
+    #   register: user_check
+    #   ignore_errors: true
 
-    - name: Cleanup IAM user resources
-      when: user_check is succeeded and user_check.users | length > 0
-      block:
-        - name: List and delete all access keys for IAM user
-          block:
-            - name: List access keys for user
-              amazon.aws.iam_access_key_info:
-                user_name: "{{ rke2_velero_s3_user }}"
-              register: user_access_keys
-              ignore_errors: true
+    # - name: Cleanup IAM user resources
+    #   when: user_check is succeeded and user_check.users | length > 0
+    #   block:
+    #     - name: List and delete all access keys for IAM user
+    #       block:
+    #         - name: List access keys for user
+    #           amazon.aws.iam_access_key_info:
+    #             user_name: "{{ rke2_velero_s3_user }}"
+    #           register: user_access_keys
+    #           ignore_errors: true
 
-            - name: Delete access keys
-              amazon.aws.iam_access_key:
-                user_name: "{{ rke2_velero_s3_user }}"
-                id: "{{ item.access_key_id }}"
-                state: absent
-              loop: "{{ user_access_keys.access_keys | default([]) }}"
-              when: user_access_keys.access_keys is defined
-              ignore_errors: true
+    #         - name: Delete access keys
+    #           amazon.aws.iam_access_key:
+    #             user_name: "{{ rke2_velero_s3_user }}"
+    #             id: "{{ item.access_key_id }}"
+    #             state: absent
+    #           loop: "{{ user_access_keys.access_keys | default([]) }}"
+    #           when: user_access_keys.access_keys is defined
+    #           ignore_errors: true
 
-        - name: List attached managed policies
-          amazon.aws.iam_user_info:
-            name: "{{ rke2_velero_s3_user }}"
-          register: user_info
-          ignore_errors: true
+    #     - name: List attached managed policies
+    #       amazon.aws.iam_user_info:
+    #         name: "{{ rke2_velero_s3_user }}"
+    #       register: user_info
+    #       ignore_errors: true
 
-        - name: Detach managed policies from IAM user
-          amazon.aws.iam_user:
-            name: "{{ rke2_velero_s3_user }}"
-            managed_policies: []
-            state: present
-          when:
-            - user_info is succeeded
-            - user_info.users | length > 0
-          ignore_errors: true
+    #     - name: Detach managed policies from IAM user
+    #       amazon.aws.iam_user:
+    #         name: "{{ rke2_velero_s3_user }}"
+    #         managed_policies: []
+    #         state: present
+    #       when:
+    #         - user_info is succeeded
+    #         - user_info.users | length > 0
+    #       ignore_errors: true
 
-        - name: Delete IAM user
-          amazon.aws.iam_user:
-            name: "{{ rke2_velero_s3_user }}"
-            state: absent
-          ignore_errors: true
+    #     - name: Delete IAM user
+    #       amazon.aws.iam_user:
+    #         name: "{{ rke2_velero_s3_user }}"
+    #         state: absent
+    #       ignore_errors: true
 
-    - name: Check if IAM policy exists and delete it
-      block:
-        - name: Check if managed policy exists
-          amazon.aws.iam_policy_info:
-            name: "{{ rke2_velero_s3_policy }}"
-          register: policy_check
-          ignore_errors: true
+    # - name: Check if IAM policy exists and delete it
+    #   block:
+    #     - name: Check if managed policy exists
+    #       amazon.aws.iam_policy_info:
+    #         name: "{{ rke2_velero_s3_policy }}"
+    #       register: policy_check
+    #       ignore_errors: true
 
-        - name: Delete IAM policy
-          amazon.aws.iam_managed_policy:
-            name: "{{ rke2_velero_s3_policy }}"
-            state: absent
-          when:
-            - policy_check is succeeded
-            - policy_check.policies | length > 0
-          ignore_errors: true
+    #     - name: Delete IAM policy
+    #       amazon.aws.iam_managed_policy:
+    #         name: "{{ rke2_velero_s3_policy }}"
+    #         state: absent
+    #       when:
+    #         - policy_check is succeeded
+    #         - policy_check.policies | length > 0
+    #       ignore_errors: true
 
     - name: Check if S3 bucket exists
       amazon.aws.s3_bucket_info:
@@ -88,7 +88,7 @@
             - name: Delete all objects in bucket
               amazon.aws.s3_object:
                 bucket: "{{ rke2_velero_s3_bucket }}"
-                object: "{{ item.key }}"
+                object: "{{ item }}"
                 mode: delobj
               loop: "{{ bucket_objects.s3_keys | default([]) }}"
               when: bucket_objects.s3_keys is defined

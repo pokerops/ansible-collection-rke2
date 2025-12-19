@@ -10,7 +10,7 @@
     test_message: "Hello from Ansible"
     backup_name: "molecule-kafka-backup-{{ ansible_date_time.epoch }}"
     restore_name: "molecule-kafka-restore-{{ ansible_date_time.epoch }}"
-    kubeconfig_path: "{{ molecule_local_kubeconfig }}"
+    kubeconfig_path: "~/.kube/codisa.rke2swpn.yaml"
     kafka_operator_namespace: "strimzi"
     kafka_image: "quay.io/strimzi/kafka:0.45.0-kafka-3.9.0"
 
@@ -343,7 +343,7 @@
               delay: 10
 
             - name: Debug bootstrap LoadBalancer IP
-              debug:
+              ansible.builtin.debug:
                 msg: "Kafka bootstrap external IP: {{ kafka_bootstrap_svc.resources[0].status.loadBalancer.ingress[0].ip }}"
 
             - name: Wait for each Kafka broker LoadBalancer to get external IP
@@ -365,7 +365,7 @@
                 label: "broker-{{ item }}"
 
             - name: Show broker external IPs
-              debug:
+              ansible.builtin.debug:
                 msg: "Broker {{ item.item }} external IP: {{ item.resources[0].status.loadBalancer.ingress[0].ip }}"
               loop: "{{ kafka_broker_svc.results }}"
               loop_control:
