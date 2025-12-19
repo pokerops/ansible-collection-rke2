@@ -10,7 +10,7 @@
     test_message: "Hello from Ansible"
     backup_name: "molecule-kafka-backup-{{ ansible_date_time.epoch }}"
     restore_name: "molecule-kafka-restore-{{ ansible_date_time.epoch }}"
-    kubeconfig_path: "~/.kube/codisa.rke2swpn.yaml"
+    kubeconfig_path: "{{ molecule_local_kubeconfig }}"
     kafka_operator_namespace: "strimzi"
     kafka_image: "quay.io/strimzi/kafka:0.45.0-kafka-3.9.0"
 
