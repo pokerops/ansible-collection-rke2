@@ -15,19 +15,19 @@ platforms:
       - rke2_server
   - name: rke2-${MOLECULE_SCENARIO_NAME}-agent-01
     image: "${MOLECULE_KVM_IMAGE}"
-    cpu: 1
+    cpu: 2
     mem: 4
     groups:
       - rke2_agent
   - name: rke2-${MOLECULE_SCENARIO_NAME}-agent-02
     image: "${MOLECULE_KVM_IMAGE}"
-    cpu: 1
+    cpu: 2
     mem: 4
     groups:
       - rke2_agent
   - name: rke2-${MOLECULE_SCENARIO_NAME}-agent-03
     image: "${MOLECULE_KVM_IMAGE}"
-    cpu: 1
+    cpu: 2
     mem: 4
     groups:
       - rke2_agent
@@ -49,7 +49,7 @@ provisioner:
         vars:
           ansible_ssh_extra_args: "-o ControlPersist=no -o ControlPath=none"
           libvirt_user: molecule
-          libvirt_address: "172.31.252.3/24"
+          libvirt_address: "172.31.252.5/24"
           libvirt_platforms: "{{ molecule_yml.platforms }}"
           molecule_net_prefix: "{{ libvirt_address | ansible.utils.ipaddr('prefix') }}"
           molecule_pool_prefix: "{{ (molecule_net_prefix | int) + 2 }}"
@@ -98,9 +98,9 @@ provisioner:
           rke2_skip_deploy: false
           rke2_velero_s3: "{{ rke2_cluster_name | replace('.', '-') }}"
           rke2_velero_s3_region: us-east-1
-          rke2_velero_s3_bucket: "{{ rke2_velero_s3 }}-bucket"
-          rke2_velero_s3_policy: "{{ rke2_velero_s3 }}-policy"
-          rke2_velero_s3_user: "{{ rke2_velero_s3 }}-user"
+          rke2_velero_s3_bucket: "{{ rke2_velero_s3 }}-strimzi-bucket"
+          rke2_velero_s3_policy: "{{ rke2_velero_s3 }}-strimzi-policy"
+          rke2_velero_s3_user: "{{ rke2_velero_s3 }}-strimzi-user"
           rke2_velero_s3_storage: "default"
 verifier:
   name: ansible

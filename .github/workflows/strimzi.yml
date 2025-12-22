@@ -1,0 +1,49 @@
+---
+name: strimzi
+env:
+  DEVBOX_VERSION: ${{ vars.DEVBOX_VERSION }}
+on:
+  pull_request:
+    branches:
+      - master
+    paths:
+      - "*"
+      - "!README.md"
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  strimzi:
+    name: strimzi
+    runs-on: libvirt
+    strategy:
+      matrix:
+        scenario:
+          - strimzi
+        image:
+          - distro: noble
+            url: https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      MOLECULE_OUTPUT_DIR: /tmp/logs
+      GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+      MOLECULE_REVISION: ${{ github.head_ref || github.ref_name }}
+    steps:
+      - name: Run devbox tests
+        uses: pokerops/ansible-utils@master
+        with:
+          run: |
+            make requirements test \
+            MOLECULE_SCENARIO=${{ matrix.scenario }} \
+            MOLECULE_KVM_DISTRO=${{ matrix.image.distro }} \
+            MOLECULE_KVM_IMAGE=${{ matrix.image.url }}
+
+      - name: Upload install logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: install-${{ matrix.scenario }}-${{ matrix.image.distro }}.log
+          path: |
+            /tmp/logs/*
+          if-no-files-found: ignore
+        if: always()
