@@ -219,6 +219,7 @@
             - name: Reboot node
               ansible.builtin.reboot:
 
+      rescue:
         - name: Uncordon cluster node
           delegate_to: localhost
           block:
