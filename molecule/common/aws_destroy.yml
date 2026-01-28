@@ -88,7 +88,7 @@
             - name: Delete all objects in bucket
               amazon.aws.s3_object:
                 bucket: "{{ rke2_velero_s3_bucket }}"
-                object: "{{ item.key }}"
+                object: "{{ item }}"
                 mode: delobj
               loop: "{{ bucket_objects.s3_keys | default([]) }}"
               when: bucket_objects.s3_keys is defined

@@ -23,7 +23,6 @@ Default installation uses [ArgoCD Applications](https://argo-cd.readthedocs.io/e
 
 ## To Do
 
-- Add Molecule test scenario for Kafka backup and restore
 - Add Molecule test scenario for Sealed Secrets backup and restore
 - Add Grafana operator to base cluster deployment
 - Add Grafana deployment to base cluster components
