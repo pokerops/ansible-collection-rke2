@@ -117,6 +117,7 @@
               delegate_to: localhost
 
             - name: Verify cluster node pod state
+              when: not _rke2_update_skip_checks
               block:
                 - name: Wait for pods to be in a running state and ready
                   kubernetes.core.k8s_info:

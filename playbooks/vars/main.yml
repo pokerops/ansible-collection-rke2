@@ -29,8 +29,9 @@ _rke2_retry_delay: "{{ rke2_retry_delay | default(30) }}"
 _rke2_retry_num: "{{ rke2_retry_num | default(10) }}"
 _rke2_evict_timeout: "{{ rke2_evict_timeout | default(300) }}"
 _rke2_drain_pod_selectors: "{{ rke2_drain_pod_selectors | default(rke2_defaults_drain_pod_selectors) }}"
-_rke2_config_hostnames: "{{ rke2_config_hostnames | default(true) }}"
-_rke2_nolog: "{{ rke2_nolog | default('true') | bool }}"
+_rke2_config_hostnames: "{{ rke2_config_hostnames | default(True) }}"
+_rke2_nolog: "{{ rke2_nolog | default(True) | bool }}"
+_rke2_update_skip_checks: "{{ rke2_update_skip_checks | default(False) | bool }}"
 
 # Hardcoded values
 rke2_uninstall_script: /usr/local/bin/rke2-uninstall.sh
