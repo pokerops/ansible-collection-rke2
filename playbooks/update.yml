@@ -109,15 +109,16 @@
 
         - name: Cordon cluster node
           block:
-            - name: Query pod state
-              kubernetes.core.k8s_info:
-                kind: Pod
-                kubeconfig: "{{ _kubeconfig_path }}"
-              register: _pod_info
-              delegate_to: localhost
-
             - name: Verify cluster node pod state
+              when: not _rke2_update_skip_pod_checks
               block:
+                - name: Query pod state
+                  kubernetes.core.k8s_info:
+                    kind: Pod
+                    kubeconfig: "{{ _kubeconfig_path }}"
+                  register: _pod_info
+                  delegate_to: localhost
+
                 - name: Wait for pods to be in a running state and ready
                   kubernetes.core.k8s_info:
                     kind: Pod
