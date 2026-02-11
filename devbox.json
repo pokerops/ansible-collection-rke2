@@ -6,6 +6,7 @@
     "networkmanager@latest",
     "expect@latest",
     "velero@latest",
-    "postgresql@latest"
+    "postgresql@latest",
+    "kubernetes-helm@latest"
   ]
 }

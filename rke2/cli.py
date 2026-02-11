@@ -12,6 +12,7 @@ import requests
 import typer
 import yaml
 from deepmerge import always_merger as merger
+from rich.console import Console
 from ruamel.yaml import YAML, CommentedMap, CommentedSeq
 
 DEFAULT_DIRECTORIES = [Path("argocd/applications"), Path("playbooks/templates")]
@@ -19,11 +20,12 @@ DEFAULT_GALAXY_PATH = Path("galaxy.yml")
 DEFAULT_ARGOCD_PATH = Path("roles/components/defaults/main/argocd.yml")
 VERSION_REGEX = r"v?[0-9]+\.[0-9]+\.[0-9]+$"
 
-
 type Version = str
 type Versions = list[Version]
 type HelmChartVersions = dict[str, Versions]
 type LogLevel = int
+
+err = Console(stderr=True)
 
 
 class GithubChart(pydantic.BaseModel):
