@@ -37,7 +37,7 @@ Cluster wide parameters
 | Parameter                           |                            Default | Type   | Description                                                              | Required |
 | :---------------------------------- | ---------------------------------: | :----- | :----------------------------------------------------------------------- | :------- |
 | rke2_cluster_name                   |                                n/a | string | Cluster name, immutable after creation                                   | yes      |
-| rke2_version                        |                     v1.33.0+rke2r1 | string | RKE2 version to deploy                                                   | no       |
+| rke2_version                        |                     v1.33.5+rke2r1 | string | RKE2 version to deploy                                                   | no       |
 | rke2_nolog                          |                               true | bool   | Toggle flag for logging sensitive statements                             | no       |
 | rke2_config_hostnames               |                               true | bool   | Toggle flag for cluster hostfile entry configuration                     | no       |
 | rke2_retry_num                      |                                 10 | bool   | Max number of task retries                                               | no       |
