@@ -2,13 +2,10 @@
 roles:
   - name: rke2
     src: https://github.com/lablabs/ansible-role-rke2.git
-    version: 1.48.0
+    version: 1.50.1
   - name: k8s
     src: https://github.com/nephelaiio/ansible-role-k8s.git
     version: 0.4.7
-  - name: helm
-    src: https://github.com/geerlingguy/ansible-role-helm.git
-    version: 1.0.1
   - name: update
     src: https://github.com/robertdebock/ansible-role-update.git
-    version: 3.1.9
+    version: 3.1.10
