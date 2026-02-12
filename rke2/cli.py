@@ -25,9 +25,6 @@ type Versions = list[Version]
 type HelmChartVersions = dict[str, Versions]
 type LogLevel = int
 
-err = Console(stderr=True)
-
-
 class GithubChart(pydantic.BaseModel):
     """Pydantic model representing a GitHub Helm chart."""
 
