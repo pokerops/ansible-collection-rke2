@@ -1,6 +1,6 @@
 ---
 # Defaults
-rke2_defaults_version: v1.33.0+rke2r1
+rke2_defaults_version: v1.33.5+rke2r1
 rke2_defaults_api_url: "https://api.{{ rke2_cluster_name }}"
 rke2_defaults_registry_mirrors:
   - name: "*"
