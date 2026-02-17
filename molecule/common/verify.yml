@@ -178,6 +178,7 @@
     - name: Set cluster facts
       ansible.builtin.set_fact:
         _nodes_self: "{{ _kubectl_node_list | selectattr('metadata.name', 'equalto', inventory_hostname) | first }}"
+        _nodes_workers: "{{ _kubectl_node_list | selectattr('metadata.name', 'in', _agents) }}"
         _nodes_all: "{{ _kubectl_node_list | map(attribute='metadata.name') }}"
       vars:
         _kubectl_node_data: "{{ _kubectl_nodes.stdout | from_json }}"
@@ -213,10 +214,26 @@
         that: _taints_noschedule | length > 0
         fail_msg: "Node does not have the required {{ _taint_key }}:{{ _taint_value }} taint"
       vars:
-        _taint_key: "role.kubernetes.io/control-plane"
+        _taint_key: "node-role.kubernetes.io/control-plane"
         _taint_value: "NoSchedule"
         _taints_control_plane: "{{ _nodes_self.spec.taints | selectattr('key', 'equalto', _taint_key) }}"
         _taints_noschedule: "{{ _taints_control_plane | selectattr('effect', 'equalto', _taint_value) }}"
+
+    - name: Verify worker nodes are not tainted
+      ansible.builtin.assert:
+        that: _taints_worker | length == 0
+        fail_msg: "Worker node has unexpected taint {{ _taint_key }}"
+      vars:
+        _taint_key: "node-role.kubernetes.io/control-plane"
+        _taints_worker: "{{ _nodes_workers | map(attribute='.spec.taints') | flatten | selectattr('key', 'equalto', _taint_key) }}"
+
+    - name: Verify worker node labels
+      ansible.builtin.assert:
+        that: _label_worker | length == len(_agents)
+        fail_msg: "Worker is missing expected label {{ _label_key }}"
+      vars:
+        _label_key: "node-role.kubernetes.io/worker"
+        _label_worker: "{{ _nodes_workers | map(attribute='.metadata.labels') | flatten | selectattr('key', 'equalto', _label_key) }}"
 
     - name: Verify no workload pods are scheduled on server nodes
       block:
