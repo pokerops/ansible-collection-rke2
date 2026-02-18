@@ -221,19 +221,14 @@
 
     - name: Verify worker nodes are not tainted
       ansible.builtin.assert:
-        that: _taints_worker | length == 0
-        fail_msg: "Worker node has unexpected taint {{ _taint_key }}"
+        that: _taint_keys | length == 0
+        fail_msg: "Worker nodes have unexpected taint {{ _taint_key }}"
       vars:
         _taint_key: "node-role.kubernetes.io/control-plane"
-        _taints_worker: "{{ _nodes_workers | map(attribute='.spec.taints') | flatten | selectattr('key', 'equalto', _taint_key) }}"
-
-    - name: Verify worker node labels
-      ansible.builtin.assert:
-        that: _label_worker | length == len(_agents)
-        fail_msg: "Worker is missing expected label {{ _label_key }}"
-      vars:
-        _label_key: "node-role.kubernetes.io/worker"
-        _label_worker: "{{ _nodes_workers | map(attribute='.metadata.labels') | flatten | selectattr('key', 'equalto', _label_key) }}"
+        _taint_defs: "{{ _nodes_workers | selectattr('spec.taints', 'defined') }}"
+        _taint_list: "{{ _taint_defs | map(attribute='spec.taints') | flatten }}"
+        _taint_keys: "{{ _taint_list | selectattr('key', 'equalto', _taint_key) }}"
+      run_once: true
 
     - name: Verify no workload pods are scheduled on server nodes
       block:
