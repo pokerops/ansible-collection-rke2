@@ -240,8 +240,12 @@
 
         - name: Set pod facts
           ansible.builtin.set_fact:
-            _pods_workload: "{{ _kubectl_node_pods | rejectattr('metadata.namespace', 'equalto', 'kube-system') }}"
+            _pods_workload: "{{ _kubectl_node_pods | rejectattr('metadata.namespace', in, _rke2_system_nss) }}"
           vars:
+            _rke2_system_nss:
+              - kube-system
+              - metallb-system
+              - longhorn-system
             _kubectl_pod_data: "{{ _kubectl_pods.stdout | from_json }}"
             _kubectl_pod_list: "{{ _kubectl_pod_data['items'] }}"
             _kubectl_node_pods: "{{ _kubectl_pod_list | selectattr('spec.nodeName', 'equalto', inventory_hostname) }}"

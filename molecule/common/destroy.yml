@@ -1,4 +1,18 @@
 ---
+- name: Clean api hostfile entries
+  hosts: localhost
+  vars_files:
+    - ../../playbooks/vars/main.yml
+  become: true
+  tasks:
+    - name: Destroy api host file entry
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        regexp: ".*{{ _api_hostname }}.*"
+        state: absent
+      vars:
+        _api_hostname: "{{ rke2_api_url | urlsplit('hostname') }}"
+
 - name: Archive RKE2 install logs
   hosts: rke2_server
   gather_facts: false
@@ -14,112 +28,110 @@
       ignore_unreachable: true
       failed_when: false
 
-    - name: End play for unreachable hosts
-      ansible.builtin.meta: end_host
-      when: _ping_check is unreachable
-
-    - name: Gather facts
-      ansible.builtin.setup:
-
-    - name: Create install log directory
-      ansible.builtin.file:
-        dest: "{{ _logfile | dirname }}"
-        state: directory
-        mode: "u=rwx,go=rx"
-      delegate_to: localhost
-      run_once: true
-
-    - name: Archive hostfile
-      block:
-        - name: Slurp hostfile
-          ansible.builtin.slurp:
-            src: /etc/hosts
-          register: _rke2_hostfile_slurp
-
-        - name: Create hostfile archive
-          ansible.builtin.copy:
-            dest: "{{ _logfile }}.{{ inventory_hostname }}.hostfile"
-            content: "{{ _rke2_hostfile_slurp['content'] | b64decode }}"
-            mode: "u=rw,go=r"
-          delegate_to: localhost
-
     - name: Archive RKE2 install logs
+      when: _ping_check is not unreachable
       block:
-        - name: Stat cluster configuration
-          ansible.builtin.stat:
-            path: "{{ _rke2_config_path }}/config.yaml"
-          register: _rke2_clusterconfig_stat
+        - name: Gather facts
+          ansible.builtin.setup:
 
-        - name: Archive cluster configuration
-          when: _rke2_clusterconfig_stat.stat.exists
-          block:
-            - name: Slurp cluster configuration
-              ansible.builtin.slurp:
-                src: "{{ _rke2_config_path }}/config.yaml"
-              register: _rke2_clusterconfig_slurp
-
-            - name: Create cluster configuration archive
-              ansible.builtin.copy:
-                dest: "{{ _logfile }}.{{ inventory_hostname }}.config.yaml.{{ ansible_date_time.iso8601_basic_short }}"
-                content: "{{ _rke2_clusterconfig_slurp['content'] | b64decode }}"
-                mode: "u=rw,go=r"
-              delegate_to: localhost
-
-        - name: Query systemd logs
-          ansible.builtin.shell: journalctl -rxu rke2-server
-          register: _rke2_journalctl
-          changed_when: false
-
-        - name: Create systemd log archive
-          ansible.builtin.copy:
-            dest: "{{ _logfile }}.{{ inventory_hostname }}.journalctl.{{ ansible_date_time.iso8601_basic_short }}"
-            content: "{{ _rke2_journalctl.stdout }}"
-            mode: "u=rw,go=r"
+        - name: Create install log directory
+          ansible.builtin.file:
+            dest: "{{ _logfile | dirname }}"
+            state: directory
+            mode: "u=rwx,go=rx"
           delegate_to: localhost
+          run_once: true
 
-        - name: Stat install kubeconfig
-          ansible.builtin.stat:
-            path: "{{ _rke2_config_path }}/rke2.yaml"
-          register: _rke2_kubeconfig_stat
-
-        - name: Archive install kubeconfig
-          when: _rke2_kubeconfig_stat.stat.exists
+        - name: Archive hostfile
           block:
-            - name: Slurp install kubeconfig
+            - name: Slurp hostfile
               ansible.builtin.slurp:
-                src: "{{ _rke2_config_path }}/rke2.yaml"
-              register: _rke2_kubeconfig_slurp
+                src: /etc/hosts
+              register: _rke2_hostfile_slurp
 
-            - name: Create install kubeconfig archive
+            - name: Create hostfile archive
               ansible.builtin.copy:
-                dest: "{{ _logfile }}.{{ inventory_hostname }}.kubeconfig.install.{{ ansible_date_time.iso8601_basic_short }}"
-                content: "{{ _rke2_kubeconfig_slurp['content'] | b64decode }}"
+                dest: "{{ _logfile }}.{{ inventory_hostname }}.hostfile"
+                content: "{{ _rke2_hostfile_slurp['content'] | b64decode }}"
                 mode: "u=rw,go=r"
               delegate_to: localhost
 
-        - name: Stat user kubeconfig
-          ansible.builtin.stat:
-            path: "~{{ ansible_user_id }}/.kube/config"
-          register: _rke2_kubeconfig_stat
-
-        - name: Archive user kubeconfig
-          when: _rke2_kubeconfig_stat.stat.exists
+        - name: Archive RKE2 install logs
           block:
-            - name: Slurp user kubeconfig
-              ansible.builtin.slurp:
-                src: "~{{ ansible_user_id }}/.kube/config"
-              register: _rke2_kubeconfig_slurp
+            - name: Stat cluster configuration
+              ansible.builtin.stat:
+                path: "{{ _rke2_config_path }}/config.yaml"
+              register: _rke2_clusterconfig_stat
 
-            - name: Create install kubeconfig archive
+            - name: Archive cluster configuration
+              when: _rke2_clusterconfig_stat.stat.exists
+              block:
+                - name: Slurp cluster configuration
+                  ansible.builtin.slurp:
+                    src: "{{ _rke2_config_path }}/config.yaml"
+                  register: _rke2_clusterconfig_slurp
+
+                - name: Create cluster configuration archive
+                  ansible.builtin.copy:
+                    dest: "{{ _logfile }}.{{ inventory_hostname }}.config.yaml.{{ ansible_date_time.iso8601_basic_short }}"
+                    content: "{{ _rke2_clusterconfig_slurp['content'] | b64decode }}"
+                    mode: "u=rw,go=r"
+                  delegate_to: localhost
+
+            - name: Query systemd logs
+              ansible.builtin.shell: journalctl -rxu rke2-server
+              register: _rke2_journalctl
+              changed_when: false
+
+            - name: Create systemd log archive
               ansible.builtin.copy:
-                dest: "{{ _logfile }}.{{ inventory_hostname }}.kubeconfig.user.{{ ansible_date_time.iso8601_basic_short }}"
-                content: "{{ _rke2_kubeconfig_slurp['content'] | b64decode }}"
+                dest: "{{ _logfile }}.{{ inventory_hostname }}.journalctl.{{ ansible_date_time.iso8601_basic_short }}"
+                content: "{{ _rke2_journalctl.stdout }}"
                 mode: "u=rw,go=r"
               delegate_to: localhost
+
+            - name: Stat install kubeconfig
+              ansible.builtin.stat:
+                path: "{{ _rke2_config_path }}/rke2.yaml"
+              register: _rke2_kubeconfig_stat
+
+            - name: Archive install kubeconfig
+              when: _rke2_kubeconfig_stat.stat.exists
+              block:
+                - name: Slurp install kubeconfig
+                  ansible.builtin.slurp:
+                    src: "{{ _rke2_config_path }}/rke2.yaml"
+                  register: _rke2_kubeconfig_slurp
+
+                - name: Create install kubeconfig archive
+                  ansible.builtin.copy:
+                    dest: "{{ _logfile }}.{{ inventory_hostname }}.kubeconfig.install.{{ ansible_date_time.iso8601_basic_short }}"
+                    content: "{{ _rke2_kubeconfig_slurp['content'] | b64decode }}"
+                    mode: "u=rw,go=r"
+                  delegate_to: localhost
+
+            - name: Stat user kubeconfig
+              ansible.builtin.stat:
+                path: "~{{ ansible_user_id }}/.kube/config"
+              register: _rke2_kubeconfig_stat
+
+            - name: Archive user kubeconfig
+              when: _rke2_kubeconfig_stat.stat.exists
+              block:
+                - name: Slurp user kubeconfig
+                  ansible.builtin.slurp:
+                    src: "~{{ ansible_user_id }}/.kube/config"
+                  register: _rke2_kubeconfig_slurp
+
+                - name: Create install kubeconfig archive
+                  ansible.builtin.copy:
+                    dest: "{{ _logfile }}.{{ inventory_hostname }}.kubeconfig.user.{{ ansible_date_time.iso8601_basic_short }}"
+                    content: "{{ _rke2_kubeconfig_slurp['content'] | b64decode }}"
+                    mode: "u=rw,go=r"
+                  delegate_to: localhost
 
 - name: Clean ingress hostfile entries
   hosts: rke2_server
-  run_once: true
   gather_facts: false
   vars_files:
     - ../../playbooks/vars/main.yml
@@ -130,48 +142,34 @@
       ignore_unreachable: true
       failed_when: false
 
-    - name: End play for unreachable hosts
-      ansible.builtin.meta: end_host
-      when: _ping_check is unreachable
+    - name: Remove ingress entrypoint definitions
+      run_once: true
+      when: _ping_check is not unreachable
+      block:
+        - name: Query cluster ingresses
+          ansible.builtin.command:
+            cmd: "{{ _rke2_bin_path }}/kubectl get ingresses -A -o json --kubeconfig {{ _rke2_config_path }}/rke2.yaml"
+          register: _ingress_query
+          ignore_errors: true
 
-    - name: Query cluster ingresses
-      ansible.builtin.command:
-        cmd: "{{ _rke2_bin_path }}/kubectl get ingresses -A -o json --kubeconfig {{ _rke2_config_path }}/rke2.yaml"
-      register: _ingress_query
-      ignore_errors: true
+        - name: Skip on ingress query failure
+          ansible.builtin.meta: end_play
+          when: _ingress_query is failed
 
-    - name: Skip on ingress query failure
-      ansible.builtin.meta: end_play
-      when: _ingress_query is failed
+        - name: Set ingress facts
+          ansible.builtin.set_fact:
+            _ingress_hosts: "{{ _ingress_data['items'] | map(attribute='spec.rules') | map('map', attribute='host') | flatten }}"
+          vars:
+            _ingress_data: "{{ _ingress_query.stdout | from_json }}"
 
-    - name: Set ingress facts
-      ansible.builtin.set_fact:
-        _ingress_hosts: "{{ _ingress_data['items'] | map(attribute='spec.rules') | map('map', attribute='host') | flatten }}"
-      vars:
-        _ingress_data: "{{ _ingress_query.stdout | from_json }}"
-
-    - name: Remove ingress endpoints from local hostfile
-      ansible.builtin.lineinfile:
-        path: /etc/hosts
-        regexp: ".*{{ item }}.*"
-        state: absent
-      loop: "{{ _ingress_hosts }}"
-      become: true
-      delegate_to: localhost
-
-- name: Clean api hostfile entries
-  hosts: localhost
-  vars_files:
-    - ../../playbooks/vars/main.yml
-  become: true
-  tasks:
-    - name: Destroy api host file entry
-      ansible.builtin.lineinfile:
-        path: /etc/hosts
-        regexp: ".*{{ _api_hostname }}.*"
-        state: absent
-      vars:
-        _api_hostname: "{{ rke2_api_url | urlsplit('hostname') }}"
+        - name: Remove ingress endpoints from local hostfile
+          ansible.builtin.lineinfile:
+            path: /etc/hosts
+            regexp: ".*{{ item }}.*"
+            state: absent
+          loop: "{{ _ingress_hosts }}"
+          become: true
+          delegate_to: localhost
 
 - name: Import libvirt destroy playbook
   import_playbook: nephelaiio.libvirt.destroy
