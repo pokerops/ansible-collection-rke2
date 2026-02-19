@@ -50,7 +50,7 @@ provisioner:
         vars:
           ansible_ssh_extra_args: "-o ControlPersist=no -o ControlPath=none"
           libvirt_user: molecule
-          libvirt_address: "172.31.252.4/24"
+          libvirt_address: "172.31.252.1/24"
           libvirt_platforms: "{{ molecule_yml.platforms }}"
           molecule_net_prefix: "{{ libvirt_address | ansible.utils.ipaddr('prefix') }}"
           molecule_metallb_prefix: "{{ (molecule_net_prefix | int) + 1 }}"
