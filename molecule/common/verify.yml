@@ -216,7 +216,7 @@
       vars:
         _taint_key: "node-role.kubernetes.io/control-plane"
         _taint_value: "NoSchedule"
-        _taints_control_plane: "{{ _nodes_self.spec.taints | selectattr('key', 'equalto', _taint_key) }}"
+        _taints_control_plane: "{{ _nodes_self.spec.taints | default([]) | selectattr('key', 'equalto', _taint_key) }}"
         _taints_noschedule: "{{ _taints_control_plane | selectattr('effect', 'equalto', _taint_value) }}"
 
     - name: Verify worker nodes are not tainted
