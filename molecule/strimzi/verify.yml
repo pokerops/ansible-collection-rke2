@@ -978,6 +978,14 @@
                 name: kafka-consumer-after-restore
               changed_when: false
 
+        - name: Debug backup messages
+          ansible.builtin.debug:
+            var: kafka_messages_before_backup
+
+        - name: Debug restore messages
+          ansible.builtin.debug:
+            var: kafka_messages_after_restore
+
         - name: Validate message recovery
           ansible.builtin.assert:
             that:
