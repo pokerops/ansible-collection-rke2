@@ -556,7 +556,6 @@
               until:
                 - _app_data | length > 0
                 - _app_failed | length == 0
-              no_log: true
 
             - name: Debug argocd applications
               ansible.builtin.debug:
@@ -575,7 +574,7 @@
                 _app_data: "{{ _argocd_app_data.stdout | from_json }}"
                 _app_unhealthy: "{{ _app_data['items'] | rejectattr('status.health.status', 'equalto', 'Healthy') }}"
                 _app_outofsync: "{{ _app_data['items'] | rejectattr('status.sync.status', 'equalto', 'Synced') }}"
-                _app_failed: "{{ (_app_unhealthy + _app_outofsync }}"
+                _app_failed: "{{ _app_unhealthy + _app_outofsync }}"
                 _app_names: "{{ _app_failed | map(attribute='metadata.name') | unique }}"
 
           always:
