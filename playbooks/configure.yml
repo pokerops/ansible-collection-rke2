@@ -67,7 +67,7 @@
   tasks:
     - name: Label agent nodes with role
       ansible.builtin.command:
-        cmd: "{{ _rke2_bin_path }}/kubectl label node {{ item }} role.kubernetes.io/worker=true --overwrite"
+        cmd: "{{ _rke2_bin_path }}/kubectl label node {{ item }} node-role.kubernetes.io/worker=true --overwrite"
       loop: "{{ groups[rke2_agent_group] | default([]) }}"
       run_once: true
 
@@ -77,13 +77,27 @@
       register: node_query
       changed_when: false
 
-    - name: Taint dedicated server nodes to prevent workload scheduling
+    - name: Delete unsupported server node taint
       ansible.builtin.command:
         cmd: "{{ _rke2_bin_path }}/kubectl taint node {{ inventory_hostname }} {{ taint }} --overwrite"
       vars:
         node_data: "{{ node_query.stdout | from_json }}"
         taint_data: "{{ node_data.spec.taints | default([]) }}"
         taint_name: "role.kubernetes.io/control-plane"
+        taint_effect: NoSchedule
+        taint_target: "{{ taint_data | selectattr('key', 'defined') | selectattr('key', 'equalto', taint_name) }}"
+        taint_list: "{{ taint_target | map(attribute='effect') }}"
+        is_tainted: "{{ taint_effect in taint_list }}"
+        taint: "{{ taint_name }}:{{ taint_effect }}-"
+      when: is_tainted
+
+    - name: Taint dedicated server nodes to prevent workload scheduling
+      ansible.builtin.command:
+        cmd: "{{ _rke2_bin_path }}/kubectl taint node {{ inventory_hostname }} {{ taint }} --overwrite"
+      vars:
+        node_data: "{{ node_query.stdout | from_json }}"
+        taint_data: "{{ node_data.spec.taints | default([]) }}"
+        taint_name: "node-role.kubernetes.io/control-plane"
         taint_effect: NoSchedule
         taint_target: "{{ taint_data | selectattr('key', 'defined') | selectattr('key', 'equalto', taint_name) }}"
         taint_list: "{{ taint_target | map(attribute='effect') }}"

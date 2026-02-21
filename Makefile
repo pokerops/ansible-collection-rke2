@@ -1,4 +1,6 @@
-MOLECULE_REVISION ?= $$(git rev-parse --abbrev-ref HEAD)
+export
+
+MOLECULE_REVISION ?= $(shell git rev-parse --abbrev-ref HEAD)
 MOLECULE_SCENARIO ?= install
 
 include ${MAKEFILE}

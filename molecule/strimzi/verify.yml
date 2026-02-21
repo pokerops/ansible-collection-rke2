@@ -43,9 +43,9 @@
                         namespace: velero
                     state: absent
 
-            - name: Clean {{ kafka_namespace }} namespace
+            - name: Clean Kafka namespace
               block:
-                - name: Query existing PVCs before delete all kafka
+                - name: Query existing PVCs
                   kubernetes.core.k8s_info:
                     kubeconfig: "{{ kubeconfig_path }}"
                     api_version: v1
@@ -197,8 +197,9 @@
                 kind: Pod
                 namespace: "{{ kafka_operator_namespace }}"
               register: operator_pods
-              until: operator_pods.resources[0].status.containerStatuses[0].ready is defined and
-                    operator_pods.resources[0].status.containerStatuses[0].ready == true
+              until:
+                operator_pods.resources[0].status.containerStatuses[0].ready is defined and
+                operator_pods.resources[0].status.containerStatuses[0].ready == true
               retries: 60
               delay: 15
 
@@ -314,9 +315,9 @@
                 namespace: "{{ kafka_namespace }}"
               register: kafka_status
               until: kafka_status.resources | length > 0 and
-                    kafka_status.resources[0].status.conditions[0].status is defined and
-                    kafka_status.resources[0].status.conditions[0].type == "Ready" and
-                    kafka_status.resources[0].status.conditions[0].status == "True"
+                kafka_status.resources[0].status.conditions[0].status is defined and
+                kafka_status.resources[0].status.conditions[0].type == "Ready" and
+                kafka_status.resources[0].status.conditions[0].status == "True"
               retries: 60
               delay: 15
 
@@ -337,8 +338,9 @@
                 namespace: "{{ kafka_namespace }}"
                 name: "{{ kafka_cluster_name }}-kafka-external-bootstrap"
               register: kafka_bootstrap_svc
-              until: kafka_bootstrap_svc.resources[0].status.loadBalancer.ingress is defined and
-                    kafka_bootstrap_svc.resources[0].status.loadBalancer.ingress[0].ip is defined
+              until:
+                kafka_bootstrap_svc.resources[0].status.loadBalancer.ingress is defined and
+                kafka_bootstrap_svc.resources[0].status.loadBalancer.ingress[0].ip is defined
               retries: 30
               delay: 10
 
@@ -356,8 +358,9 @@
                 namespace: "{{ kafka_namespace }}"
                 name: "{{ kafka_cluster_name }}-{{ kafka_cluster_name }}-brokers-{{ item }}"
               register: kafka_broker_svc
-              until: kafka_broker_svc.resources[0].status.loadBalancer.ingress is defined and
-                    kafka_broker_svc.resources[0].status.loadBalancer.ingress[0].ip is defined
+              until:
+                kafka_broker_svc.resources[0].status.loadBalancer.ingress is defined and
+                kafka_broker_svc.resources[0].status.loadBalancer.ingress[0].ip is defined
               retries: 30
               delay: 10
               loop: "{{ broker_ids }}"
@@ -451,8 +454,9 @@
                 namespace: "{{ kafka_namespace }}"
                 name: kafka-producer
               register: producer_info
-              until: producer_info.resources[0].status.containerStatuses[0].state.terminated.reason is defined and
-                    producer_info.resources[0].status.containerStatuses[0].state.terminated.reason == "Completed"
+              until:
+                producer_info.resources[0].status.containerStatuses[0].state.terminated.reason is defined and
+                producer_info.resources[0].status.containerStatuses[0].state.terminated.reason == "Completed"
               retries: 30
               delay: 10
               changed_when: false
@@ -500,8 +504,9 @@
                 namespace: "{{ kafka_namespace }}"
                 name: kafka-consumer-before-backup
               register: consumer_before_backup
-              until: consumer_before_backup.resources[0].status.containerStatuses[0].state.terminated.reason is defined and
-                    consumer_before_backup.resources[0].status.containerStatuses[0].state.terminated.reason == "Completed"
+              until:
+                consumer_before_backup.resources[0].status.containerStatuses[0].state.terminated.reason is defined and
+                consumer_before_backup.resources[0].status.containerStatuses[0].state.terminated.reason == "Completed"
               retries: 30
               delay: 10
               changed_when: false
@@ -866,8 +871,9 @@
                 kind: Pod
                 namespace: "{{ kafka_operator_namespace }}"
               register: operator_pods
-              until: operator_pods.resources[0].status.containerStatuses[0].ready is defined and
-                    operator_pods.resources[0].status.containerStatuses[0].ready == true
+              until:
+                operator_pods.resources[0].status.containerStatuses[0].ready is defined and
+                operator_pods.resources[0].status.containerStatuses[0].ready == true
               retries: 60
               delay: 15
 
@@ -894,7 +900,7 @@
             that:
               - restored_cluster_id == original_cluster_id
             fail_msg: "Kafka clusterId mismatch after restore!"
-            success_msg: "✅ Kafka clusterId successfully preserved after restore."
+            success_msg: "Kafka clusterId successfully preserved after restore."
 
         - name: Consume messages after restore
           block:
@@ -930,8 +936,9 @@
                 namespace: "{{ kafka_namespace }}"
                 name: kafka-consumer-after-restore
               register: consumer_after_restore
-              until: consumer_after_restore.resources[0].status.containerStatuses[0].state.terminated.reason is defined and
-                    consumer_after_restore.resources[0].status.containerStatuses[0].state.terminated.reason == "Completed"
+              until:
+                consumer_after_restore.resources[0].status.containerStatuses[0].state.terminated.reason is defined and
+                consumer_after_restore.resources[0].status.containerStatuses[0].state.terminated.reason == "Completed"
               retries: 30
               delay: 10
               changed_when: false
@@ -971,22 +978,29 @@
                 name: kafka-consumer-after-restore
               changed_when: false
 
+        - name: Debug backup messages
+          ansible.builtin.debug:
+            var: kafka_messages_before_backup
+
+        - name: Debug restore messages
+          ansible.builtin.debug:
+            var: kafka_messages_after_restore
+
         - name: Validate message recovery
           ansible.builtin.assert:
             that:
               - kafka_messages_before_backup == kafka_messages_after_restore
             fail_msg: "Messages are not the same after restore!"
-            success_msg: "✅ Messages successfully restored from backup."
+            success_msg: "Messages successfully restored from backup."
 
         - name: Display verification summary
           ansible.builtin.debug:
             msg: |
-              🎉 Kafka (KRaft + NodePools) Velero Backup & Restore Verification Completed!
-              - Backup: {{ backup_name }}
-              - Restore: {{ restore_name }}
-              - Cluster ID: {{ restored_cluster_id }}
-              - Topic: {{ topic_name }}
-              ✅ All checks passed.
+              Kafka (KRaft + NodePools) Velero Backup & Restore Verification Completed!
+                - Backup: {{ backup_name }}
+                - Restore: {{ restore_name }}
+                - Cluster ID: {{ restored_cluster_id }}
+                - Topic: {{ topic_name }}
 
       rescue:
         - name: Get Strimzi operator pod info
@@ -1101,3 +1115,20 @@
 
         - name: Terminate playbook
           fail:
+
+    - name: Verify no workload pods are scheduled on server nodes
+      block:
+        - name: Query Strimzi pods
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ kubeconfig_path }}"
+            api_version: v1
+            kind: Pod
+            namespace: "{{ kafka_namespace }}"
+          register: strimzi_pods
+
+        - name: Verify no workload pods are scheduled
+          ansible.builtin.assert:
+            that: _strimzi_control_nodes | length == 0
+            fail_msg: "Workload pods are scheduled on control plane node {{ _strimzi_control_nodes | join(', ') }}"
+          vars:
+            _strimzi_control_nodes: "{{ strimzi_pods.resources | map(attribute='spec.nodeName') | unique | intersect(groups['rke2_server']) }}"

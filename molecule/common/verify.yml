@@ -178,6 +178,7 @@
     - name: Set cluster facts
       ansible.builtin.set_fact:
         _nodes_self: "{{ _kubectl_node_list | selectattr('metadata.name', 'equalto', inventory_hostname) | first }}"
+        _nodes_workers: "{{ _kubectl_node_list | selectattr('metadata.name', 'in', _agents) }}"
         _nodes_all: "{{ _kubectl_node_list | map(attribute='metadata.name') }}"
       vars:
         _kubectl_node_data: "{{ _kubectl_nodes.stdout | from_json }}"
@@ -213,10 +214,21 @@
         that: _taints_noschedule | length > 0
         fail_msg: "Node does not have the required {{ _taint_key }}:{{ _taint_value }} taint"
       vars:
-        _taint_key: "role.kubernetes.io/control-plane"
+        _taint_key: "node-role.kubernetes.io/control-plane"
         _taint_value: "NoSchedule"
-        _taints_control_plane: "{{ _nodes_self.spec.taints | selectattr('key', 'equalto', _taint_key) }}"
+        _taints_control_plane: "{{ _nodes_self.spec.taints | default([]) | selectattr('key', 'equalto', _taint_key) }}"
         _taints_noschedule: "{{ _taints_control_plane | selectattr('effect', 'equalto', _taint_value) }}"
+
+    - name: Verify worker nodes are not tainted
+      ansible.builtin.assert:
+        that: _taint_keys | length == 0
+        fail_msg: "Worker nodes have unexpected taint {{ _taint_key }}"
+      vars:
+        _taint_key: "node-role.kubernetes.io/control-plane"
+        _taint_defs: "{{ _nodes_workers | selectattr('spec.taints', 'defined') }}"
+        _taint_list: "{{ _taint_defs | map(attribute='spec.taints') | flatten }}"
+        _taint_keys: "{{ _taint_list | selectattr('key', 'equalto', _taint_key) }}"
+      run_once: true
 
     - name: Verify no workload pods are scheduled on server nodes
       block:
@@ -228,8 +240,12 @@
 
         - name: Set pod facts
           ansible.builtin.set_fact:
-            _pods_workload: "{{ _kubectl_node_pods | rejectattr('metadata.namespace', 'equalto', 'kube-system') }}"
+            _pods_workload: "{{ _kubectl_node_pods | rejectattr('metadata.namespace', 'in', _rke2_system_nss) }}"
           vars:
+            _rke2_system_nss:
+              - kube-system
+              - metallb-system
+              - longhorn-system
             _kubectl_pod_data: "{{ _kubectl_pods.stdout | from_json }}"
             _kubectl_pod_list: "{{ _kubectl_pod_data['items'] }}"
             _kubectl_node_pods: "{{ _kubectl_pod_list | selectattr('spec.nodeName', 'equalto', inventory_hostname) }}"
@@ -540,7 +556,6 @@
               until:
                 - _app_data | length > 0
                 - _app_failed | length == 0
-              no_log: true
 
             - name: Debug argocd applications
               ansible.builtin.debug:
@@ -559,7 +574,7 @@
                 _app_data: "{{ _argocd_app_data.stdout | from_json }}"
                 _app_unhealthy: "{{ _app_data['items'] | rejectattr('status.health.status', 'equalto', 'Healthy') }}"
                 _app_outofsync: "{{ _app_data['items'] | rejectattr('status.sync.status', 'equalto', 'Synced') }}"
-                _app_failed: "{{ (_app_unhealthy + _app_outofsync }}"
+                _app_failed: "{{ _app_unhealthy + _app_outofsync }}"
                 _app_names: "{{ _app_failed | map(attribute='metadata.name') | unique }}"
 
           always:
