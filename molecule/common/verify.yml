@@ -240,7 +240,7 @@
 
         - name: Set pod facts
           ansible.builtin.set_fact:
-            _pods_workload: "{{ _kubectl_node_pods | rejectattr('metadata.namespace', in, _rke2_system_nss) }}"
+            _pods_workload: "{{ _kubectl_node_pods | rejectattr('metadata.namespace', 'in', _rke2_system_nss) }}"
           vars:
             _rke2_system_nss:
               - kube-system
