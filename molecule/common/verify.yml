@@ -230,15 +230,15 @@
         _taint_keys: "{{ _taint_list | selectattr('key', 'equalto', _taint_key) }}"
       run_once: true
 
+    - name: Query cluster pods
+      ansible.builtin.command:
+        cmd: "/var/lib/rancher/rke2/bin/kubectl get pods -A -o json"
+      register: _kubectl_pods
+      changed_when: false
+
     - name: Verify no workload pods are scheduled on server nodes
       block:
-        - name: Query pods on server nodes
-          ansible.builtin.command:
-            cmd: "/var/lib/rancher/rke2/bin/kubectl get pods -A -o json"
-          register: _kubectl_pods
-          changed_when: false
-
-        - name: Set pod facts
+        - name: Set workload pod facts
           ansible.builtin.set_fact:
             _pods_workload: "{{ _kubectl_node_pods | rejectattr('metadata.namespace', 'in', _rke2_system_nss) }}"
           vars:
