@@ -627,7 +627,9 @@
   any_errors_fatal: true
   tasks:
     - name: Verify node update count
-      ansible.builtin.shell: apt list --upgradable | grep -v ^Listing | wc -l
+      ansible.builtin.shell:
+        cmd: "apt list --upgradable 2>/dev/null | grep -v ^Listing | wc -l"
+        executable: /bin/bash
       become: true
       changed_when: false
       register: _update_query
