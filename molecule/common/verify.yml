@@ -626,12 +626,21 @@
   hosts: rke2_server:rke2_agent
   any_errors_fatal: true
   tasks:
-    - name: Verify node update count
-      ansible.builtin.shell:
-        cmd: "apt list --upgradable 2>/dev/null | grep -v ^Listing | wc -l"
-        executable: /bin/bash
-      become: true
-      changed_when: false
-      register: _update_query
-      failed_when: _update_query.stdout | int > 0
+    - name: Verify OS package updates
       when: rke2_update_check | default(False) | bool
+      block:
+        - name: Query OS package updates
+          ansible.builtin.shell:
+            cmd: "apt list --upgradable 2>/dev/null | grep -v ^Listing | wc -l"
+            executable: /bin/bash
+          become: true
+          changed_when: false
+          failed_when: false
+          ignore_errors: true
+          register: _update_query
+
+        - name: Verify OS package count
+          ansible.builtin.assert:
+            that:
+              - _update_query.stdout != ""
+              - _update_query.stdout | int > 0
