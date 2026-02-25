@@ -643,4 +643,5 @@
           ansible.builtin.assert:
             that:
               - _update_query.stdout != ""
-              - _update_query.stdout | int > 0
+              - _update_query.stdout | int == 0
+            fail_msg: "{{ _update_query.stdout }} pending updates found"
