@@ -291,7 +291,7 @@
         - name: Verify hubble pods
           ansible.builtin.assert:
             that: _kubectl_pod_names | select('match', '^hubble-.*') | length > 0
-            fail_msg: "No Cilum Hubble pods found"
+            fail_msg: "No Cilium Hubble pods found"
 
         - name: Set kubeconfig facts
           ansible.builtin.set_fact:
