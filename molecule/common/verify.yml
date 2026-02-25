@@ -169,9 +169,8 @@
         _kubeconfig_server_expected: "https://api.rke2.pokerops.net:6443"
 
     - name: Query cluster nodes
-      ansible.builtin.command:
-        cmd: "{{ _rke2_bin_path }}/kubectl get node -o json"
-        executable: /bin/bash
+      ansible.builtin.shell:
+        cmd: "{{ _rke2_bin_path }}/kubectl get node -o json | jq '.items'"
       register: _kubectl_nodes
       changed_when: false
 
@@ -182,7 +181,7 @@
         _nodes_all: "{{ _kubectl_node_list | map(attribute='metadata.name') }}"
       vars:
         _kubectl_node_data: "{{ _kubectl_nodes.stdout | from_json }}"
-        _kubectl_node_list: "{{ _kubectl_node_data['items'] }}"
+        _kubectl_node_list: "{{ _kubectl_node_data }}"
 
     - name: Debug cluster facts
       run_once: true
@@ -230,51 +229,70 @@
         _taint_keys: "{{ _taint_list | selectattr('key', 'equalto', _taint_key) }}"
       run_once: true
 
-    - name: Verify no workload pods are scheduled on server nodes
+    - name: Verify cluster pods
+      run_once: true
       block:
-        - name: Query pods on server nodes
-          ansible.builtin.command:
-            cmd: "/var/lib/rancher/rke2/bin/kubectl get pods -A -o json"
+        - name: Query cluster pods
+          ansible.builtin.shell:
+            cmd: "{{ _rke2_bin_path }}/kubectl get pod -A -o json | jq '.items'"
           register: _kubectl_pods
           changed_when: false
 
-        - name: Set pod facts
+        - name: Set cluster facts
           ansible.builtin.set_fact:
-            _pods_workload: "{{ _kubectl_node_pods | rejectattr('metadata.namespace', 'in', _rke2_system_nss) }}"
+            _kubectl_pod_data: "{{ _pod_data }}"
+            _kubectl_pod_names: "{{ _pod_names }}"
           vars:
-            _rke2_system_nss:
-              - kube-system
-              - metallb-system
-              - longhorn-system
-            _kubectl_pod_data: "{{ _kubectl_pods.stdout | from_json }}"
-            _kubectl_pod_list: "{{ _kubectl_pod_data['items'] }}"
-            _kubectl_node_pods: "{{ _kubectl_pod_list | selectattr('spec.nodeName', 'equalto', inventory_hostname) }}"
+            _pod_data: "{{ _kubectl_pods.stdout | from_json }}"
+            _pod_names: "{{ _pod_data | map(attribute='metadata.name') | list }}"
 
-        - name: Verify no workload pods are scheduled
+        - name: Debug cluster pod names
+          ansible.builtin.debug:
+            var: _kubectl_pod_names
+
+        - name: Verify no workload pods are scheduled on server nodes
+          block:
+            - name: Set workload pod facts
+              ansible.builtin.set_fact:
+                _pods_workload: "{{ _kubectl_node_pods | rejectattr('metadata.namespace', 'in', _rke2_system_nss) }}"
+              vars:
+                _rke2_system_nss:
+                  - kube-system
+                  - metallb-system
+                  - longhorn-system
+                _kubectl_pod_list: "{{ _kubectl_pod_data }}"
+                _kubectl_node_pods: "{{ _kubectl_pod_list | selectattr('spec.nodeName', 'in', _servers) }}"
+
+            - name: Verify no workload pods are scheduled
+              ansible.builtin.assert:
+                that: _pods_workload | length == 0
+                fail_msg: "Workload pods are scheduled on control plane nodes: {{ _pods_names }} "
+              vars:
+                _pods_names: "{{ _pods_workload | map(attribute='metadata.name') | join(', ') }}"
+
+        - name: Query cluster status
+          ansible.builtin.shell:
+            cmd: "{{ _rke2_bin_path }}/kubectl get cs -o json | jq '.items'"
+          register: _kubectl_status
+          changed_when: false
+
+        - name: Check cluster status
           ansible.builtin.assert:
-            that: _pods_workload | length == 0
-            fail_msg: "Workload pods are scheduled on control plane node {{ inventory_hostname }}: {{ _pods_message }}"
+            that: _kubectl_status_conditions | reject('equalto', 'Healthy') | length == 0
           vars:
-            _pods_message: "{{ _pods_workload | map(attribute='metadata.name') | join(', ') }}"
-
-    - name: Query cluster status
-      ansible.builtin.command:
-        cmd: "{{ _rke2_bin_path }}/kubectl get cs -o json"
-      register: _kubectl_status
-      changed_when: false
-
-    - name: Check cluster status
-      ansible.builtin.assert:
-        that: _kubectl_status_conditions | reject('equalto', 'Healthy') | length == 0
-      vars:
-        _kubectl_status_data: "{{ _kubectl_status.stdout | from_json }}"
-        _kubectl_status_list: "{{ _kubectl_status_data['items'] }}"
-        _kubectl_status_conditions: "{{ _kubectl_status_list | map(attribute='conditions') | map('map', attribute='type') | flatten }}"
+            _kubectl_status_data: "{{ _kubectl_status.stdout | from_json }}"
+            _kubectl_status_list: "{{ _kubectl_status_data }}"
+            _kubectl_status_conditions: "{{ _kubectl_status_list | map(attribute='conditions') | map('map', attribute='type') | flatten }}"
 
     - name: Validate cluster components
       when: rke2_component_check | default(True) | bool
       run_once: true
       block:
+        - name: Verify hubble pods
+          ansible.builtin.assert:
+            that: _kubectl_pod_names | select('match', '^hubble-.*') | length > 0
+            fail_msg: "No Cilium Hubble pods found"
+
         - name: Set kubeconfig facts
           ansible.builtin.set_fact:
             _config_path: "{{ molecule_local_kubeconfig }}"
@@ -335,7 +353,7 @@
           block:
             - name: Verify cluster pod status
               ansible.builtin.shell:
-                cmd: "{{ _rke2_bin_path }}/kubectl get pod -o json | jq '.items'"
+                cmd: "/var/lib/rancher/rke2/bin/kubectl get pod -A -o json | jq '.items'"
               register: _argocd_pod_data
               retries: "{{ _retry }}"
               delay: "{{ _delay }}"
@@ -358,7 +376,7 @@
                 msg: "The following pods are in failed status [{{ _pod_names | join(', ') }}]"
               vars:
                 _pod_data: "{{ _argocd_pod_data.stdout | from_json }}"
-                _pod_unhealthy: "{{ _pod_data['items'] | rejectattr('status.health.status', 'equalto', 'Healthy') }}"
+                _pod_unhealthy: "{{ _pod_data | rejectattr('status.health.status', 'equalto', 'Healthy') }}"
                 _pod_outofsync: "{{ _pod_unhealthy | rejectattr('status.sync.status', 'equalto', 'Synced') }}"
                 _pod_failed: "{{ _pod_unhealthy + _pod_outofsync }}"
                 _pod_names: "{{ _pod_failed | map(attribute='metadata.name') }}"
@@ -389,7 +407,7 @@
                 msg: "The following jobs are in failed status [{{ _job_names | join(', ') }}]"
               vars:
                 _job_data: "{{ _argocd_job_data.stdout | from_json }}"
-                _job_unhealthy: "{{ _job_data['items'] | rejectattr('status.health.status', 'equalto', 'Healthy') }}"
+                _job_unhealthy: "{{ _job_data | rejectattr('status.health.status', 'equalto', 'Healthy') }}"
                 _job_outofsync: "{{ _job_unhealthy | rejectattr('status.sync.status', 'equalto', 'Synced') }}"
                 _job_failed: "{{ _job_unhealthy + _job_outofsync }}"
                 _job_names: "{{ _job_failed | map(attribute='metadata.name') }}"
@@ -482,7 +500,7 @@
                 msg: "The following persistent claims are in failed status [{{ _job_names | join(', ') }}]"
               vars:
                 _job_data: "{{ _argocd_job_data.stdout | from_json }}"
-                _job_unhealthy: "{{ _job_data['items'] | rejectattr('status.health.status', 'equalto', 'Healthy') }}"
+                _job_unhealthy: "{{ _job_data | rejectattr('status.health.status', 'equalto', 'Healthy') }}"
                 _job_outofsync: "{{ _job_unhealthy | rejectattr('status.sync.status', 'equalto', 'Synced') }}"
                 _job_failed: "{{ _job_unhealthy + _job_outofsync }}"
                 _job_names: "{{ _job_failed | map(attribute='metadata.name') }}"
@@ -544,13 +562,13 @@
           block:
             - name: Verify argocd application status
               ansible.builtin.shell:
-                cmd: "{{ _rke2_bin_path }}/kubectl get applications -n argocd -o json"
+                cmd: "{{ _rke2_bin_path }}/kubectl get applications -n argocd -o json | jq '.items'"
               register: _argocd_app_data
               retries: "{{ _retry }}"
               delay: "{{ _delay }}"
               vars:
                 _app_data: "{{ _argocd_app_data.stdout | from_json }}"
-                _app_unhealthy: "{{ _app_data['items'] | rejectattr('status.health.status', 'equalto', 'Healthy') }}"
+                _app_unhealthy: "{{ _app_data | rejectattr('status.health.status', 'equalto', 'Healthy') }}"
                 _app_outofsync: "{{ _app_unhealthy | rejectattr('status.sync.status', 'equalto', 'Synced') }}"
                 _app_failed: "{{ _app_unhealthy + _app_outofsync }}"
               until:
@@ -562,7 +580,7 @@
                 msg: "The following argocd applications have been deployed successfully [{{ _app_success | join(', ') }}]"
               vars:
                 _app_data: "{{ _argocd_app_data.stdout | from_json }}"
-                _app_healthy: "{{ _app_data['items'] | selectattr('status.health.status', 'equalto', 'Healthy') }}"
+                _app_healthy: "{{ _app_data | selectattr('status.health.status', 'equalto', 'Healthy') }}"
                 _app_sync: "{{ _app_healthy | selectattr('status.sync.status', 'equalto', 'Synced') }}"
                 _app_success: "{{ _app_sync | map(attribute='metadata.name') | unique }}"
 
@@ -572,8 +590,8 @@
                 msg: "The following argocd applications are in failed status [{{ _app_names | join(', ') }}]"
               vars:
                 _app_data: "{{ _argocd_app_data.stdout | from_json }}"
-                _app_unhealthy: "{{ _app_data['items'] | rejectattr('status.health.status', 'equalto', 'Healthy') }}"
-                _app_outofsync: "{{ _app_data['items'] | rejectattr('status.sync.status', 'equalto', 'Synced') }}"
+                _app_unhealthy: "{{ _app_data | rejectattr('status.health.status', 'equalto', 'Healthy') }}"
+                _app_outofsync: "{{ _app_data | rejectattr('status.sync.status', 'equalto', 'Synced') }}"
                 _app_failed: "{{ _app_unhealthy + _app_outofsync }}"
                 _app_names: "{{ _app_failed | map(attribute='metadata.name') | unique }}"
 
@@ -608,10 +626,22 @@
   hosts: rke2_server:rke2_agent
   any_errors_fatal: true
   tasks:
-    - name: Verify node update count
-      ansible.builtin.command: apt list --upgradable | grep -v ^Listing | wc -l
-      become: true
-      changed_when: false
-      register: _update_query
-      failed_when: _update_query.stdout | int > 0
+    - name: Verify OS package updates
       when: rke2_update_check | default(False) | bool
+      block:
+        - name: Query OS package updates
+          ansible.builtin.shell:
+            cmd: "apt list --upgradable 2>/dev/null | grep -v ^Listing | wc -l"
+            executable: /bin/bash
+          become: true
+          changed_when: false
+          failed_when: false
+          ignore_errors: true
+          register: _update_query
+
+        - name: Verify OS package count
+          ansible.builtin.assert:
+            that:
+              - _update_query.stdout != ""
+              - _update_query.stdout | int == 0
+            fail_msg: "{{ _update_query.stdout }} pending updates found"

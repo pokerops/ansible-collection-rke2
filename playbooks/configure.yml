@@ -77,6 +77,21 @@
       register: node_query
       changed_when: false
 
+    - name: Taint dedicated server nodes to prevent workload scheduling
+      ansible.builtin.command:
+        cmd: "{{ _rke2_bin_path }}/kubectl taint node {{ inventory_hostname }} {{ taint }} --overwrite"
+      vars:
+        node_data: "{{ node_query.stdout | from_json }}"
+        taint_data: "{{ node_data.spec.taints | default([]) }}"
+        taint_name: "node-role.kubernetes.io/control-plane"
+        taint_effect: NoSchedule
+        taint_target: "{{ taint_data | selectattr('key', 'defined') | selectattr('key', 'equalto', taint_name) }}"
+        taint_list: "{{ taint_target | map(attribute='effect') }}"
+        is_tainted: "{{ taint_effect in taint_list }}"
+        agents: "{{ groups[rke2_agent_group] | default([]) }}"
+        taint: "{{ taint_name }}:{{ taint_effect }}{{ '-' if (is_tainted and (agents | length == 0)) else '' }}"
+      when: (not is_tainted and (agents | length > 0)) or (is_tainted and (agents | length == 0))
+
     - name: Delete unsupported server node taint
       ansible.builtin.command:
         cmd: "{{ _rke2_bin_path }}/kubectl taint node {{ inventory_hostname }} {{ taint }} --overwrite"
@@ -90,20 +105,3 @@
         is_tainted: "{{ taint_effect in taint_list }}"
         taint: "{{ taint_name }}:{{ taint_effect }}-"
       when: is_tainted
-
-    - name: Taint dedicated server nodes to prevent workload scheduling
-      ansible.builtin.command:
-        cmd: "{{ _rke2_bin_path }}/kubectl taint node {{ inventory_hostname }} {{ taint }} --overwrite"
-      vars:
-        node_data: "{{ node_query.stdout | from_json }}"
-        taint_data: "{{ node_data.spec.taints | default([]) }}"
-        taint_name: "node-role.kubernetes.io/control-plane"
-        taint_effect: NoSchedule
-        taint_target: "{{ taint_data | selectattr('key', 'defined') | selectattr('key', 'equalto', taint_name) }}"
-        taint_list: "{{ taint_target | map(attribute='effect') }}"
-        is_tainted: "{{ taint_effect in taint_list }}"
-        is_agent: "{{ rke2_agent_group in groups }}"
-        agents: "{{ groups[rke2_agent_group] | default([]) }}"
-        condition: "{{ (is_agent and is_tainted) or (not is_agent and (agents | length == 0)) }}"
-        taint: "{{ taint_name }}:{{ taint_effect }}{{ '-' if condition else '' }}"
-      when: ((not is_tainted | bool) and (agents | length > 0)) or ((is_tainted | bool) and (agents | length == 0))

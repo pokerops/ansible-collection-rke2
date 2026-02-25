@@ -51,12 +51,35 @@ rke2_argocd_apps_chart:
   namespace: "argocd"
   repo: "https://argoproj.github.io/argo-helm"
   release: "2.0.2"
-rke2_argocd_apps_pokerops_revision: 0.7.2
+rke2_argocd_apps_pokerops_revision: 0.7.3
 rke2_argocd_apps_values_extra: {}
 rke2_argocd_apps_directory_include: "{*.yml,*.yaml}"
 rke2_argocd_apps_directory_exclude: ""
 rke2_argocd_apps_values_base:
   applications:
+    cilium:
+      project: default
+      source:
+        repoURL: https://github.com/pokerops/ansible-collection-rke2.git
+        targetRevision: "{{ rke2_argocd_apps_pokerops_revision }}"
+        path: argocd/cilium/
+        directory:
+          recurse: false
+          include: "{{ rke2_argocd_apps_directory_include }}"
+          exclude: "{{ rke2_argocd_apps_directory_exclude }}"
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: default
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - ApplyOutOfSyncOnly=true
+      revisionHistoryLimit:
+      info:
+        - name: url
+          value: https://github.com/pokerops/ansible-collection-rke2
     cluster:
       project: default
       source:
