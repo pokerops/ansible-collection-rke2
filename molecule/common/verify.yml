@@ -234,7 +234,7 @@
       block:
         - name: Query cluster pods
           ansible.builtin.shell:
-            cmd: "/var/lib/rancher/rke2/bin/kubectl get pod -A -o json | jq '.items'"
+            cmd: "{{ _rke2_bin_path }}/kubectl get pod -A -o json | jq '.items'"
           register: _kubectl_pods
           changed_when: false
 
