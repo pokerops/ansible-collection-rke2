@@ -244,7 +244,7 @@
             _kubectl_pod_names: "{{ _pod_names }}"
           vars:
             _pod_data: "{{ _kubectl_pods.stdout | from_json }}"
-            _pod_names: "{{ _pod_data | map(attribute='metadata.name') }}"
+            _pod_names: "{{ _pod_data | map(attribute='metadata.name') | list }}"
 
         - name: Debug cluster pod names
           ansible.builtin.debug:
