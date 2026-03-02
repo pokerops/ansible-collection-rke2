@@ -1,7 +1,7 @@
 [project]
 name = "pokerops-rke2"
-version = "0.7.3"
-description = ""
+version = "0.7.4"
+description = "RKE2 CLI utilities"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = []
