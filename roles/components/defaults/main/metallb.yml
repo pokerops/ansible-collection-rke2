@@ -1,0 +1,6 @@
+---
+rke2_metallb_method: "l2"
+rke2_metallb_bgp_holdtime: 90s
+rke2_metallb_bgp_keepalive: 0s
+rke2_metallb_bgp_asn: 64512
+rke2_metallb_bgp_peers: []

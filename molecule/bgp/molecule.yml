@@ -1,0 +1,105 @@
+---
+dependency:
+  name: galaxy
+  options:
+    role-file: requirements.yml
+    requirements-file: requirements.yml
+driver:
+  name: default
+platforms:
+  - name: rke2-${MOLECULE_SCENARIO_NAME}-server-01
+    image: "${MOLECULE_KVM_IMAGE}"
+    cpu: 2
+    mem: 4
+    groups:
+      - rke2_server
+  - name: rke2-${MOLECULE_SCENARIO_NAME}-server-02
+    image: "${MOLECULE_KVM_IMAGE}"
+    cpu: 2
+    mem: 4
+    groups:
+      - rke2_server
+  - name: rke2-${MOLECULE_SCENARIO_NAME}-server-03
+    image: "${MOLECULE_KVM_IMAGE}"
+    cpu: 2
+    mem: 4
+    groups:
+      - rke2_server
+  - name: rke2-${MOLECULE_SCENARIO_NAME}-agent-01
+    image: "${MOLECULE_KVM_IMAGE}"
+    cpu: 1
+    mem: 2
+    groups:
+      - rke2_agent
+  - name: rke2-${MOLECULE_SCENARIO_NAME}-agent-02
+    image: "${MOLECULE_KVM_IMAGE}"
+    cpu: 1
+    mem: 2
+    groups:
+      - rke2_agent
+  - name: rke2-${MOLECULE_SCENARIO_NAME}-agent-03
+    image: "${MOLECULE_KVM_IMAGE}"
+    cpu: 1
+    mem: 2
+    groups:
+      - rke2_agent
+provisioner:
+  name: ansible
+  playbooks:
+    create: ../common/libvirt.yml
+    prepare: ../common/prepare.yml
+    converge: ../common/install.yml
+    destroy: ../common/destroy.yml
+    side_effect: ../common/configure.yml
+  config_options:
+    defaults:
+      callbacks_enabled: ansible.posix.profile_tasks
+      callback_whitelist: profile_tasks, timer, yaml
+  inventory:
+    hosts:
+      all:
+        vars:
+          ansible_ssh_extra_args: "-o ControlPersist=no -o ControlPath=none"
+          libvirt_user: molecule
+          libvirt_address: "172.31.252.1/24"
+          libvirt_platforms: "{{ molecule_yml.platforms }}"
+          molecule_net_prefix: "{{ libvirt_address | ansible.utils.ipaddr('prefix') }}"
+          molecule_metallb_prefix: "{{ (molecule_net_prefix | int) + 1 }}"
+          molecule_pool_prefix: "{{ (molecule_metallb_prefix | int) + 1 }}"
+          molecule_pool_private: "{{ libvirt_address | ansible.utils.ipsubnet(molecule_pool_prefix, 0) }}"
+          molecule_pool_public: "{{ libvirt_address | ansible.utils.ipsubnet(molecule_pool_prefix, 1) }}"
+          molecule_logdir: "{{ lookup('ansible.builtin.env', 'MOLECULE_LOGDIR', default='/tmp/logs') }}"
+          molecule_install_log: "{{ molecule_logdir }}/${MOLECULE_SCENARIO_NAME}"
+          molecule_local_kubeconfig: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}/.kubeconfig"
+          # Optional rke2 params
+          rke2_argocd_apps_pokerops_revision: "{{ lookup('ansible.builtin.env', 'MOLECULE_REVISION', default='HEAD') }}"
+          # Required rke2 params
+          rke2_cluster_name: rke2.pokerops.net
+          rke2_ippool_private: "{{ molecule_pool_private }}"
+          rke2_ippool_public: "{{ molecule_pool_public }}"
+          rke2_api_url: "https://api.{{ rke2_cluster_name }}:6443"
+          rke2_token: "secret"
+          # Test rke2 params
+          rke2_metallb_bgp_mode: bgp
+          rke2_retry_num: 20
+          rke2_skip_deploy: true
+verifier:
+  name: ansible
+scenario:
+  create_sequence:
+    - dependency
+    - create
+  prepare_sequence:
+    - prepare
+  converge_sequence:
+    - converge
+  destroy_sequence:
+    - destroy
+  test_sequence:
+    - dependency
+    - create
+    - prepare
+    - converge
+    - side_effect
+    - verify
+    - destroy
