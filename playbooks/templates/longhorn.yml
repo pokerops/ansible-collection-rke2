@@ -15,7 +15,7 @@ spec:
     helm:
       valuesObject:
         preUpgradeChecker:
-          jobEnabled: true
+          jobEnabled: false
         persistence:
           defaultClass: true
           reclaimPolicy: Retain
