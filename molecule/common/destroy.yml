@@ -11,12 +11,6 @@
         state: absent
       failed_when: false
 
-    - name: Remove FRR configuration directory
-      ansible.builtin.file:
-        path: /etc/frr
-        state: absent
-      failed_when: false
-
     - name: Destroy api host file entry
       ansible.builtin.lineinfile:
         path: /etc/hosts

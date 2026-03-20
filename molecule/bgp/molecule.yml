@@ -48,7 +48,6 @@ provisioner:
   playbooks:
     create: ../common/libvirt.yml
     prepare: ../common/prepare.yml
-    converge: ../common/install.yml
     destroy: ../common/destroy.yml
     side_effect: ../common/configure.yml
   config_options:
@@ -60,9 +59,10 @@ provisioner:
       all:
         vars:
           ansible_ssh_extra_args: "-o ControlPersist=no -o ControlPath=none"
-          libvirt_network: molecule
           libvirt_user: molecule
+          libvirt_network: molecule
           libvirt_address: "172.31.252.1/24"
+          libvirt_platforms: "{{ molecule_yml.platforms }}"
           molecule_logdir: "{{ lookup('ansible.builtin.env', 'MOLECULE_LOGDIR', default='/tmp/logs') }}"
           molecule_install_log: "{{ molecule_logdir }}/${MOLECULE_SCENARIO_NAME}"
           molecule_local_kubeconfig: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}/.kubeconfig"
@@ -75,7 +75,8 @@ provisioner:
           rke2_api_url: "https://api.{{ rke2_cluster_name }}:6443"
           rke2_token: "secret"
           # Test rke2 params
-          rke2_metallb_method: "bgp"
+          rke2_metallb_mode: "bgp"
+          rke2_metallb_bgp_asn: 64513
           rke2_retry_num: 20
           rke2_skip_deploy: true
 verifier:
@@ -94,7 +95,6 @@ scenario:
     - dependency
     - create
     - prepare
-    - bgp
     - converge
     - side_effect
     - verify
