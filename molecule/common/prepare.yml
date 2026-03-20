@@ -62,3 +62,66 @@
       vars:
         _api_hostname: "{{ rke2_api_url | urlsplit('hostname') }}"
         _api_address: "{{ hostvars[groups['rke2_server'].0]['ansible_default_ipv4']['address'] }}"
+
+    - name: Configure BGP support
+      when: rke2_metallb_mode | default("l2") == "bgp"
+      block:
+        - name: Ensure Docker is installed
+          ansible.builtin.package:
+            name: docker.io
+            state: present
+
+        - name: Start Docker service
+          ansible.builtin.systemd:
+            name: docker
+            state: started
+            enabled: true
+
+        - name: Create FRR configuration directory
+          ansible.builtin.file:
+            path: /etc/frr
+            state: directory
+            mode: "0755"
+
+        - name: Create FRR daemons configuration
+          ansible.builtin.copy:
+            dest: /etc/frr/daemons
+            content: |
+              bgpd=yes
+              ospfd=no
+              ospf6d=no
+              ripd=no
+              ripngd=no
+              isisd=no
+              pimd=no
+              ldpd=no
+              nhrpd=no
+              eigrpd=no
+              babeld=no
+              sharpd=no
+              pbrd=no
+              bfdd=no
+              fabricd=no
+              vrrpd=no
+              pathd=no
+
+              vtysh_enable=yes
+              zebra_options="  -A 127.0.0.1 -s 90000000"
+              bgpd_options="   -A 127.0.0.1"
+            mode: "0640"
+
+        - name: Start FRR container
+          community.docker.docker_container:
+            name: frr
+            image: quay.io/frrouting/frr:stable
+            state: started
+            restart_policy: unless-stopped
+            network_mode: host
+            privileged: true
+            capabilities:
+              - NET_ADMIN
+              - NET_RAW
+              - SYS_ADMIN
+            volumes:
+              - /etc/frr:/etc/frr
+            command: ["/sbin/tini", "--", "/usr/lib/frr/docker-start"]

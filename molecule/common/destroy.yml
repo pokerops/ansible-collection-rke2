@@ -1,10 +1,22 @@
 ---
-- name: Clean api hostfile entries
+- name: Restore KVM host
   hosts: localhost
   vars_files:
     - ../../playbooks/vars/main.yml
   become: true
   tasks:
+    - name: Stop and remove FRR container
+      community.docker.docker_container:
+        name: frr
+        state: absent
+      failed_when: false
+
+    - name: Remove FRR configuration directory
+      ansible.builtin.file:
+        path: /etc/frr
+        state: absent
+      failed_when: false
+
     - name: Destroy api host file entry
       ansible.builtin.lineinfile:
         path: /etc/hosts
