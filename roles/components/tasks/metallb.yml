@@ -84,14 +84,13 @@
   block:
     - name: Set MetalLB BGP peer defaults
       ansible.builtin.set_fact:
-        rke2_metallb_bgp_peers: "{{ _gateways }}"
+        rke2_metallb_bgp_peers: "{{ _gateways | unique }}"
       vars:
         _gateways: "{{ ansible_play_hosts | map('extract', hostvars, ['ansible_default_ipv4', 'address']) }}"
-      when: rke2_metallb_bgp_peers is not defined
+      when: rke2_metallb_bgp_peers | length == 0
 
     - name: Query MetalLB BGP peers
       kubernetes.core.k8s_info:
-        state: present
         kubeconfig: "{{ rke2_config_path }}"
         kind: BGPPeer
         namespace: metallb-system
@@ -132,4 +131,4 @@
         _name: "peer-{{ item | regex_replace('\\.', '-') }}"
       retries: "{{ _rke2_retry_num }}"
       delay: "{{ _rke2_retry_delay }}"
-      loop: "{{ rke2_metallb_bgp_peers | intersect(_peers) }}"
+      loop: "{{ rke2_metallb_bgp_peers | difference(_peers) }}"

@@ -82,5 +82,3 @@
             volumes:
               - "{{ _frr_config_dir }}:/etc/frr"
             command: ["/sbin/tini", "--", "/usr/lib/frr/docker-start"]
-
-    - fail:
