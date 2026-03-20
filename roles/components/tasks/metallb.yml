@@ -86,7 +86,7 @@
       ansible.builtin.set_fact:
         rke2_metallb_bgp_peers: "{{ _gateways | unique }}"
       vars:
-        _gateways: "{{ ansible_play_hosts | map('extract', hostvars, ['ansible_default_ipv4', 'address']) }}"
+        _gateways: "{{ ansible_play_hosts | map('extract', hostvars, ['ansible_default_ipv4', 'gateway']) }}"
       when: rke2_metallb_bgp_peers | length == 0
 
     - name: Query MetalLB BGP peers
