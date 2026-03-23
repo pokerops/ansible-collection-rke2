@@ -64,24 +64,92 @@
   delay: "{{ _rke2_retry_delay }}"
   when: rke2_ippool_public is defined
 
-- name: Advertise MetalLB L2 pools
-  kubernetes.core.k8s:
-    state: present
-    apply: true
-    kubeconfig: "{{ rke2_config_path }}"
-    resource_definition:
-      apiVersion: metallb.io/v1beta1
-      kind: L2Advertisement
-      metadata:
-        name: metallb
-        namespace: metallb-system
-  retries: "{{ _rke2_retry_num }}"
-  delay: "{{ _rke2_retry_delay }}"
+- name: Configure MetalLB L2 advertisements
   when: rke2_metallb_mode == "l2"
+  block:
+    - name: Query MetalLB BGP advertisements
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ rke2_config_path }}"
+        kind: BGPAdvertisement
+        namespace: metallb-system
+      register: _bgp_advertisements
+
+    - name: Destroy MetalLB BGP advertisements
+      kubernetes.core.k8s:
+        state: absent
+        apply: true
+        kubeconfig: "{{ rke2_config_path }}"
+        resource_definition:
+          apiVersion: "{{ item.apiVersion }}"
+          kind: "{{ item.kind }}"
+          metadata:
+            name: "{{ item.metadata.name }}"
+            namespace: "{{ item.metadata.namespace }}"
+      retries: "{{ _rke2_retry_num }}"
+      delay: "{{ _rke2_retry_delay }}"
+      loop: "{{ _bgp_advertisements.resources }}"
+
+    - name: Query MetalLB BGP peers
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ rke2_config_path }}"
+        kind: BGPPeer
+        namespace: metallb-system
+      register: _bgp_peers
+
+    - name: Destroy MetalLB BGP peers
+      kubernetes.core.k8s:
+        state: absent
+        apply: true
+        kubeconfig: "{{ rke2_config_path }}"
+        resource_definition:
+          apiVersion: "{{ item.apiVersion }}"
+          kind: "{{ item.kind }}"
+          metadata:
+            name: "{{ item.metadata.name }}"
+            namespace: "{{ item.metadata.namespace }}"
+      retries: "{{ _rke2_retry_num }}"
+      delay: "{{ _rke2_retry_delay }}"
+      loop: "{{ _bgp_peers.resources }}"
+
+    - name: Create MetalLB L2 advertisement
+      kubernetes.core.k8s:
+        state: present
+        apply: true
+        kubeconfig: "{{ rke2_config_path }}"
+        resource_definition:
+          apiVersion: metallb.io/v1beta1
+          kind: L2Advertisement
+          metadata:
+            name: metallb
+            namespace: metallb-system
+      retries: "{{ _rke2_retry_num }}"
+      delay: "{{ _rke2_retry_delay }}"
 
 - name: Configure MetalLB BGP advertisements
   when: rke2_metallb_mode == "bgp"
   block:
+    - name: Query MetalLB L2 advertisements
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ rke2_config_path }}"
+        kind: L2Advertisement
+        namespace: metallb-system
+      register: _l2_advertisements
+
+    - name: Destroy MetalLB L2 advertisements
+      kubernetes.core.k8s:
+        state: absent
+        apply: true
+        kubeconfig: "{{ rke2_config_path }}"
+        resource_definition:
+          apiVersion: "{{ item.apiVersion }}"
+          kind: "{{ item.kind }}"
+          metadata:
+            name: "{{ item.metadata.name }}"
+            namespace: "{{ item.metadata.namespace }}"
+      retries: "{{ _rke2_retry_num }}"
+      delay: "{{ _rke2_retry_delay }}"
+      loop: "{{ _l2_advertisements.resources }}"
+
     - name: Set MetalLB BGP peer defaults
       ansible.builtin.set_fact:
         rke2_metallb_bgp_peers: "{{ _gateways | unique }}"
@@ -132,3 +200,17 @@
       retries: "{{ _rke2_retry_num }}"
       delay: "{{ _rke2_retry_delay }}"
       loop: "{{ rke2_metallb_bgp_peers | difference(_peers) }}"
+
+    - name: Create MetalLB BGP advertisement
+      kubernetes.core.k8s:
+        state: present
+        apply: true
+        kubeconfig: "{{ rke2_config_path }}"
+        resource_definition:
+          apiVersion: metallb.io/v1beta1
+          kind: BGPAdvertisement
+          metadata:
+            name: metallb
+            namespace: metallb-system
+      retries: "{{ _rke2_retry_num }}"
+      delay: "{{ _rke2_retry_delay }}"

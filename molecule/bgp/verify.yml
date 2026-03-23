@@ -1,0 +1,435 @@
+---
+- name: Verify cluster BGP configuration
+  hosts: rke2_server
+  any_errors_fatal: true
+  run_once: true
+  vars:
+    _metallb_namespace: metallb-system
+  vars_files:
+    - ../../playbooks/vars/main.yml
+  tasks:
+    - debug:
+        var: molecule_local_kubeconfig
+
+    - fail:
+
+    - name: Verify BGP Peer resources exist
+      block:
+        - name: Query BGPPeer resources
+          kubernetes.core.k8s_info:
+            kind: BGPPeer
+            namespace: "{{ _metallb_namespace }}"
+            kubeconfig: "{{ molecule_local_kubeconfig }}"
+          register: _bgp_peers
+          delegate_to: localhost
+          until: _bgp_peers.resources | length > 0
+
+        - name: Verify BGPPeer
+          ansible.builtin.assert:
+            that: _bgp_peers.resources | length > 0
+            fail_msg: "No BGPPeer resources found in {{ _metallb_namespace }}"
+
+    - name: Verify BGP Advertisement resource exists
+      block:
+        - name: Query BGPAdvertisement resources
+          kubernetes.core.k8s_info:
+            kind: BGPAdvertisement
+            namespace: "{{ _metallb_namespace }}"
+            kubeconfig: "{{ molecule_local_kubeconfig }}"
+          register: _bgp_advertisements
+          delegate_to: localhost
+
+        - name: Verify BGPAdvertisement
+          ansible.builtin.assert:
+            that: _bgp_advertisements.resources | selectattr('metadata.name', 'equalto', 'metallb') | list | length == 1
+            fail_msg: "BGPAdvertisement 'metallb' not found in {{ _metallb_namespace }}"
+
+        - name: Query L2Advertisement resources
+          kubernetes.core.k8s_info:
+            kind: L2Advertisement
+            namespace: "{{ _metallb_namespace }}"
+            kubeconfig: "{{ molecule_local_kubeconfig }}"
+          register: _l2_advertisements
+          delegate_to: localhost
+
+        - name: Verify no L2Advertisement resources exist
+          ansible.builtin.assert:
+            that: _l2_advertisements.resources | length == 0
+            fail_msg: "L2Advertisement resources found in BGP mode: {{ _l2_advertisements.resources | map(attribute='metadata.name') | list }}"
+
+    - name: Verify ingress controller LoadBalancer services
+      block:
+        - name: Query nginx namespace services
+          kubernetes.core.k8s_info:
+            kind: Service
+            namespace: nginx
+            kubeconfig: "{{ molecule_local_kubeconfig }}"
+          register: _nginx_services
+          delegate_to: localhost
+
+        - name: Set LoadBalancer service facts
+          ansible.builtin.set_fact:
+            _lb_services: "{{ _nginx_services.resources | selectattr('spec.type', 'equalto', 'LoadBalancer') | list }}"
+
+        - name: Assert ingress controllers exist
+          ansible.builtin.assert:
+            that: _lb_services | length == 2
+            fail_msg: "Expected 2 LoadBalancer services, found {{ _lb_services | length }}"
+
+        - name: Verify LoadBalancer services have External IPs
+          ansible.builtin.assert:
+            that:
+              - item.status.loadBalancer.ingress is defined
+              - item.status.loadBalancer.ingress | length > 0
+              - item.status.loadBalancer.ingress[0].ip is defined
+            fail_msg: "Service {{ item.metadata.name }} has no External IP assigned"
+          loop: "{{ _lb_services }}"
+          loop_control:
+            label: "{{ item.metadata.name }}"
+
+        - name: Extract LoadBalancer IPs
+          ansible.builtin.set_fact:
+            _ingress_ips: "{{ _lb_services | map(attribute='status.loadBalancer.ingress') | map('first') | map(attribute='ip') | list }}"
+
+    - name: Verify MetalLB is announcing routes
+      block:
+        - name: Query speaker logs
+          ansible.builtin.shell:
+            cmd: "{{ _rke2_bin_path }}/kubectl logs -n {{ _metallb_namespace }} -l app.kubernetes.io/component=speaker -c speaker --tail=500 | grep serviceAnnounced"
+          register: _speaker_logs
+          changed_when: false
+          failed_when: false
+
+        - name: Veriy announcements for all ingress IPs
+          ansible.builtin.assert:
+            that: _speaker_logs.stdout is search(item)
+            fail_msg: "No BGP announcement found for ingress IP {{ item }}"
+          loop: "{{ _ingress_ips }}"
+
+        - name: Assert BGP protocol used
+          ansible.builtin.assert:
+            that: _speaker_logs.stdout is search('protocol.*bgp')
+            fail_msg: "Announcements not using BGP protocol"
+
+- name: Verify host BGP configuration
+  hosts: localhost
+  any_errors_fatal: true
+  tasks:
+    - name: Query ingress controller IPs
+      block:
+        - name: Get LoadBalancer services
+          ansible.builtin.shell:
+            cmd: "KUBECONFIG={{ molecule_local_kubeconfig }} kubectl get service -n nginx -o json"
+          register: _services_data
+          changed_when: false
+
+        - name: Extract LoadBalancer IPs
+          ansible.builtin.set_fact:
+            _ingress_ips: "{{ _services | selectattr('spec.type', 'equalto', 'LoadBalancer') | map(attribute='status.loadBalancer.ingress') | map('first') | map(attribute='ip') | list }}"
+          vars:
+            _services: "{{ _services_data.stdout | from_json | json_query('items') }}"
+
+    - name: Verify FRR container is running
+      block:
+        - name: Query FRR container status
+          ansible.builtin.shell:
+            cmd: "docker inspect frr --format '{{ '{{' }}.State.Status{{ '}}' }}'"
+          register: _frr_status
+          changed_when: false
+
+        - name: Assert FRR container is running
+          ansible.builtin.assert:
+            that: _frr_status.stdout == 'running'
+            fail_msg: "FRR container is in state {{ _frr_status.stdout }}"
+
+        - name: Query FRR container uptime
+          ansible.builtin.shell:
+            cmd: "docker inspect frr --format '{{ '{{' }}.State.StartedAt{{ '}}' }}'"
+          register: _frr_started
+          changed_when: false
+
+        - name: Calculate uptime
+          ansible.builtin.set_fact:
+            _frr_uptime_seconds: "{{ (ansible_date_time.epoch | int) - (_frr_started.stdout | to_datetime('%Y-%m-%dT%H:%M:%S.%fZ')).strftime('%s') | int }}"
+
+        - name: Assert FRR uptime is stable
+          ansible.builtin.assert:
+            that: _frr_uptime_seconds | int > 30
+            fail_msg: "FRR container uptime is only {{ _frr_uptime_seconds }} seconds (may be restart-looping)"
+
+    - name: Verify FRR BGP daemon is active
+      block:
+        - name: Query BGP summary
+          ansible.builtin.shell:
+            cmd: "docker exec frr vtysh -c 'show bgp summary json'"
+          register: _bgp_summary_query
+          changed_when: false
+          until: _bgp_summary.stdout is search('Total number of neighbors')
+
+        - name: Parse BGP neighbor count
+          ansible.builtin.set_fact:
+            _bgp_summary: "{{ _bgp_summary_query.stdout }}"
+
+        - debug:
+            var: _bgp_summary
+
+        - fail:
+
+        - name: Assert expected number of neighbors
+          ansible.builtin.assert:
+            that: _bgp_neighbor_lines | length == 6
+            fail_msg: "Expected 6 BGP neighbors, found {{ _bgp_neighbor_lines | length }}"
+
+        - name: Assert all neighbors are established
+          ansible.builtin.assert:
+            that: _bgp_summary.stdout is not search('Active|Connect|Idle')
+            fail_msg: "Some BGP neighbors not in Established state"
+
+        - name: Assert neighbors are receiving prefixes
+          ansible.builtin.assert:
+            that: item is search('\\s+[1-9][0-9]*\\s+[0-9]+\\s+[0-9:]+\\s+[1-9]')
+            fail_msg: "Neighbor not receiving prefixes: {{ item }}"
+          loop: "{{ _bgp_neighbor_lines }}"
+          loop_control:
+            label: "{{ item.split()[0] }}"
+
+    - name: Verify BGP routes received for ingress controllers
+      block:
+        - name: Query BGP IPv4 unicast routes
+          ansible.builtin.shell:
+            cmd: "docker exec frr vtysh -c 'show bgp ipv4 unicast' 2>&1"
+          register: _bgp_routes
+          changed_when: false
+          until: _ingress_ips | select('in', _bgp_routes.stdout) | list | length == _ingress_ips | length
+
+        - name: Assert ingress IPs in BGP table
+          ansible.builtin.assert:
+            that: _bgp_routes.stdout is search(item | regex_escape + '/32')
+            fail_msg: "Ingress IP {{ item }}/32 not found in BGP table"
+          loop: "{{ _ingress_ips }}"
+
+        - name: Assert routes are valid and best
+          ansible.builtin.assert:
+            that: _bgp_routes.stdout is search('\\*>i ' + item | regex_escape + '/32')
+            fail_msg: "Route {{ item }}/32 not marked as valid (*) and best (>)"
+          loop: "{{ _ingress_ips }}"
+
+        - name: Assert routes have valid next-hops
+          ansible.builtin.assert:
+            that: _bgp_routes.stdout is search('172\\.31\\.252\\.[2-7]')
+            fail_msg: "Routes missing valid next-hop addresses"
+
+    - name: Verify routes installed in FRR kernel
+      block:
+        - name: Query routes for all ingress IPs
+          ansible.builtin.shell:
+            cmd: "docker exec frr ip route show {{ item }}"
+          register: _frr_routes
+          changed_when: false
+          loop: "{{ _ingress_ips }}"
+
+        - name: Assert all routes exist
+          ansible.builtin.assert:
+            that: item.stdout | length > 0
+            fail_msg: "Route for {{ item.item }} not installed in FRR kernel"
+          loop: "{{ _frr_routes.results }}"
+          loop_control:
+            label: "{{ item.item }}"
+
+        - name: Assert routes use BGP protocol
+          ansible.builtin.assert:
+            that: item.stdout is search('proto bgp')
+            fail_msg: "Route for {{ item.item }} not installed via BGP protocol"
+          loop: "{{ _frr_routes.results }}"
+          loop_control:
+            label: "{{ item.item }}"
+
+        - name: Assert routes have multiple nexthops (ECMP)
+          ansible.builtin.assert:
+            that: item.stdout is search('nexthop')
+            fail_msg: "Route for {{ item.item }} missing ECMP nexthops"
+          loop: "{{ _frr_routes.results }}"
+          loop_control:
+            label: "{{ item.item }}"
+
+        - name: Assert nexthops match cluster node IPs
+          ansible.builtin.assert:
+            that: item.stdout is search('via 172\\.31\\.252\\.[2-7]')
+            fail_msg: "Route for {{ item.item }} has incorrect nexthop addresses"
+          loop: "{{ _frr_routes.results }}"
+          loop_control:
+            label: "{{ item.item }}"
+
+    - name: Verify routes on host system
+      block:
+        - name: Query routes for all ingress IPs on host
+          ansible.builtin.shell:
+            cmd: "ip route show {{ item }}"
+          register: _host_routes
+          changed_when: false
+          become: true
+          loop: "{{ _ingress_ips }}"
+
+        - name: Assert all routes in host table
+          ansible.builtin.assert:
+            that: item.stdout | length > 0
+            fail_msg: "Route for {{ item.item }} not found in host routing table"
+          loop: "{{ _host_routes.results }}"
+          loop_control:
+            label: "{{ item.item }}"
+
+        - name: Count nexthops for each IP
+          ansible.builtin.shell:
+            cmd: "ip route show {{ item }} | grep -o 'nexthop' | wc -l"
+          register: _nexthop_counts
+          changed_when: false
+          become: true
+          loop: "{{ _ingress_ips }}"
+
+        - name: Assert ECMP with all cluster nodes
+          ansible.builtin.assert:
+            that: item.stdout | int == 6
+            fail_msg: "Expected 6 nexthops for {{ item.item }}, found {{ item.stdout }}"
+          loop: "{{ _nexthop_counts.results }}"
+          loop_control:
+            label: "{{ item.item }}"
+
+- name: Verify end-to-end BGP connectivity
+  hosts: localhost
+  any_errors_fatal: true
+  tasks:
+    - name: Query ingress controller IPs and resources
+      block:
+        - name: Get LoadBalancer services
+          ansible.builtin.shell:
+            cmd: "KUBECONFIG={{ molecule_local_kubeconfig }} kubectl get service -n nginx -o json"
+          register: _services_data
+          changed_when: false
+
+        - name: Extract LoadBalancer IPs
+          ansible.builtin.set_fact:
+            _ingress_ips: "{{ _services | selectattr('spec.type', 'equalto', 'LoadBalancer') | map(attribute='status.loadBalancer.ingress') | map('first') | map(attribute='ip') | list }}"
+            _private_ingress_ip: "{{ _services | selectattr('metadata.name', 'search', 'private') | map(attribute='status.loadBalancer.ingress') | map('first') | map(attribute='ip') | first }}"
+          vars:
+            _services: "{{ _services_data.stdout | from_json | json_query('items') }}"
+
+        - name: Get all ingress resources
+          ansible.builtin.shell:
+            cmd: "KUBECONFIG={{ molecule_local_kubeconfig }} kubectl get ingress -A -o json"
+          register: _ingress_data
+          changed_when: false
+
+        - name: Extract ingress hosts
+          ansible.builtin.set_fact:
+            _ingress_hosts: "{{ _ingress_data.stdout | from_json | json_query('items[*].spec.rules[*].host') | flatten }}"
+
+    - name: Verify HTTP/HTTPS connectivity via ingress
+      block:
+        - name: Test ArgoCD ingress
+          ansible.builtin.uri:
+            url: "https://{{ _private_ingress_ip }}"
+            method: GET
+            headers:
+              Host: "argocd.rke2.pokerops.net"
+            validate_certs: false
+            timeout: 5
+            status_code:
+              - 200
+              - 301
+              - 302
+              - 307
+              - 308
+          register: _argocd_response
+          until: _argocd_response is success
+
+        - name: Test Longhorn ingress
+          ansible.builtin.uri:
+            url: "https://{{ _private_ingress_ip }}"
+            method: GET
+            headers:
+              Host: "longhorn.rke2.pokerops.net"
+            validate_certs: false
+            timeout: 5
+            status_code:
+              - 200
+              - 301
+              - 302
+              - 307
+              - 308
+          register: _longhorn_response
+          until: _longhorn_response is success
+
+        - name: Assert successful responses
+          ansible.builtin.assert:
+            that:
+              - _argocd_response.status in [200, 301, 302, 307, 308]
+              - _longhorn_response.status in [200, 301, 302, 307, 308]
+            fail_msg: "HTTP requests failed: ArgoCD={{ _argocd_response.status }}, Longhorn={{ _longhorn_response.status }}"
+
+    - name: Verify route persistence and stability
+      block:
+        - name: Wait for route stability
+          ansible.builtin.pause:
+            seconds: 10
+
+        - name: Re-query BGP routes
+          ansible.builtin.shell:
+            cmd: "docker exec frr vtysh -c 'show bgp ipv4 unicast' 2>&1"
+          register: _bgp_routes_final
+          changed_when: false
+
+        - name: Assert routes still present
+          ansible.builtin.assert:
+            that: _bgp_routes_final.stdout is search(item | regex_escape + '/32')
+            fail_msg: "BGP route for {{ item }}/32 disappeared (route flapping detected)"
+          loop: "{{ _ingress_ips }}"
+
+        - name: Re-query kernel routes
+          ansible.builtin.shell:
+            cmd: "docker exec frr ip route show {{ item }}"
+          register: _kernel_routes_final
+          changed_when: false
+          loop: "{{ _ingress_ips }}"
+
+        - name: Assert kernel routes still installed
+          ansible.builtin.assert:
+            that: item.stdout | length > 0
+            fail_msg: "Kernel route for {{ item.item }} disappeared"
+          loop: "{{ _kernel_routes_final.results }}"
+          loop_control:
+            label: "{{ item.item }}"
+
+    - name: Verify ECMP load distribution
+      block:
+        - name: Query private IP route details
+          ansible.builtin.shell:
+            cmd: "ip route show 172.16.16.0"
+          register: _private_route_detail
+          changed_when: false
+          become: true
+
+        - name: Query public IP route details
+          ansible.builtin.shell:
+            cmd: "ip route show 172.16.17.0"
+          register: _public_route_detail
+          changed_when: false
+          become: true
+
+        - name: Count nexthops
+          ansible.builtin.set_fact:
+            _private_nh_count: "{{ _private_route_detail.stdout | regex_findall('nexthop') | length }}"
+            _public_nh_count: "{{ _public_route_detail.stdout | regex_findall('nexthop') | length }}"
+
+        - name: Assert ECMP across all cluster nodes
+          ansible.builtin.assert:
+            that:
+              - _private_nh_count | int == 6
+              - _public_nh_count | int == 6
+            fail_msg: "ECMP not distributed across all 6 nodes: private={{ _private_nh_count }}, public={{ _public_nh_count }}"
+
+        - name: Debug ECMP configuration
+          ansible.builtin.debug:
+            msg:
+              - "Private ingress ECMP: {{ _private_nh_count }} nexthops"
+              - "Public ingress ECMP: {{ _public_nh_count }} nexthops"
+              - "BGP route propagation verified successfully"

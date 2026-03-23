@@ -65,4 +65,4 @@
                 service:
                   annotations:
                     metallb.universe.tf/address-pool: "metallb-public"
-  when: rke2_ippool_public is defined
+  when: rke2_ippool_public is defined and [rke2_ippool_public | default([])] | flatten | length > 0
