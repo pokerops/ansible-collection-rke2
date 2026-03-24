@@ -25,6 +25,7 @@ type Versions = list[Version]
 type HelmChartVersions = dict[str, Versions]
 type LogLevel = int
 
+
 class GithubChart(pydantic.BaseModel):
     """Pydantic model representing a GitHub Helm chart."""
 
@@ -42,10 +43,6 @@ class GithubChart(pydantic.BaseModel):
                 self._repository = project
                 self._organization = "grafana"
                 chart_path = "helm_charts"
-            case "kserve-crd":
-                self._repository = "kserve"
-                self._organization = "kserve"
-                chart_path = "charts"
             case _:
                 raise ValueError(f"Unsupported repository: {project}")
         self._chart = f"oci://ghcr.io/{self._organization}/{chart_path}/{project}"
@@ -67,7 +64,6 @@ class GithubChart(pydantic.BaseModel):
 
 GITHUB_CHARTS = [
     GithubChart(project="grafana-operator"),
-    GithubChart(project="kserve-crd"),
 ]
 
 
