@@ -78,6 +78,9 @@
             namespace: "{{ ingress_namespace }}"
             kubeconfig: "{{ molecule_local_kubeconfig }}"
           register: _ingress_service_query
+          retries: 15
+          delay: 20
+          failed_when: _ingress_service_query.resources | length != 2
 
         - name: Set Ingress controller facts
           ansible.builtin.set_fact:
