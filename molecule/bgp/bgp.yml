@@ -15,6 +15,7 @@
           ansible.builtin.package:
             name: docker.io
             state: present
+          ignore_errors: true
 
         - name: Start Docker service
           ansible.builtin.systemd:
