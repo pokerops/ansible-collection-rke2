@@ -6,6 +6,11 @@
     - name: Configure BGP support
       when: rke2_metallb_mode | default("l2") == "bgp"
       block:
+        - name: Update apt cache
+          ansible.builtin.apt:
+            update_cache: true
+          when: ansible_facts.pkg_mgr == 'apt'
+
         - name: Ensure Docker is installed
           ansible.builtin.package:
             name: docker.io
