@@ -9,24 +9,6 @@
   vars:
     ingress_namespace: nginx
   tasks:
-    - name: Verify cluster pod status
-      ansible.builtin.shell:
-        cmd: "/var/lib/rancher/rke2/bin/kubectl get pod -A -o json | jq '.items'"
-      retries: 15
-      delay: 20
-      register: _pod_data
-      vars:
-        _pod_data: "{{ _pod_data.stdout | from_json }}"
-        _pod_status: "{{ _pod_data | selectattr('status', 'defined') }}"
-        _pod_phase: "{{ _pod_status | selectattr('status.phase', 'defined') }}"
-        _pod_completed: "{{ _pod_phase | rejectattr('status.phase', 'equalto', 'Running') }}"
-        _pod_failed: "{{ _pod_completed | rejectattr('status.phase', 'equalto', 'Succeeded') }}"
-      until: _pod_failed | length == 0
-      failed_when:
-        - (_pod_status | length) != (_pod_data | length)
-        - (_pod_phase | length) != (_pod_data | length)
-        - _pod_failed | length > 0
-
     - name: Verify BGP Peer resources exist
       block:
         - name: Query BGPPeer resources
@@ -54,7 +36,7 @@
 
         - name: Verify BGPAdvertisement
           ansible.builtin.assert:
-            that: _bgp_advertisements.resources | selectattr('metadata.name', 'equalto', 'metallb') | list | length == 1
+            that: _bgp_advertisements.resources | selectattr('metadata.name', 'equalto', 'metallb') | length == 1
             fail_msg: "Found no BGPAdvertisements"
 
         - name: Query L2Advertisement resources
@@ -68,7 +50,7 @@
         - name: Verify no L2Advertisement resources exist
           ansible.builtin.assert:
             that: _l2_advertisements.resources | length == 0
-            fail_msg: "Found L2Advertisement resources in BGP mode: {{ _l2_advertisements.resources | map(attribute='metadata.name') | list }}"
+            fail_msg: "Found L2Advertisement resources in BGP mode: {{ _l2_advertisements.resources | map(attribute='metadata.name') }}"
 
     - name: Verify ingress controller LoadBalancer services
       block:
@@ -77,14 +59,16 @@
             kind: Service
             namespace: "{{ ingress_namespace }}"
             kubeconfig: "{{ molecule_local_kubeconfig }}"
+          vars:
+            _lbs: "{{ _ingress_service_query.resources | selectattr('spec.type', 'equalto', 'LoadBalancer') }}"
           register: _ingress_service_query
           retries: 15
           delay: 20
-          failed_when: _ingress_service_query.resources | length != 2
+          failed_when: _lbs | length != 2
 
         - name: Set Ingress controller facts
           ansible.builtin.set_fact:
-            _ingress_services: "{{ _ingress_service_query.resources | selectattr('spec.type', 'equalto', 'LoadBalancer') | list }}"
+            _ingress_services: "{{ _ingress_service_query.resources | selectattr('spec.type', 'equalto', 'LoadBalancer') }}"
 
         - name: Verify LoadBalancer services
           ansible.builtin.assert:
@@ -104,7 +88,25 @@
 
         - name: Record Ingress IPs
           ansible.builtin.set_fact:
-            _ingress_ips: "{{ _ingress_services | map(attribute='status.loadBalancer.ingress') | map('first') | map(attribute='ip') | list }}"
+            _ingress_ips: "{{ _ingress_services | map(attribute='status.loadBalancer.ingress') | map('first') | map(attribute='ip') }}"
+
+    - name: Verify cluster pod status
+      ansible.builtin.shell:
+        cmd: "/var/lib/rancher/rke2/bin/kubectl get pod -A -o json | jq '.items'"
+      vars:
+        _pod_data: "{{ _pod_data.stdout | from_json }}"
+        _pod_status: "{{ _pod_data | selectattr('status', 'defined') }}"
+        _pod_phase: "{{ _pod_status | selectattr('status.phase', 'defined') }}"
+        _pod_completed: "{{ _pod_phase | rejectattr('status.phase', 'equalto', 'Running') }}"
+        _pod_failed: "{{ _pod_completed | rejectattr('status.phase', 'equalto', 'Succeeded') }}"
+      register: _pod_data
+      retries: 15
+      delay: 20
+      until: _pod_failed | length == 0
+      failed_when:
+        - (_pod_status | length) != (_pod_data | length)
+        - (_pod_phase | length) != (_pod_data | length)
+        - _pod_failed | length > 0
 
     - name: Verify FRR container is running
       block:
