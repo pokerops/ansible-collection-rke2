@@ -33,6 +33,7 @@
             namespace: metallb-system
             kubeconfig: "{{ molecule_local_kubeconfig }}"
           register: _bgp_advertisements
+          changed_when: false
 
         - name: Verify BGPAdvertisement
           ansible.builtin.assert:
@@ -46,6 +47,7 @@
             namespace: metallb-system
             kubeconfig: "{{ molecule_local_kubeconfig }}"
           register: _l2_advertisements
+          changed_when: false
 
         - name: Verify no L2Advertisement resources exist
           ansible.builtin.assert:
@@ -65,6 +67,7 @@
           retries: 15
           delay: 20
           failed_when: _lbs | length != 2
+          changed_when: false
 
         - name: Set Ingress controller facts
           ansible.builtin.set_fact:
@@ -107,6 +110,7 @@
         - (_pod_status | length) != (_pod_data | length)
         - (_pod_phase | length) != (_pod_data | length)
         - _pod_failed | length > 0
+      changed_when: false
 
     - name: Verify FRR container is running
       block:
@@ -114,6 +118,7 @@
           community.docker.docker_container_info:
             name: frr
           register: _frr_container_query
+          changed_when: false
 
         - name: Assert FRR container is running
           ansible.builtin.assert:
@@ -128,6 +133,7 @@
           ansible.builtin.shell:
             cmd: "docker exec frr vtysh -c 'show bgp summary json'"
           register: _bgp_summary_query
+          changed_when: false
 
         - name: Parse BGP neighbor data
           ansible.builtin.set_fact:
@@ -173,6 +179,7 @@
           ansible.builtin.shell:
             cmd: "docker exec frr vtysh -c 'show bgp ipv4 unicast json'"
           register: _bgp_route_query
+          changed_when: false
 
         - name: Parse BGP IPv4 unicast data
           ansible.builtin.set_fact:
@@ -220,6 +227,7 @@
           ansible.builtin.shell:
             cmd: "docker exec frr ip -j -d route show"
           register: _frr_route_query
+          changed_when: false
 
         - name: Parse FRR route data
           ansible.builtin.set_fact:
@@ -245,6 +253,7 @@
           ansible.builtin.shell:
             cmd: "ip -j -d route show"
           register: _host_route_query
+          changed_when: false
 
         - name: Parse local route data
           ansible.builtin.set_fact:
@@ -270,6 +279,7 @@
           ansible.builtin.shell:
             cmd: "KUBECONFIG={{ molecule_local_kubeconfig }} kubectl get ingress -A -o=jsonpath='{.items[*].metadata.namespace}'"
           register: _ingress_namespace_query
+          changed_when: false
 
         - name: Parse namespace data
           ansible.builtin.set_fact:
@@ -282,6 +292,7 @@
             kubeconfig: "{{ molecule_local_kubeconfig }}"
           loop: "{{ _ingress_namespaces }}"
           register: _ingress_query
+          changed_when: false
 
         - name: Verify ingress endpoints
           ansible.builtin.uri:
@@ -303,3 +314,4 @@
           loop_control:
             label: "{{ _host }}"
           loop: "{{ _ingress_query.results | map(attribute='resources') | flatten }}"
+          changed_when: false
