@@ -93,6 +93,10 @@
           ansible.builtin.set_fact:
             _ingress_ips: "{{ _ingress_services | map(attribute='status.loadBalancer.ingress') | map('first') | map(attribute='ip') }}"
 
+        - name: Debug ingress IPs
+          ansible.builtin.debug:
+            var: _ingress_ips
+
     - name: Verify cluster pod status
       ansible.builtin.shell:
         cmd: "/var/lib/rancher/rke2/bin/kubectl get pod -A -o json | jq '.items'"
@@ -111,10 +115,6 @@
         - (_pod_phase | length) != (_pod_data | length)
         - _pod_failed | length > 0
       changed_when: false
-
-        - name: Debug ingress IPs
-          ansible.builtin.debug:
-            var: _ingress_ips
 
     - name: Verify FRR container is running
       block:
