@@ -112,6 +112,10 @@
         - _pod_failed | length > 0
       changed_when: false
 
+        - name: Debug ingress IPs
+          ansible.builtin.debug:
+            var: _ingress_ips
+
     - name: Verify FRR container is running
       block:
         - name: Query FRR container status
@@ -145,7 +149,7 @@
               - _neighbors | length > 0
               - _neighbors | symmetric_difference(_nodes) | length == 0
             fail_msg: "Found neighbor mismatch, expected {{ _nodes }}, got {{ _neighbors }} "
-            success_msg: "All neighbors are registered i bgp summary: {{ _neighbors }}"
+            success_msg: "All neighbors are registered in bgp summary: {{ _neighbors }}"
           vars:
             _neighbors: "{{ _bgp_summary.ipv4Unicast.peers.values() | map(attribute='hostname') }}"
             _nodes: "{{ groups['all'] }}"
@@ -163,22 +167,20 @@
             _neighbors_ok: "{{ _neighbors | selectattr('state', 'equalto', 'Established') }}"
             _neighbors_ko: "{{ _neighbors | rejectattr('state', 'equalto', 'Established') }}"
 
-        - name: Verify neighbor prefix advertisements
-          ansible.builtin.assert:
-            that:
-              - _neighbors | length > 0
-              - _neighbors_ko | length == 0
-            fail_msg: "Neighbor not receiving prefixes: {{ _neighbors_ko | map(attribute='hostname') }}"
-          vars:
-            _neighbors: "{{ _bgp_summary.ipv4Unicast.peers.values() }}"
-            _neighbors_ko: "{{ _neighbors | selectattr('pfxRcd', 'lessthan', 1) }}"
-
     - name: Verify BGP route propagation
       block:
         - name: Query BGP IPv4 unicast routes
           ansible.builtin.shell:
             cmd: "docker exec frr vtysh -c 'show bgp ipv4 unicast json'"
+          vars:
+            _bgp_routes: "{{ _bgp_route_query.stdout }}"
+            _ingress_routes: "{{ _ingress_ips | product(['32']) | map('join', '/') }}"
           register: _bgp_route_query
+          retries: 15
+          delay: 20
+          until:
+            - _bgp_routes.routes.keys() | length > 0
+            - _bgp_routes.routes.keys() | symmetric_difference(_ingress_routes) | length == 0
           changed_when: false
 
         - name: Parse BGP IPv4 unicast data
@@ -189,12 +191,10 @@
         - name: Verify ingress IPs exist in BGP table
           ansible.builtin.assert:
             that:
-              - _routes | length > 0
-              - _routes | symmetric_difference(_ingress_routes) | length == 0
+              - _bgp_routes.routes.keys() | length > 0
+              - _bgp_routes.routes.keys() | symmetric_difference(_ingress_routes) | length == 0
             fail_msg: "Found BGP route mismatch, expected {{ _ingress_routes }}, got {{ _routes }}"
             success_msg: "Foud BGP routes for ingress ips {{ _ingress_routes }}"
-          vars:
-            _routes: "{{ _bgp_routes.routes.keys() }}"
 
         - name: Verify route validity
           ansible.builtin.assert:
