@@ -11,6 +11,15 @@
         state: absent
       failed_when: false
 
+    - name: Set FRR configuration directory
+      ansible.builtin.set_fact:
+        _frr_config_dir: "{{ lookup('ansible.builtin.env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/frr"
+
+    - name: Destroy FRR configuration directory
+      ansible.builtin.file:
+        path: "{{ _frr_config_dir }}"
+        state: absent
+
     - name: Destroy api host file entry
       ansible.builtin.lineinfile:
         path: /etc/hosts

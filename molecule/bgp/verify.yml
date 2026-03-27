@@ -191,10 +191,12 @@
         - name: Verify ingress IPs exist in BGP table
           ansible.builtin.assert:
             that:
-              - _bgp_routes.routes.keys() | length > 0
-              - _bgp_routes.routes.keys() | symmetric_difference(_ingress_routes) | length == 0
+              - _routes | length > 0
+              - _routes | symmetric_difference(_ingress_routes) | length == 0
             fail_msg: "Found BGP route mismatch, expected {{ _ingress_routes }}, got {{ _routes }}"
             success_msg: "Foud BGP routes for ingress ips {{ _ingress_routes }}"
+          vars:
+            _ routes: "{{ _bgp_routes.routes.keys() }}"
 
         - name: Verify route validity
           ansible.builtin.assert:
