@@ -196,7 +196,7 @@
             fail_msg: "Found BGP route mismatch, expected {{ _ingress_routes }}, got {{ _routes }}"
             success_msg: "Foud BGP routes for ingress ips {{ _ingress_routes }}"
           vars:
-            _ routes: "{{ _bgp_routes.routes.keys() }}"
+            _routes: "{{ _bgp_routes.routes.keys() }}"
 
         - name: Verify route validity
           ansible.builtin.assert:
