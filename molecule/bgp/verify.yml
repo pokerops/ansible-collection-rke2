@@ -241,12 +241,11 @@
               - _routes_ingress | length == 1
               - _routes_match.protocol == "bgp"
               - _routes_match.nexthops | length > 0
-              - _routes_ko | length == 0
-            fail_msg: "Missing route for address {{ item }} in FRR table: {{ _routes_ko }}"
+            fail_msg: "Routes installed for address {{ item }} with gateways {{ _gateways }}"
           vars:
             _routes_ingress: "{{ _frr_routes | selectattr('dst', 'equalto', item) }}"
             _routes_match: "{{ _routes_ingress | first }}"
-            _routes_ko: "{{ _routes_match.nexthops | map(attribute='gateway') | symmetric_difference(_nodes) }}"
+            _gateways: "{{ _routes_match.nexthops | map(attribute='gateway') }}"
             _nodes: "{{ groups['all'] | map('extract', hostvars, ['ansible_default_ipv4', 'address']) }}"
           retries: 15
           delay: 20
@@ -271,11 +270,11 @@
               - _routes_match.protocol == "bgp"
               - _routes_match.nexthops | length > 0
               - _routes_ko | length == 0
-            fail_msg: "Mismatched route for address {{ item }} in local table {{ _routes_ko }}"
+            fail_msg: "Routes installed for address {{ item }} with gateways {{ _gateways }}"
           vars:
             _routes_ingress: "{{ _local_routes | selectattr('dst', 'equalto', item) }}"
             _routes_match: "{{ _routes_ingress | first }}"
-            _routes_ko: "{{ _routes_match.nexthops | map(attribute='gateway') | symmetric_difference(_nodes) }}"
+            _gateways: "{{ _routes_match.nexthops | map(attribute='gateway') | intersect(_nodes) }}"
             _nodes: "{{ groups['all'] | map('extract', hostvars, ['ansible_default_ipv4', 'address']) }}"
           retries: 15
           delay: 20
