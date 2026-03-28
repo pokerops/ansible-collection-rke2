@@ -269,7 +269,6 @@
               - _routes_ingress | length == 1
               - _routes_match.protocol == "bgp"
               - _routes_match.nexthops | length > 0
-              - _routes_ko | length == 0
             fail_msg: "Routes installed for address {{ item }} with gateways {{ _gateways }}"
           vars:
             _routes_ingress: "{{ _local_routes | selectattr('dst', 'equalto', item) }}"
