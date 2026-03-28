@@ -13,18 +13,6 @@ platforms:
     mem: 4
     groups:
       - rke2_server
-  - name: rke2-${MOLECULE_SCENARIO_NAME}-server-02
-    image: "${MOLECULE_KVM_IMAGE}"
-    cpu: 2
-    mem: 4
-    groups:
-      - rke2_server
-  - name: rke2-${MOLECULE_SCENARIO_NAME}-server-03
-    image: "${MOLECULE_KVM_IMAGE}"
-    cpu: 2
-    mem: 4
-    groups:
-      - rke2_server
   - name: rke2-${MOLECULE_SCENARIO_NAME}-agent-01
     image: "${MOLECULE_KVM_IMAGE}"
     cpu: 1
