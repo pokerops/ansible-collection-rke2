@@ -235,13 +235,18 @@
           ansible.builtin.set_fact:
             _frr_routes: "{{ _frr_route_query.stdout }}"
 
+        - name: Debug FRR route data
+          ansible.builtin.debug:
+            var: _frr_routes
+
         - name: Verify ingress routes on FRR table
           ansible.builtin.assert:
             that:
               - _routes_ingress | length == 1
               - _routes_match.protocol == "bgp"
               - _routes_match.nexthops | length > 0
-            fail_msg: "Routes installed for address {{ item }} with gateways {{ _gateways }}"
+            success_msg: "Routes installed for address {{ item }} with gateways {{ _gateways }}"
+            fail_msg: "Route missing in routing table {{ _routes_ingress }}"
           vars:
             _routes_ingress: "{{ _frr_routes | selectattr('dst', 'equalto', item) }}"
             _routes_match: "{{ _routes_ingress | first }}"
@@ -263,13 +268,18 @@
           ansible.builtin.set_fact:
             _local_routes: "{{ _host_route_query.stdout }}"
 
+        - name: Debug local route data
+          ansible.builtin.debug:
+            var: _local_routes
+
         - name: Verify ingress routes on local table
           ansible.builtin.assert:
             that:
               - _routes_ingress | length == 1
               - _routes_match.protocol == "bgp"
               - _routes_match.nexthops | length > 0
-            fail_msg: "Routes installed for address {{ item }} with gateways {{ _gateways }}"
+            success_msg: "Routes installed for address {{ item }} with gateways {{ _gateways }}"
+            fail_msg: "Routes missing in routing table {{ _routes_ingress }}"
           vars:
             _routes_ingress: "{{ _local_routes | selectattr('dst', 'equalto', item) }}"
             _routes_match: "{{ _routes_ingress | first }}"
