@@ -50,7 +50,7 @@
       vars:
         _api_hostname: "{{ rke2_api_url | urlsplit('hostname') }}"
 
-- name: Prepare KVM host
+- name: Configure KVM host resolution
   hosts: localhost
   become: true
   tasks:

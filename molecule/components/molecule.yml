@@ -90,4 +90,3 @@ scenario:
     - converge
     - side_effect
     - verify
-    - destroy

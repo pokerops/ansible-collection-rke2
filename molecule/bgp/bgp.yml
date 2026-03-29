@@ -1,0 +1,92 @@
+---
+- name: Configure BGP daemon on KVM host
+  hosts: localhost
+  become: true
+  tasks:
+    - name: Configure BGP support
+      when: rke2_metallb_mode | default("l2") == "bgp"
+      block:
+        - name: Update apt cache
+          ansible.builtin.apt:
+            update_cache: true
+          when: ansible_facts.pkg_mgr == 'apt'
+
+        - name: Ensure Docker is installed
+          ansible.builtin.package:
+            name: docker.io
+            state: present
+          ignore_errors: true
+
+        - name: Start Docker service
+          ansible.builtin.systemd:
+            name: docker
+            state: started
+            enabled: true
+
+        - name: Set FRR configuration directory
+          ansible.builtin.set_fact:
+            _frr_config_dir: "{{ lookup('ansible.builtin.env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/frr"
+
+        - name: Create FRR configuration directory
+          ansible.builtin.file:
+            path: "{{ _frr_config_dir }}"
+            state: directory
+            mode: "0755"
+
+        - name: Create FRR daemons configuration
+          ansible.builtin.copy:
+            dest: "{{ _frr_config_dir }}/daemons"
+            content: |
+              # Enable BGP daemon
+              bgpd=yes
+
+              vtysh_enable=yes
+              zebra_options="  -A 127.0.0.1 -s 90000000"
+              bgpd_options="   -A 127.0.0.1"
+            mode: "0640"
+
+        - name: Create FRR BGP configuration
+          ansible.builtin.copy:
+            dest: "{{ _frr_config_dir }}/frr.conf"
+            content: |
+              frr version 10.5.3
+              frr defaults traditional
+              hostname {{ ansible_hostname }}
+              log syslog informational
+              service integrated-vtysh-config
+              !
+              ip forwarding
+              !
+              router bgp {{ rke2_metallb_bgp_asn }}
+               bgp router-id {{ libvirt_address | ansible.utils.ipaddr('address') }}
+               bgp log-neighbor-changes
+               !
+               neighbor metallb-peers peer-group
+               neighbor metallb-peers remote-as {{ rke2_metallb_bgp_asn }}
+               neighbor metallb-peers ebgp-multihop 255
+               !
+               bgp listen range {{ libvirt_address | ansible.utils.ipaddr('network/prefix') }} peer-group metallb-peers
+               !
+               address-family ipv4 unicast
+                neighbor metallb-peers activate
+               exit-address-family
+              exit
+              !
+            mode: "0640"
+
+        - name: Start FRR container
+          community.docker.docker_container:
+            name: frr
+            image: quay.io/frrouting/frr:10.5.3
+            state: started
+            restart: true
+            restart_policy: unless-stopped
+            network_mode: host
+            privileged: true
+            capabilities:
+              - NET_ADMIN
+              - NET_RAW
+              - SYS_ADMIN
+            volumes:
+              - "{{ _frr_config_dir }}:/etc/frr"
+            command: ["/sbin/tini", "--", "/usr/lib/frr/docker-start"]
