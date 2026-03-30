@@ -13,7 +13,7 @@
       block:
         - name: Query BGPPeer resources
           kubernetes.core.k8s_info:
-            version: metallb.io/v1beta2
+            api_version: metallb.io/v1beta2
             kind: BGPPeer
             namespace: metallb-system
             kubeconfig: "{{ molecule_local_kubeconfig }}"
@@ -28,7 +28,7 @@
       block:
         - name: Query BGPAdvertisement resources
           kubernetes.core.k8s_info:
-            version: metallb.io/v1beta1
+            api_version: metallb.io/v1beta1
             kind: BGPAdvertisement
             namespace: metallb-system
             kubeconfig: "{{ molecule_local_kubeconfig }}"
@@ -42,7 +42,7 @@
 
         - name: Query L2Advertisement resources
           kubernetes.core.k8s_info:
-            version: metallb.io/v1beta2
+            api_version: metallb.io/v1beta2
             kind: L2Advertisement
             namespace: metallb-system
             kubeconfig: "{{ molecule_local_kubeconfig }}"
@@ -152,7 +152,8 @@
             success_msg: "All neighbors are registered in bgp summary: {{ _neighbors }}"
           vars:
             _neighbors: "{{ _bgp_summary.ipv4Unicast.peers.values() | map(attribute='hostname') }}"
-            _nodes: "{{ groups['all'] }}"
+            _group: "{{ 'all' if (groups['rke2_agent'] | length == 0) else 'rke2_agent' }}"
+            _nodes: "{{ groups[_group] }}"
 
         - name: Verify neighbor state
           ansible.builtin.assert:
@@ -173,7 +174,7 @@
           ansible.builtin.shell:
             cmd: "docker exec frr vtysh -c 'show bgp ipv4 unicast json'"
           vars:
-            _bgp_routes: "{{ _bgp_route_query.stdout }}"
+            _bgp_routes: "{{ _bgp_route_query.stdout | from_json }}"
             _ingress_routes: "{{ _ingress_ips | product(['32']) | map('join', '/') }}"
           register: _bgp_route_query
           retries: 15
@@ -194,7 +195,7 @@
               - _routes | length > 0
               - _routes | symmetric_difference(_ingress_routes) | length == 0
             fail_msg: "Found BGP route mismatch, expected {{ _ingress_routes }}, got {{ _routes }}"
-            success_msg: "Foud BGP routes for ingress ips {{ _ingress_routes }}"
+            success_msg: "Found BGP routes for ingress ips {{ _ingress_routes }}"
           vars:
             _routes: "{{ _bgp_routes.routes.keys() }}"
 
@@ -233,7 +234,7 @@
 
         - name: Parse FRR route data
           ansible.builtin.set_fact:
-            _frr_routes: "{{ _frr_route_query.stdout }}"
+            _frr_routes: "{{ _frr_route_query.stdout | from_json }}"
 
         - name: Debug FRR route data
           ansible.builtin.debug:
@@ -266,7 +267,7 @@
 
         - name: Parse local route data
           ansible.builtin.set_fact:
-            _local_routes: "{{ _host_route_query.stdout }}"
+            _local_routes: "{{ _host_route_query.stdout | from_json }}"
 
         - name: Debug local route data
           ansible.builtin.debug:
