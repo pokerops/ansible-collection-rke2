@@ -4,8 +4,6 @@
   any_errors_fatal: true
   vars:
     _multipath_service: multipathd.service
-  vars_files:
-    - ../../playbooks/vars/main.yml
   tasks:
     - name: Query service facts
       ansible.builtin.service_facts:
@@ -131,8 +129,6 @@
     _members: "{{ _servers + _agents }}"
     _retry: 20
     _delay: 30
-  vars_files:
-    - ../../playbooks/vars/main.yml
   tasks:
     - name: Install jq
       ansible.builtin.package:
@@ -141,7 +137,7 @@
 
     - name: Slurp kubeconfig cluster file
       ansible.builtin.slurp:
-        src: "{{ _rke2_config_path }}/rke2.yaml"
+        src: "/etc/rancher/rke2/rke2.yaml"
       register: _kubeconfig_slurp
       become: true
 
@@ -170,7 +166,7 @@
 
     - name: Query cluster nodes
       ansible.builtin.shell:
-        cmd: "{{ _rke2_bin_path }}/kubectl get node -o json | jq '.items'"
+        cmd: "/var/lib/rancher/rke2/bin/kubectl get node -o json | jq '.items'"
       register: _kubectl_nodes
       changed_when: false
 
@@ -234,7 +230,7 @@
       block:
         - name: Query cluster pods
           ansible.builtin.shell:
-            cmd: "{{ _rke2_bin_path }}/kubectl get pod -A -o json | jq '.items'"
+            cmd: "/var/lib/rancher/rke2/bin/kubectl get pod -A -o json | jq '.items'"
           register: _kubectl_pods
           changed_when: false
 
@@ -272,7 +268,7 @@
 
         - name: Query cluster status
           ansible.builtin.shell:
-            cmd: "{{ _rke2_bin_path }}/kubectl get cs -o json | jq '.items'"
+            cmd: "/var/lib/rancher/rke2/bin/kubectl get cs -o json | jq '.items'"
           register: _kubectl_status
           changed_when: false
 
@@ -385,7 +381,7 @@
           block:
             - name: Verify cluster job status
               ansible.builtin.shell:
-                cmd: "{{ _rke2_bin_path }}/kubectl get job -o json | jq '.items'"
+                cmd: "/var/lib/rancher/rke2/bin/kubectl get job -o json | jq '.items'"
               register: _argocd_job_data
               retries: "{{ _retry }}"
               delay: "{{ _delay }}"
@@ -478,7 +474,7 @@
           block:
             - name: Verify persistent claim status
               ansible.builtin.shell:
-                cmd: "{{ _rke2_bin_path }}/kubectl get pvc -o json | jq '.items'"
+                cmd: "/var/lib/rancher/rke2/bin/kubectl get pvc -o json | jq '.items'"
               register: _argocd_pvc_data
               retries: "{{ _retry }}"
               delay: "{{ _delay }}"
@@ -562,7 +558,7 @@
           block:
             - name: Verify argocd application status
               ansible.builtin.shell:
-                cmd: "{{ _rke2_bin_path }}/kubectl get applications -n argocd -o json | jq '.items'"
+                cmd: "/var/lib/rancher/rke2/bin/kubectl get applications -n argocd -o json | jq '.items'"
               register: _argocd_app_data
               retries: "{{ _retry }}"
               delay: "{{ _delay }}"
