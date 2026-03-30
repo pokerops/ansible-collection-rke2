@@ -86,13 +86,13 @@
         - name: Verify Ingress controllers have External IPs
           ansible.builtin.assert:
             that:
-              - item.status.loadBalancer.ingress is defined
-              - item.status.loadBalancer.ingress | length > 0
-              - item.status.loadBalancer.ingress[0].ip is defined
-            fail_msg: "Service {{ item.metadata.name }} has no External IP assigned"
-          loop_control:
-            label: "{{ item.metadata.name }}"
-          loop: "{{ _ingress_services }}"
+              - _service.status.loadBalancer.ingress is defined
+              - _service.status.loadBalancer.ingress | length > 0
+              - _service.status.loadBalancer.ingress[0].ip is defined
+            fail_msg: "Service {{ item }} has no External IP assigned"
+          vars:
+            _service: "{{ _ingress_services | selectattr('item.metadata.name', 'equalto', item) | first }}"
+          loop: "{{ _ingress_services | map(attribute='item.metadata.name') }}"
 
         - name: Record Ingress IPs
           ansible.builtin.set_fact:
@@ -157,8 +157,7 @@
             success_msg: "All neighbors are registered in bgp summary: {{ _neighbors }}"
           vars:
             _neighbors: "{{ _bgp_summary.ipv4Unicast.peers.values() | map(attribute='hostname') }}"
-            _group: "{{ 'all' if (groups['rke2_agent'] | length == 0) else 'rke2_agent' }}"
-            _nodes: "{{ groups[_group] }}"
+            _nodes: "{{ groups['all'] }}"
 
         - name: Verify neighbor state
           ansible.builtin.assert:
@@ -223,6 +222,7 @@
               - _routes_ok | length > 0
               - _routes_ko | length == 0
             fail_msg: "No next hops found for routes from peers {{ _routes_ko | map(attribute='peerId') }}"
+            success_msg: "Found next hops for {{ item }}: {{ _routes_ok | map(attribute='peerId') }}"
           vars:
             _routes: "{{ _bgp_routes.routes[item] }}"
             _routes_ok: "{{ _routes | rejectattr('nexthops', 'equalto', []) }}"
@@ -251,8 +251,8 @@
               - _routes_ingress | length == 1
               - _routes_match.protocol == "bgp"
               - _routes_match.nexthops | length > 0
-            success_msg: "Routes installed for address {{ item }} with gateways {{ _gateways }}"
             fail_msg: "Route missing in routing table {{ _routes_ingress }}"
+            success_msg: "Routes installed for address {{ item }} with gateways {{ _gateways }}"
           vars:
             _routes_ingress: "{{ _frr_routes | selectattr('dst', 'equalto', item) }}"
             _routes_match: "{{ _routes_ingress | first }}"
@@ -284,8 +284,8 @@
               - _routes_ingress | length == 1
               - _routes_match.protocol == "bgp"
               - _routes_match.nexthops | length > 0
-            success_msg: "Routes installed for address {{ item }} with gateways {{ _gateways }}"
             fail_msg: "Routes missing in routing table {{ _routes_ingress }}"
+            success_msg: "Routes installed for address {{ item }} with gateways {{ _gateways }}"
           vars:
             _routes_ingress: "{{ _local_routes | selectattr('dst', 'equalto', item) }}"
             _routes_match: "{{ _routes_ingress | first }}"
