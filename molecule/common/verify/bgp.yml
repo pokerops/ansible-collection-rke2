@@ -35,6 +35,11 @@
           register: _bgp_advertisements
           changed_when: false
 
+        - name: Debug BGPAdvertisement resources
+          ansible.builtin.debug:
+            msg: "{{ item }}"
+          loop: "{{ _bgp_advertisements.resources }}"
+
         - name: Verify BGPAdvertisement
           ansible.builtin.assert:
             that: _bgp_advertisements.resources | selectattr('metadata.name', 'equalto', 'metallb') | length == 1
