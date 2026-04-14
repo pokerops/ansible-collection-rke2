@@ -153,10 +153,11 @@
                     pods_completed: "{{ pods_phase | rejectattr('status.phase', 'equalto', 'Running') }}"
                     pods_failed: "{{ pods_completed | rejectattr('status.phase', 'equalto', 'Succeeded') }}"
 
-                - name: Fail playbook execution
-                  ansible.builtin.fail:
-                    msg: "Pod verification failed, aborting cluster upgrade"
-                  when: not (_rke2_update_skip_pod_checks | bool)
+                - name: Ignore pod check failures when skip flag is set
+                  ansible.builtin.assert:
+                    that: _rke2_update_skip_pod_checks | bool
+                    success_msg: "_rke2_update_skip_pod_checks={{ _rke2_update_skip_pod_checks }} ... skipping pod check verification"
+                    fail_msg: "_rke2_update_skip_pod_checks={{ _rke2_update_skip_pod_checks }} ... aborting cluster update"
 
             - name: Drain cluster node
               block:
@@ -199,10 +200,11 @@
                       delegate_to: localhost
 
                   rescue:
-                    - name: Fail playbook execution
-                      ansible.builtin.fail:
-                        msg: "Failed to drain cluster node, aborting cluster upgrade"
-                      when: not (_rke2_update_skip_pod_checks | bool)
+                    - name: Ignore pod check failures when skip flag is set
+                      ansible.builtin.assert:
+                        that: _rke2_update_skip_pod_checks | bool
+                        success_msg: "_rke2_update_skip_pod_checks={{ _rke2_update_skip_pod_checks }} ... skipping pod check verification"
+                        fail_msg: "_rke2_update_skip_pod_checks={{ _rke2_update_skip_pod_checks }} ... aborting cluster update"
 
             - name: Query cluster node status
               kubernetes.core.k8s_info:
