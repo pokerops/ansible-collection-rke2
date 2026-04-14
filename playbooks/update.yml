@@ -110,7 +110,6 @@
         - name: Cordon cluster node
           block:
             - name: Verify cluster node pod state
-              when: not _rke2_update_skip_pod_checks
               block:
                 - name: Query pod state
                   kubernetes.core.k8s_info:
@@ -157,6 +156,7 @@
                 - name: Fail playbook execution
                   ansible.builtin.fail:
                     msg: "Pod verification failed, aborting cluster upgrade"
+                  when: not (_rke2_update_skip_pod_checks | bool)
 
             - name: Drain cluster node
               block:
@@ -171,22 +171,38 @@
                       force: true
                       wait_sleep: 10
                       wait_timeout: "{{ _rke2_evict_timeout }}"
+                  register: _cluster_drain_safe
+                  retries: "{{ _rke2_retry_num }}"
+                  delay: "{{ _rke2_retry_delay }}"
+                  until: _cluster_drain_safe is succeeded
                   delegate_to: localhost
 
               rescue:
                 - name: Force cluster node drain
-                  kubernetes.core.k8s_drain:
-                    name: "{{ inventory_hostname }}"
-                    state: drain
-                    kubeconfig: "{{ _kubeconfig_path }}"
-                    pod_selectors: "{{ _rke2_drain_pod_selectors }}"
-                    delete_options:
-                      delete_emptydir_data: true
-                      ignore_daemonsets: true
-                      force: true
-                      wait_sleep: 10
-                      wait_timeout: "{{ _rke2_evict_timeout }}"
-                  delegate_to: localhost
+                  block:
+                    - name: Force cluster node drain
+                      kubernetes.core.k8s_drain:
+                        name: "{{ inventory_hostname }}"
+                        state: drain
+                        kubeconfig: "{{ _kubeconfig_path }}"
+                        pod_selectors: "{{ _rke2_drain_pod_selectors }}"
+                        delete_options:
+                          delete_emptydir_data: true
+                          ignore_daemonsets: true
+                          force: true
+                          wait_sleep: 10
+                          wait_timeout: "{{ _rke2_evict_timeout }}"
+                      register: _cluster_drain_force
+                      retries: "{{ _rke2_retry_num }}"
+                      delay: "{{ _rke2_retry_delay }}"
+                      until: _cluster_drain_force is succeeded
+                      delegate_to: localhost
+
+                  rescue:
+                    - name: Fail playbook execution
+                      ansible.builtin.fail:
+                        msg: "Failed to drain cluster node, aborting cluster upgrade"
+                      when: not (_rke2_update_skip_pod_checks | bool)
 
             - name: Query cluster node status
               kubernetes.core.k8s_info:
