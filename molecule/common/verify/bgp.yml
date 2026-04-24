@@ -90,9 +90,12 @@
               - _service.status.loadBalancer.ingress | length > 0
               - _service.status.loadBalancer.ingress[0].ip is defined
             fail_msg: "Service {{ item }} has no External IP assigned"
+            success_msg: "Service {{ item }} has External IP {{ _service.status.loadBalancer.ingress[0].ip }}"
           vars:
-            _service: "{{ _ingress_services | selectattr('item.metadata.name', 'equalto', item) | first }}"
-          loop: "{{ _ingress_services | map(attribute='item.metadata.name') }}"
+            _service: "{{ _ingress_services | selectattr('metadata.name', 'equalto', item) | first }}"
+          loop: "{{ _ingress_services | map(attribute='metadata.name') }}"
+          retries: 15
+          delay: 20
 
         - name: Record Ingress IPs
           ansible.builtin.set_fact:
