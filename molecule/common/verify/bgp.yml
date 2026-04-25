@@ -35,11 +35,6 @@
           register: _bgp_advertisements
           changed_when: false
 
-        - name: Debug BGPAdvertisement resources
-          ansible.builtin.debug:
-            msg: "{{ item }}"
-          loop: "{{ _bgp_advertisements.resources }}"
-
         - name: Verify BGPAdvertisement
           ansible.builtin.assert:
             that: _bgp_advertisements.resources | selectattr('metadata.name', 'equalto', 'metallb') | length == 1
@@ -237,12 +232,29 @@
         - name: Query FRR routes
           ansible.builtin.shell:
             cmd: "docker exec frr ip -j -d route show"
+          vars:
+            _routes_data: "{{ _frr_route_query.stdout | from_json }}"
+            _routes_bgp: "{{ _routes_data | selectattr('protocol', 'equalto', 'bgp') }}"
+            _routes_ingress: "{{ _routes_bgp | selectattr('dst', 'in', _ingress_ips) }}"
+            _routes_nexthops: "{{ _routes_ingress | selectattr('nexthops', 'defined') }}"
           register: _frr_route_query
           changed_when: false
+          retries: 15
+          delay: 20
+          until: _routes_nexthops | length == _ingress_ips | length
 
         - name: Parse FRR route data
           ansible.builtin.set_fact:
-            _frr_routes: "{{ _frr_route_query.stdout | from_json }}"
+            _frr_routes: "{{ _routes_dict }}"
+          vars:
+            _routes_data: "{{ _frr_route_query.stdout | from_json }}"
+            _routes_bgp: "{{ _routes_data | selectattr('protocol', 'equalto', 'bgp') }}"
+            _routes_ingress: "{{ _routes_bgp | selectattr('dst', 'in', _ingress_ips) }}"
+            _routes_wnexthops: "{{ _routes_ingress | selectattr('nexthops', 'defined') }}"
+            _routes_dsts: "{{ _routes_wnexthops | map(attribute='dst') }}"
+            _routes_nexthops: "{{ _routes_wnexthops | map(attribute='nexthops') }}"
+            _routes_gateways: "{{ _routes_nexthops | map('map', attribute='gateway') }}"
+            _routes_dict: "{{ _routes_dsts | zip(_routes_gateways) | nephelaiio.plugins.to_dict }}"
 
         - name: Debug FRR route data
           ansible.builtin.debug:
@@ -250,20 +262,13 @@
 
         - name: Verify ingress routes on FRR table
           ansible.builtin.assert:
-            that:
-              - _routes_ingress | length == 1
-              - _routes_match.protocol == "bgp"
-              - _routes_match.nexthops | length > 0
-            fail_msg: "Route missing in routing table {{ _routes_ingress }}"
+            that: _gateways | intersect(_nodes) | length == _nodes | length
+            fail_msg: "Routes missing for address {{ item }}, {{ _nodes | difference(_gateways) }}"
             success_msg: "Routes installed for address {{ item }} with gateways {{ _gateways }}"
           vars:
-            _routes_ingress: "{{ _frr_routes | selectattr('dst', 'equalto', item) }}"
-            _routes_match: "{{ _routes_ingress | first }}"
-            _gateways: "{{ _routes_match.nexthops | map(attribute='gateway') }}"
+            _gateways: "{{ _frr_routes[item] }}"
             _nodes: "{{ groups['all'] | map('extract', hostvars, ['ansible_default_ipv4', 'address']) }}"
-          retries: 15
-          delay: 20
-          loop: "{{ _ingress_ips }}"
+          loop: "{{ _frr_routes.keys() }}"
 
     - name: Verify local route table
       block:
@@ -272,10 +277,26 @@
             cmd: "ip -j -d route show"
           register: _host_route_query
           changed_when: false
+          vars:
+            _routes_data: "{{ _host_route_query.stdout | from_json }}"
+            _routes_bgp: "{{ _routes_data | selectattr('protocol', 'equalto', 'bgp') }}"
+            _routes_ingress: "{{ _routes_bgp | selectattr('dst', 'in', _ingress_ips) }}"
+            _routes_nexthops: "{{ _routes_ingress | selectattr('nexthops', 'defined') }}"
+          retries: 15
+          delay: 20
+          until: _routes_nexthops | length == _ingress_ips | length
 
         - name: Parse local route data
           ansible.builtin.set_fact:
-            _local_routes: "{{ _host_route_query.stdout | from_json }}"
+            _local_routes: "{{ _routes_dict }}"
+          vars:
+            _routes_data: "{{ _frr_route_query.stdout | from_json }}"
+            _routes_ingress: "{{ _routes_data | selectattr('dst', 'in', _ingress_ips) }}"
+            _routes_wnexthops: "{{ _routes_ingress | selectattr('nexthops', 'defined') }}"
+            _routes_dsts: "{{ _routes_wnexthops | map(attribute='dst') }}"
+            _routes_nexthops: "{{ _routes_wnexthops | map(attribute='nexthops') }}"
+            _routes_gateways: "{{ _routes_nexthops | map('map', attribute='gateway') }}"
+            _routes_dict: "{{ _routes_dsts | zip(_routes_gateways) | nephelaiio.plugins.to_dict }}"
 
         - name: Debug local route data
           ansible.builtin.debug:
@@ -283,20 +304,13 @@
 
         - name: Verify ingress routes on local table
           ansible.builtin.assert:
-            that:
-              - _routes_ingress | length == 1
-              - _routes_match.protocol == "bgp"
-              - _routes_match.nexthops | length > 0
-            fail_msg: "Routes missing in routing table {{ _routes_ingress }}"
+            that: _gateways | intersect(_nodes) | length == _nodes | length
+            fail_msg: "Routes missing for address {{ item }}, {{ _nodes | difference(_gateways) }}"
             success_msg: "Routes installed for address {{ item }} with gateways {{ _gateways }}"
           vars:
-            _routes_ingress: "{{ _local_routes | selectattr('dst', 'equalto', item) }}"
-            _routes_match: "{{ _routes_ingress | first }}"
-            _gateways: "{{ _routes_match.nexthops | map(attribute='gateway') | intersect(_nodes) }}"
+            _gateways: "{{ _local_routes[item] }}"
             _nodes: "{{ groups['all'] | map('extract', hostvars, ['ansible_default_ipv4', 'address']) }}"
-          retries: 15
-          delay: 20
-          loop: "{{ _ingress_ips }}"
+          loop: "{{ _local_routes.keys() }}"
 
     - name: Verify HTTP/HTTPS connectivity via ingress
       block:
