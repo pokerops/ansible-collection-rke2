@@ -238,15 +238,15 @@
             _routes_data: "{{ _frr_route_query.stdout | from_json }}"
             _routes_bgp: "{{ _routes_data | selectattr('protocol', 'equalto', 'bgp') }}"
             _routes_ingress: "{{ _routes_bgp | selectattr('dst', 'in', _ingress_ips) }}"
-            _routes_nexthops: "{{ _routes_ingress | selectattr('nexthops', 'defined') }}"
-            _routes_hopcount: "{{ _routes_nexthops | map(attribute='nexthops') | map('length') }}"
+            _routes_wnexthops: "{{ _routes_ingress | selectattr('nexthops', 'defined') }}"
+            _routes_hopcount: "{{ _routes_wnexthops | map(attribute='nexthops') | map('length') }}"
           register: _frr_route_query
           changed_when: false
           retries: 15
           delay: 20
           until:
-            - _routes_nexthops | length == _ingress_ips | length
-            - _routes_hopcount | reject('equalto', bgp_hop_addrs | length) == 0
+            - _routes_wnexthops | length == _ingress_ips | length
+            - _routes_hopcount | reject('equalto', bgp_hop_addrs | length) | length == 0
 
         - name: Parse FRR route data
           ansible.builtin.set_fact:
@@ -261,16 +261,35 @@
             _routes_gateways: "{{ _routes_nexthops | map('map', attribute='gateway') }}"
             _routes_dict: "{{ _routes_dsts | zip(_routes_gateways) | nephelaiio.plugins.to_dict }}"
 
-        - name: Debug FRR route data
-          ansible.builtin.debug:
-            var: _frr_routes
-
         - name: Verify ingress routes on FRR table
           ansible.builtin.assert:
-            that: item.value | intersect(bgp_hop_addrs) | length == bgp_hop_addrs | length
-            fail_msg: "Routes missing for address {{ item.key }}, {{ bgp_hop_addrs | difference(item.value) }}"
-            success_msg: "Routes installed for address {{ item.key }} with gateways {{ item.value }}"
+            that: _gateways | intersect(bgp_hop_addrs) | length == bgp_hop_addrs | length
+            fail_msg: "Routes missing for address {{ _address }}, {{ bgp_hop_addrs | difference(_gateways) }}"
+            success_msg: "Routes installed for address {{ _address }} with gateways {{ _gateways }}"
+          vars:
+            _address: "{{ item.key }}"
+            _gateways: "{{ item.value }}"
+          loop_control:
+            label: "{{ _address }}"
           loop: "{{ _frr_routes | dict2items }}"
+
+      rescue:
+        - name: Debug FRR route data
+          ansible.builtin.debug:
+            msg: "{{ _routes_dict }}"
+          vars:
+            _routes_data: "{{ _frr_route_query.stdout | from_json }}"
+            _routes_bgp: "{{ _routes_data | selectattr('protocol', 'equalto', 'bgp') }}"
+            _routes_ingress: "{{ _routes_bgp | selectattr('dst', 'in', _ingress_ips) }}"
+            _routes_wnexthops: "{{ _routes_ingress | selectattr('nexthops', 'defined') }}"
+            _routes_dsts: "{{ _routes_wnexthops | map(attribute='dst') }}"
+            _routes_nexthops: "{{ _routes_wnexthops | map(attribute='nexthops') }}"
+            _routes_gateways: "{{ _routes_nexthops | map('map', attribute='gateway') }}"
+            _routes_dict: "{{ _routes_dsts | zip(_routes_gateways) | nephelaiio.plugins.to_dict }}"
+
+        - name: Fail execution on FRR route verification error
+          ansible.builtin.fail:
+            msg: "FRR route verification checks failed"
 
     - name: Verify local route table
       block:
@@ -289,7 +308,7 @@
           delay: 20
           until:
             - _routes_nexthops | length == _ingress_ips | length
-            - _routes_hopcount | reject('equalto', bgp_hop_addrs | length) == 0
+            - _routes_hopcount | reject('equalto', bgp_hop_addrs | length) | length == 0
 
         - name: Parse local route data
           ansible.builtin.set_fact:
@@ -303,20 +322,34 @@
             _routes_gateways: "{{ _routes_nexthops | map('map', attribute='gateway') }}"
             _routes_dict: "{{ _routes_dsts | zip(_routes_gateways) | nephelaiio.plugins.to_dict }}"
 
-        - name: Debug local route data
-          ansible.builtin.debug:
-            var: _local_routes
-
         - name: Verify ingress routes on local table
           ansible.builtin.assert:
             that: _gateways | intersect(bgp_hop_addrs) | length == bgp_hop_addrs | length
             fail_msg: "Routes missing for address {{ _address }}, {{ bgp_hop_addrs | difference(_gateways) }}"
             success_msg: "Routes installed for address {{ _address }} with gateways {{ _gateways }}"
           vars:
-            _group: "{{ molecule_bgp_group }}"
             _address: "{{ item.key }}"
             _gateways: "{{ item.value }}"
+          loop_control:
+            label: "{{ _address }}"
           loop: "{{ _local_routes | dict2items }}"
+
+      rescue:
+        - name: Debug local route data
+          ansible.builtin.debug:
+            msg: "{{ _routes_dict }}"
+          vars:
+            _routes_data: "{{ _frr_route_query.stdout | from_json }}"
+            _routes_ingress: "{{ _routes_data | selectattr('dst', 'in', _ingress_ips) }}"
+            _routes_wnexthops: "{{ _routes_ingress | selectattr('nexthops', 'defined') }}"
+            _routes_dsts: "{{ _routes_wnexthops | map(attribute='dst') }}"
+            _routes_nexthops: "{{ _routes_wnexthops | map(attribute='nexthops') }}"
+            _routes_gateways: "{{ _routes_nexthops | map('map', attribute='gateway') }}"
+            _routes_dict: "{{ _routes_dsts | zip(_routes_gateways) | nephelaiio.plugins.to_dict }}"
+
+        - name: Fail execution on local route verification error
+          ansible.builtin.fail:
+            msg: "Local route verification checks failed"
 
     - name: Verify HTTP/HTTPS connectivity via ingress
       block:
