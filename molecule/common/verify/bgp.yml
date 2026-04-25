@@ -8,6 +8,7 @@
   any_errors_fatal: true
   vars:
     ingress_namespace: nginx
+    bgp_nodes: "{{ groups[molecule_bgp_group] | map('extract', hostvars, ['ansible_default_ipv4', 'address']) }}"
   tasks:
     - name: Verify BGP Peer resources exist
       block:
@@ -150,12 +151,11 @@
           ansible.builtin.assert:
             that:
               - _neighbors | length > 0
-              - _neighbors | symmetric_difference(_nodes) | length == 0
-            fail_msg: "Found neighbor mismatch, expected {{ _nodes }}, got {{ _neighbors }} "
+              - _neighbors | symmetric_difference(bgp_nodes) | length == 0
+            fail_msg: "Found neighbor mismatch, expected {{ bgp_nodes }}, got {{ _neighbors }} "
             success_msg: "All neighbors are registered in bgp summary: {{ _neighbors }}"
           vars:
             _neighbors: "{{ _bgp_summary.ipv4Unicast.peers.values() | map(attribute='hostname') }}"
-            _nodes: "{{ groups['all'] }}"
 
         - name: Verify neighbor state
           ansible.builtin.assert:
@@ -237,11 +237,14 @@
             _routes_bgp: "{{ _routes_data | selectattr('protocol', 'equalto', 'bgp') }}"
             _routes_ingress: "{{ _routes_bgp | selectattr('dst', 'in', _ingress_ips) }}"
             _routes_nexthops: "{{ _routes_ingress | selectattr('nexthops', 'defined') }}"
+            _routes_hopcount: "{{ _routes_nexthops | map(attribute='nexthops') | map('length') }}"
           register: _frr_route_query
           changed_when: false
           retries: 15
           delay: 20
-          until: _routes_nexthops | length == _ingress_ips | length
+          until:
+            - _routes_nexthops | length == _ingress_ips | length
+            - _routes_hopcount | reject('equalto', bgp_nodes | length) == 0
 
         - name: Parse FRR route data
           ansible.builtin.set_fact:
@@ -262,13 +265,10 @@
 
         - name: Verify ingress routes on FRR table
           ansible.builtin.assert:
-            that: _gateways | intersect(_nodes) | length == _nodes | length
-            fail_msg: "Routes missing for address {{ item }}, {{ _nodes | difference(_gateways) }}"
-            success_msg: "Routes installed for address {{ item }} with gateways {{ _gateways }}"
-          vars:
-            _gateways: "{{ _frr_routes[item] }}"
-            _nodes: "{{ groups['all'] | map('extract', hostvars, ['ansible_default_ipv4', 'address']) }}"
-          loop: "{{ _frr_routes.keys() }}"
+            that: item.value | intersect(bgp_nodes) | length == bgp_nodes | length
+            fail_msg: "Routes missing for address {{ item.key }}, {{ bgp_nodes | difference(item.value) }}"
+            success_msg: "Routes installed for address {{ item.key }} with gateways {{ item.value }}"
+          loop: "{{ _frr_routes | dict2items }}"
 
     - name: Verify local route table
       block:
@@ -282,9 +282,12 @@
             _routes_bgp: "{{ _routes_data | selectattr('protocol', 'equalto', 'bgp') }}"
             _routes_ingress: "{{ _routes_bgp | selectattr('dst', 'in', _ingress_ips) }}"
             _routes_nexthops: "{{ _routes_ingress | selectattr('nexthops', 'defined') }}"
+            _routes_hopcount: "{{ _routes_nexthops | map(attribute='nexthops') | map('length') }}"
           retries: 15
           delay: 20
-          until: _routes_nexthops | length == _ingress_ips | length
+          until:
+            - _routes_nexthops | length == _ingress_ips | length
+            - _routes_hopcount | reject('equalto', bgp_nodes | length) == 0
 
         - name: Parse local route data
           ansible.builtin.set_fact:
@@ -304,13 +307,14 @@
 
         - name: Verify ingress routes on local table
           ansible.builtin.assert:
-            that: _gateways | intersect(_nodes) | length == _nodes | length
-            fail_msg: "Routes missing for address {{ item }}, {{ _nodes | difference(_gateways) }}"
-            success_msg: "Routes installed for address {{ item }} with gateways {{ _gateways }}"
+            that: _gateways | intersect(bgp_nodes) | length == bgp_nodes | length
+            fail_msg: "Routes missing for address {{ _address }}, {{ bgp_nodes | difference(_gateways) }}"
+            success_msg: "Routes installed for address {{ _address }} with gateways {{ _gateways }}"
           vars:
-            _gateways: "{{ _local_routes[item] }}"
-            _nodes: "{{ groups['all'] | map('extract', hostvars, ['ansible_default_ipv4', 'address']) }}"
-          loop: "{{ _local_routes.keys() }}"
+            _group: "{{ molecule_bgp_group }}"
+            _address: "{{ item.key }}"
+            _gateways: "{{ item.value }}"
+          loop: "{{ _local_routes | dict2items }}"
 
     - name: Verify HTTP/HTTPS connectivity via ingress
       block:
