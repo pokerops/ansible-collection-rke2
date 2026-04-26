@@ -41,8 +41,7 @@
         name: metallb-private
         namespace: metallb-system
       spec:
-        addresses:
-          - "{{ rke2_ippool_private }}"
+        addresses: "{{ [rke2_ippool_private] | flatten }}"
   retries: "{{ _rke2_retry_num }}"
   delay: "{{ _rke2_retry_delay }}"
 
@@ -58,8 +57,7 @@
         name: metallb-public
         namespace: metallb-system
       spec:
-        addresses:
-          - "{{ rke2_ippool_public }}"
+        addresses: "{{ [rke2_ippool_public] | flatten }}"
   retries: "{{ _rke2_retry_num }}"
   delay: "{{ _rke2_retry_delay }}"
   when: rke2_ippool_public is defined
