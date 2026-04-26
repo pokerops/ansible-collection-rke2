@@ -1,7 +1,5 @@
 ---
 name: strimzi
-env:
-  DEVBOX_VERSION: ${{ vars.DEVBOX_VERSION }}
 on:
   pull_request:
     branches:

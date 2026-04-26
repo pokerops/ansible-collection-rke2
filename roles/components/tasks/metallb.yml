@@ -41,8 +41,7 @@
         name: metallb-private
         namespace: metallb-system
       spec:
-        addresses:
-          - "{{ rke2_ippool_private }}"
+        addresses: "{{ [rke2_ippool_private] | flatten }}"
   retries: "{{ _rke2_retry_num }}"
   delay: "{{ _rke2_retry_delay }}"
 
@@ -58,8 +57,7 @@
         name: metallb-public
         namespace: metallb-system
       spec:
-        addresses:
-          - "{{ rke2_ippool_public }}"
+        addresses: "{{ [rke2_ippool_public] | flatten }}"
   retries: "{{ _rke2_retry_num }}"
   delay: "{{ _rke2_retry_delay }}"
   when: rke2_ippool_public is defined
@@ -169,15 +167,15 @@
         state: absent
         kubeconfig: "{{ rke2_config_path }}"
         resource_definition:
-          apiVersion: metallb.io/v1beta1
-          kind: BGPPeer
+          apiVersion: "{{ item.apiVersion }}"
+          kind: "{{ item.kind }}"
           metadata:
             name: "{{ item.metadata.name }}"
-            namespace: metallb-system
+            namespace: "{{ item.metadata.namespace }}"
       retries: "{{ _rke2_retry_num }}"
       delay: "{{ _rke2_retry_delay }}"
       loop: "{{ _bgp_peers.resources }}"
-      when: item.spec.peerAddress not in _rke2_metallb_bgp_peers
+      when: item.spec.peerAddress not in rke2_metallb_bgp_peers
 
     - name: Create MetalLB BGP peers
       kubernetes.core.k8s:
@@ -206,11 +204,21 @@
         state: present
         apply: true
         kubeconfig: "{{ rke2_config_path }}"
-        resource_definition:
+        resource_definition: "{{ _resource | combine(_override) }}"
+      vars:
+        _agents: "{{ groups[rke2_agent_group] | default([]) }}"
+        _resource:
           apiVersion: metallb.io/v1beta1
           kind: BGPAdvertisement
           metadata:
             name: metallb
             namespace: metallb-system
+        _selectors:
+          spec:
+            nodeSelectors:
+              - matchExpressions:
+                  - key: node-role.kubernetes.io/control-plane
+                    operator: DoesNotExist
+        _override: "{{ _selectors if (_agents | length > 0) else {} }}"
       retries: "{{ _rke2_retry_num }}"
       delay: "{{ _rke2_retry_delay }}"

@@ -36,8 +36,10 @@ provisioner:
   playbooks:
     create: ../common/libvirt.yml
     prepare: ../common/prepare.yml
+    converge: ../common/bgp.yml
     destroy: ../common/destroy.yml
     side_effect: ../common/deploy.yml
+    verify: ../common/verify/bgp.yml
   config_options:
     defaults:
       callbacks_enabled: ansible.posix.profile_tasks
@@ -54,6 +56,7 @@ provisioner:
           molecule_logdir: "{{ lookup('ansible.builtin.env', 'MOLECULE_LOGDIR', default='/tmp/logs') }}"
           molecule_install_log: "{{ molecule_logdir }}/${MOLECULE_SCENARIO_NAME}"
           molecule_local_kubeconfig: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}/.kubeconfig"
+          molecule_bgp_group: "rke2_agent"
           # Optional rke2 params
           rke2_argocd_apps_pokerops_revision: "{{ lookup('ansible.builtin.env', 'MOLECULE_REVISION', default='HEAD') }}"
           # Required rke2 params

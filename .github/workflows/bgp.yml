@@ -1,7 +1,5 @@
 ---
 name: bgp
-env:
-  DEVBOX_VERSION: ${{ vars.DEVBOX_VERSION }}
 on:
   pull_request:
     branches:
@@ -13,14 +11,15 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
-  install:
-    name: install
+  bgp:
+    name: bgp
     runs-on: libvirt
     strategy:
       max-parallel: 1
       matrix:
         scenario:
-          - bgp
+          - full
+          - converged
         image:
           - distro: noble
             url: https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img

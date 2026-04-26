@@ -8,12 +8,15 @@
   any_errors_fatal: true
   vars:
     ingress_namespace: nginx
+    bgp_peer_names: "{{ groups['all'] }}"
+    bgp_hop_names: "{{ groups[molecule_bgp_group] }}"
+    bgp_hop_addrs: "{{ bgp_hop_names | map('extract', hostvars, ['ansible_default_ipv4', 'address']) }}"
   tasks:
     - name: Verify BGP Peer resources exist
       block:
         - name: Query BGPPeer resources
           kubernetes.core.k8s_info:
-            version: metallb.io/v1beta2
+            api_version: metallb.io/v1beta2
             kind: BGPPeer
             namespace: metallb-system
             kubeconfig: "{{ molecule_local_kubeconfig }}"
@@ -28,7 +31,7 @@
       block:
         - name: Query BGPAdvertisement resources
           kubernetes.core.k8s_info:
-            version: metallb.io/v1beta1
+            api_version: metallb.io/v1beta1
             kind: BGPAdvertisement
             namespace: metallb-system
             kubeconfig: "{{ molecule_local_kubeconfig }}"
@@ -42,7 +45,7 @@
 
         - name: Query L2Advertisement resources
           kubernetes.core.k8s_info:
-            version: metallb.io/v1beta2
+            api_version: metallb.io/v1beta2
             kind: L2Advertisement
             namespace: metallb-system
             kubeconfig: "{{ molecule_local_kubeconfig }}"
@@ -81,13 +84,16 @@
         - name: Verify Ingress controllers have External IPs
           ansible.builtin.assert:
             that:
-              - item.status.loadBalancer.ingress is defined
-              - item.status.loadBalancer.ingress | length > 0
-              - item.status.loadBalancer.ingress[0].ip is defined
-            fail_msg: "Service {{ item.metadata.name }} has no External IP assigned"
-          loop_control:
-            label: "{{ item.metadata.name }}"
-          loop: "{{ _ingress_services }}"
+              - _service.status.loadBalancer.ingress is defined
+              - _service.status.loadBalancer.ingress | length > 0
+              - _service.status.loadBalancer.ingress[0].ip is defined
+            fail_msg: "Service {{ item }} has no External IP assigned"
+            success_msg: "Service {{ item }} has External IP {{ _service.status.loadBalancer.ingress[0].ip }}"
+          vars:
+            _service: "{{ _ingress_services | selectattr('metadata.name', 'equalto', item) | first }}"
+          loop: "{{ _ingress_services | map(attribute='metadata.name') }}"
+          retries: 15
+          delay: 20
 
         - name: Record Ingress IPs
           ansible.builtin.set_fact:
@@ -147,12 +153,11 @@
           ansible.builtin.assert:
             that:
               - _neighbors | length > 0
-              - _neighbors | symmetric_difference(_nodes) | length == 0
-            fail_msg: "Found neighbor mismatch, expected {{ _nodes }}, got {{ _neighbors }} "
+              - _neighbors | symmetric_difference(bgp_peer_names) | length == 0
+            fail_msg: "Found neighbor mismatch, expected {{ bgp_peer_names }}, got {{ _neighbors }} "
             success_msg: "All neighbors are registered in bgp summary: {{ _neighbors }}"
           vars:
             _neighbors: "{{ _bgp_summary.ipv4Unicast.peers.values() | map(attribute='hostname') }}"
-            _nodes: "{{ groups['all'] }}"
 
         - name: Verify neighbor state
           ansible.builtin.assert:
@@ -173,7 +178,7 @@
           ansible.builtin.shell:
             cmd: "docker exec frr vtysh -c 'show bgp ipv4 unicast json'"
           vars:
-            _bgp_routes: "{{ _bgp_route_query.stdout }}"
+            _bgp_routes: "{{ _bgp_route_query.stdout | from_json }}"
             _ingress_routes: "{{ _ingress_ips | product(['32']) | map('join', '/') }}"
           register: _bgp_route_query
           retries: 15
@@ -194,7 +199,7 @@
               - _routes | length > 0
               - _routes | symmetric_difference(_ingress_routes) | length == 0
             fail_msg: "Found BGP route mismatch, expected {{ _ingress_routes }}, got {{ _routes }}"
-            success_msg: "Foud BGP routes for ingress ips {{ _ingress_routes }}"
+            success_msg: "Found BGP routes for ingress ips {{ _ingress_routes }}"
           vars:
             _routes: "{{ _bgp_routes.routes.keys() }}"
 
@@ -217,6 +222,7 @@
               - _routes_ok | length > 0
               - _routes_ko | length == 0
             fail_msg: "No next hops found for routes from peers {{ _routes_ko | map(attribute='peerId') }}"
+            success_msg: "Found next hops for {{ item }}: {{ _routes_ok | map(attribute='peerId') }}"
           vars:
             _routes: "{{ _bgp_routes.routes[item] }}"
             _routes_ok: "{{ _routes | rejectattr('nexthops', 'equalto', []) }}"
@@ -228,33 +234,62 @@
         - name: Query FRR routes
           ansible.builtin.shell:
             cmd: "docker exec frr ip -j -d route show"
+          vars:
+            _routes_data: "{{ _frr_route_query.stdout | from_json }}"
+            _routes_bgp: "{{ _routes_data | selectattr('protocol', 'equalto', 'bgp') }}"
+            _routes_ingress: "{{ _routes_bgp | selectattr('dst', 'in', _ingress_ips) }}"
+            _routes_wnexthops: "{{ _routes_ingress | selectattr('nexthops', 'defined') }}"
+            _routes_hopcount: "{{ _routes_wnexthops | map(attribute='nexthops') | map('length') }}"
           register: _frr_route_query
           changed_when: false
+          retries: 15
+          delay: 20
+          until:
+            - _routes_wnexthops | length == _ingress_ips | length
+            - _routes_hopcount | reject('equalto', bgp_hop_addrs | length) | length == 0
 
         - name: Parse FRR route data
           ansible.builtin.set_fact:
-            _frr_routes: "{{ _frr_route_query.stdout }}"
-
-        - name: Debug FRR route data
-          ansible.builtin.debug:
-            var: _frr_routes
+            _frr_routes: "{{ _routes_dict }}"
+          vars:
+            _routes_data: "{{ _frr_route_query.stdout | from_json }}"
+            _routes_bgp: "{{ _routes_data | selectattr('protocol', 'equalto', 'bgp') }}"
+            _routes_ingress: "{{ _routes_bgp | selectattr('dst', 'in', _ingress_ips) }}"
+            _routes_wnexthops: "{{ _routes_ingress | selectattr('nexthops', 'defined') }}"
+            _routes_dsts: "{{ _routes_wnexthops | map(attribute='dst') }}"
+            _routes_nexthops: "{{ _routes_wnexthops | map(attribute='nexthops') }}"
+            _routes_gateways: "{{ _routes_nexthops | map('map', attribute='gateway') }}"
+            _routes_dict: "{{ _routes_dsts | zip(_routes_gateways) | nephelaiio.plugins.to_dict }}"
 
         - name: Verify ingress routes on FRR table
           ansible.builtin.assert:
-            that:
-              - _routes_ingress | length == 1
-              - _routes_match.protocol == "bgp"
-              - _routes_match.nexthops | length > 0
-            success_msg: "Routes installed for address {{ item }} with gateways {{ _gateways }}"
-            fail_msg: "Route missing in routing table {{ _routes_ingress }}"
+            that: _gateways | intersect(bgp_hop_addrs) | length == bgp_hop_addrs | length
+            fail_msg: "Routes missing for address {{ _address }}, {{ bgp_hop_addrs | difference(_gateways) }}"
+            success_msg: "Routes installed for address {{ _address }} with gateways {{ _gateways }}"
           vars:
-            _routes_ingress: "{{ _frr_routes | selectattr('dst', 'equalto', item) }}"
-            _routes_match: "{{ _routes_ingress | first }}"
-            _gateways: "{{ _routes_match.nexthops | map(attribute='gateway') }}"
-            _nodes: "{{ groups['all'] | map('extract', hostvars, ['ansible_default_ipv4', 'address']) }}"
-          retries: 15
-          delay: 20
-          loop: "{{ _ingress_ips }}"
+            _address: "{{ item.key }}"
+            _gateways: "{{ item.value }}"
+          loop_control:
+            label: "{{ _address }}"
+          loop: "{{ _frr_routes | dict2items }}"
+
+      rescue:
+        - name: Debug FRR route data
+          ansible.builtin.debug:
+            msg: "{{ _routes_dict }}"
+          vars:
+            _routes_data: "{{ _frr_route_query.stdout | from_json }}"
+            _routes_bgp: "{{ _routes_data | selectattr('protocol', 'equalto', 'bgp') }}"
+            _routes_ingress: "{{ _routes_bgp | selectattr('dst', 'in', _ingress_ips) }}"
+            _routes_wnexthops: "{{ _routes_ingress | selectattr('nexthops', 'defined') }}"
+            _routes_dsts: "{{ _routes_wnexthops | map(attribute='dst') }}"
+            _routes_nexthops: "{{ _routes_wnexthops | map(attribute='nexthops') }}"
+            _routes_gateways: "{{ _routes_nexthops | map('map', attribute='gateway') }}"
+            _routes_dict: "{{ _routes_dsts | zip(_routes_gateways) | nephelaiio.plugins.to_dict }}"
+
+        - name: Fail execution on FRR route verification error
+          ansible.builtin.fail:
+            msg: "FRR route verification checks failed"
 
     - name: Verify local route table
       block:
@@ -263,31 +298,58 @@
             cmd: "ip -j -d route show"
           register: _host_route_query
           changed_when: false
+          vars:
+            _routes_data: "{{ _host_route_query.stdout | from_json }}"
+            _routes_bgp: "{{ _routes_data | selectattr('protocol', 'equalto', 'bgp') }}"
+            _routes_ingress: "{{ _routes_bgp | selectattr('dst', 'in', _ingress_ips) }}"
+            _routes_nexthops: "{{ _routes_ingress | selectattr('nexthops', 'defined') }}"
+            _routes_hopcount: "{{ _routes_nexthops | map(attribute='nexthops') | map('length') }}"
+          retries: 15
+          delay: 20
+          until:
+            - _routes_nexthops | length == _ingress_ips | length
+            - _routes_hopcount | reject('equalto', bgp_hop_addrs | length) | length == 0
 
         - name: Parse local route data
           ansible.builtin.set_fact:
-            _local_routes: "{{ _host_route_query.stdout }}"
-
-        - name: Debug local route data
-          ansible.builtin.debug:
-            var: _local_routes
+            _local_routes: "{{ _routes_dict }}"
+          vars:
+            _routes_data: "{{ _frr_route_query.stdout | from_json }}"
+            _routes_ingress: "{{ _routes_data | selectattr('dst', 'in', _ingress_ips) }}"
+            _routes_wnexthops: "{{ _routes_ingress | selectattr('nexthops', 'defined') }}"
+            _routes_dsts: "{{ _routes_wnexthops | map(attribute='dst') }}"
+            _routes_nexthops: "{{ _routes_wnexthops | map(attribute='nexthops') }}"
+            _routes_gateways: "{{ _routes_nexthops | map('map', attribute='gateway') }}"
+            _routes_dict: "{{ _routes_dsts | zip(_routes_gateways) | nephelaiio.plugins.to_dict }}"
 
         - name: Verify ingress routes on local table
           ansible.builtin.assert:
-            that:
-              - _routes_ingress | length == 1
-              - _routes_match.protocol == "bgp"
-              - _routes_match.nexthops | length > 0
-            success_msg: "Routes installed for address {{ item }} with gateways {{ _gateways }}"
-            fail_msg: "Routes missing in routing table {{ _routes_ingress }}"
+            that: _gateways | intersect(bgp_hop_addrs) | length == bgp_hop_addrs | length
+            fail_msg: "Routes missing for address {{ _address }}, {{ bgp_hop_addrs | difference(_gateways) }}"
+            success_msg: "Routes installed for address {{ _address }} with gateways {{ _gateways }}"
           vars:
-            _routes_ingress: "{{ _local_routes | selectattr('dst', 'equalto', item) }}"
-            _routes_match: "{{ _routes_ingress | first }}"
-            _gateways: "{{ _routes_match.nexthops | map(attribute='gateway') | intersect(_nodes) }}"
-            _nodes: "{{ groups['all'] | map('extract', hostvars, ['ansible_default_ipv4', 'address']) }}"
-          retries: 15
-          delay: 20
-          loop: "{{ _ingress_ips }}"
+            _address: "{{ item.key }}"
+            _gateways: "{{ item.value }}"
+          loop_control:
+            label: "{{ _address }}"
+          loop: "{{ _local_routes | dict2items }}"
+
+      rescue:
+        - name: Debug local route data
+          ansible.builtin.debug:
+            msg: "{{ _routes_dict }}"
+          vars:
+            _routes_data: "{{ _frr_route_query.stdout | from_json }}"
+            _routes_ingress: "{{ _routes_data | selectattr('dst', 'in', _ingress_ips) }}"
+            _routes_wnexthops: "{{ _routes_ingress | selectattr('nexthops', 'defined') }}"
+            _routes_dsts: "{{ _routes_wnexthops | map(attribute='dst') }}"
+            _routes_nexthops: "{{ _routes_wnexthops | map(attribute='nexthops') }}"
+            _routes_gateways: "{{ _routes_nexthops | map('map', attribute='gateway') }}"
+            _routes_dict: "{{ _routes_dsts | zip(_routes_gateways) | nephelaiio.plugins.to_dict }}"
+
+        - name: Fail execution on local route verification error
+          ansible.builtin.fail:
+            msg: "Local route verification checks failed"
 
     - name: Verify HTTP/HTTPS connectivity via ingress
       block:
