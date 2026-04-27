@@ -1,0 +1,64 @@
+---
+- name: Deploy traefik private controller
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ rke2_config_path }}"
+    resource_definition: "{{ _traefik_chart_application }}"
+  vars:
+    _traefik_chart_application: "{{ _traefik_chart_manifest | combine(_traefik_chart_overrides, recursive=True) }}"
+    _traefik_chart_manifest: "{{ lookup('ansible.builtin.template', 'templates/traefik.yml' ) | from_yaml }}"
+    _traefik_chart_overrides:
+      metadata:
+        name: "traefik-private"
+      spec:
+        destination:
+          namespace: "traefik-private"
+        source:
+          helm:
+            valuesObject:
+              ingressClass:
+                default: false
+                name: "traefik-private"
+              providers:
+                kubernetesCRD:
+                  ingressClass: "traefik-private"
+                kubernetesIngress:
+                  ingressClass: "traefik-private"
+              gateway:
+                annotations:
+                  cert-manager.io/cluster-issuer: "{{ rke2_certmanager_issuer_name }}"
+              service:
+                annotations:
+                  metallb.universe.tf/address-pool: "metallb-private"
+
+- name: Deploy traefik public controller
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ rke2_config_path }}"
+    resource_definition: "{{ _traefik_chart_application }}"
+  vars:
+    _traefik_chart_application: "{{ _traefik_chart_manifest | combine(_traefik_chart_overrides, recursive=True) }}"
+    _traefik_chart_manifest: "{{ lookup('ansible.builtin.template', 'templates/traefik.yml' ) | from_yaml }}"
+    _traefik_chart_overrides:
+      metadata:
+        name: "traefik-public"
+      spec:
+        destination:
+          namespace: "traefik-public"
+        source:
+          helm:
+            valuesObject:
+              ingressClass:
+                default: false
+                name: "traefik-public"
+              providers:
+                kubernetesCRD:
+                  ingressClass: "traefik-public"
+                kubernetesIngress:
+                  ingressClass: "traefik-public"
+              gateway:
+                annotations:
+                  cert-manager.io/cluster-issuer: "{{ rke2_certmanager_issuer_name }}"
+              service:
+                annotations:
+                  metallb.universe.tf/address-pool: "metallb-public"

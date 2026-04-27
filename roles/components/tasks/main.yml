@@ -13,3 +13,6 @@
 
 - name: Include nginx tasks
   ansible.builtin.include_tasks: nginx.yml
+
+- name: Include traefik tasks
+  ansible.builtin.include_tasks: traefik.yml
