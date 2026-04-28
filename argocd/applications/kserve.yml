@@ -19,7 +19,7 @@ spec:
             deploymentMode: RawDeployment
             gateway:
               ingressGateway:
-                className: nginx-private
+                className: traefik-private
   destination:
     server: https://kubernetes.default.svc
     namespace: kserve

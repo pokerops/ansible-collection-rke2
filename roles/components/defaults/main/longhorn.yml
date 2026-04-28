@@ -1,8 +1,9 @@
 ---
 rke2_longhorn_hostname: "longhorn.{{ rke2_cluster_name }}"
+rke2_longhorn_ingress_class: nginx-private
 rke2_longhorn_values:
   ingress:
-    ingressClassName: nginx-private
+    ingressClassName: "{{ rke2_longhorn_ingress_class }}"
     host: "{{ rke2_longhorn_hostname }}"
     tlsSecret: "{{ rke2_longhorn_hostname }}"
     annotations:
