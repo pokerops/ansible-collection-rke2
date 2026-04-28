@@ -82,7 +82,7 @@ server:
   ingress:
     enabled: true
     https: true
-    ingressClassName: nginx-private
+    ingressClassName: traefik-private
     hostname: "argocd.{{ rke2_cluster_name }}"
     annotations:
       nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
