@@ -15,4 +15,4 @@ jobs:
       - name: Run devbox tests
         uses: pokerops/ansible-utils@master
         with:
-          run: make build-check
+          run: just build-check

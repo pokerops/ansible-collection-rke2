@@ -31,11 +31,12 @@ jobs:
       - name: Run devbox tests
         uses: pokerops/ansible-utils@master
         with:
-          run: |
-            make requirements test \
-            MOLECULE_SCENARIO=${{ matrix.scenario }} \
-            MOLECULE_KVM_DISTRO=${{ matrix.image.distro }} \
-            MOLECULE_KVM_IMAGE=${{ matrix.image.url }}
+          run: >
+            just 
+            --set MOLECULE_SCENARIO ${{ matrix.scenario }}
+            --set MOLECULE_KVM_DISTRO ${{ matrix.image.distro }}
+            --set MOLECULE_KVM_IMAGE ${{ matrix.image.url }}
+            requirements test
 
       - name: Upload install logs
         uses: actions/upload-artifact@v4
