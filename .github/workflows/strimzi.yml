@@ -32,7 +32,7 @@ jobs:
         uses: pokerops/ansible-utils@master
         with:
           run: >
-            just 
+            just
             --set MOLECULE_SCENARIO ${{ matrix.scenario }}
             --set MOLECULE_KVM_DISTRO ${{ matrix.image.distro }}
             --set MOLECULE_KVM_IMAGE ${{ matrix.image.url }}
