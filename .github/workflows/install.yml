@@ -36,8 +36,8 @@ jobs:
         with:
           run: >
             just 
-            --set MOLECULE_SCENARIO ${{ matrix.scenario }} 
-            --set MOLECULE_KVM_DISTRO ${{ matrix.image.distro }} 
+            --set MOLECULE_SCENARIO ${{ matrix.scenario }}
+            --set MOLECULE_KVM_DISTRO ${{ matrix.image.distro }}
             --set MOLECULE_KVM_IMAGE ${{ matrix.image.url }}
             requirements test
 
