@@ -31,7 +31,7 @@ jobs:
       - name: Run devbox tests
         uses: pokerops/ansible-utils@master
         with:
-          run: |
+          run: >
             just
             --set MOLECULE_SCENARIO ${{ matrix.scenario }}
             --set MOLECULE_KVM_DISTRO ${{ matrix.image.distro }}

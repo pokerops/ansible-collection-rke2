@@ -33,9 +33,9 @@ jobs:
         with:
           run: >
             just
-            MOLECULE_SCENARIO ${{ matrix.scenario }}
-            MOLECULE_KVM_DISTRO ${{ matrix.image.distro }}
-            MOLECULE_KVM_IMAGE ${{ matrix.image.url }}
+            --set MOLECULE_SCENARIO ${{ matrix.scenario }}
+            --set MOLECULE_KVM_DISTRO ${{ matrix.image.distro }}
+            --set MOLECULE_KVM_IMAGE ${{ matrix.image.url }}
             requirements test
 
       - name: Upload install logs
