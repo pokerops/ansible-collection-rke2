@@ -692,13 +692,17 @@ source = { editable = "." }
 
 [package.dev-dependencies]
 dev = [
+    { name = "jmespath" },
     { name = "pokerops-ansible-utils" },
 ]
 
 [package.metadata]
 
 [package.metadata.requires-dev]
-dev = [{ name = "pokerops-ansible-utils", git = "https://github.com/pokerops/ansible-utils?rev=master" }]
+dev = [
+    { name = "jmespath", specifier = ">=1.1.0" },
+    { name = "pokerops-ansible-utils", git = "https://github.com/pokerops/ansible-utils?rev=master" },
+]
 
 [[package]]
 name = "psycopg2-binary"
