@@ -300,11 +300,13 @@
             _pods_hubble_ko: "{{ _pods_hubble | difference(_pods_hubble_ok) }}"
             _pods_hubble_ok_names: "{{ _pods_hubble_ok | map(attribute='metadata.name') }}"
             _pods_hubble_ko_names: "{{ _pods_hubble_ko | map(attribute='metadata.name') }}"
+            _pods_hubble_failed:
+              - _pods_hubble_ok_names | length > 0
+              - _pods_hubble_ko_names | length == 0
           retries: "{{ _retry }}"
           delay: "{{ _delay }}"
-          until:
-            - _pods_hubble_ok_names | length > 0
-            - _pods_hubble_ko_names | length == 0
+          until: not _pods_hubble_failed | bool
+          when: _pods_hubble_failed | bool
 
         - name: Validate secret namespaces
           ansible.builtin.assert:
