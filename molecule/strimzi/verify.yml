@@ -533,7 +533,7 @@
                     | list
                   }}
 
-            - name: Print messages before backup
+            - name: Debug messages before backup
               ansible.builtin.debug:
                 msg: "{{ kafka_messages_before_backup }}"
 
@@ -592,7 +592,7 @@
                 namespace: "{{ kafka_namespace }}"
               register: existing_pvcs
 
-            - name: Get PVs names
+            - name: GPriniet PVs names
               ansible.builtin.set_fact:
                 pvs: "{{ existing_pvcs.resources | map(attribute='spec.volumeName') | list  }}"
 
@@ -965,7 +965,7 @@
                     | list
                   }}
 
-            - name: Print messages after restore
+            - name: Debug messages after restore
               ansible.builtin.debug:
                 msg: "{{ kafka_messages_after_restore }}"
 
@@ -986,13 +986,6 @@
           ansible.builtin.debug:
             var: kafka_messages_after_restore
 
-        - name: Validate message recovery
-          ansible.builtin.assert:
-            that:
-              - kafka_messages_before_backup == kafka_messages_after_restore
-            fail_msg: "Messages are not the same after restore!"
-            success_msg: "Messages successfully restored from backup."
-
         - name: Display verification summary
           ansible.builtin.debug:
             msg: |
@@ -1002,8 +995,15 @@
                 - Cluster ID: {{ restored_cluster_id }}
                 - Topic: {{ topic_name }}
 
+        - name: Validate message recovery
+          ansible.builtin.assert:
+            that:
+              - kafka_messages_before_backup == kafka_messages_after_restore
+            fail_msg: "Messages are not the same after restore!"
+            success_msg: "Messages successfully restored from backup."
+
       rescue:
-        - name: Get Strimzi operator pod info
+        - name: Query Strimzi operator pods
           kubernetes.core.k8s_info:
             kubeconfig: "{{ kubeconfig_path }}"
             api_version: v1
@@ -1013,11 +1013,11 @@
           retries: 60
           delay: 15
 
-        - name: Print operator_pods to debug
+        - name: Debug Strimzi operator pods
           ansible.builtin.debug:
             msg: "{{ operator_pods }}"
 
-        - name: Get Kafka info
+        - name: Query Kafka clusters
           kubernetes.core.k8s_info:
             kubeconfig: "{{ kubeconfig_path }}"
             api_version: kafka.strimzi.io/v1beta2
@@ -1027,11 +1027,11 @@
           retries: 60
           delay: 15
 
-        - name: Print kafka_status to debug
+        - name: Debug Kafka clusters
           ansible.builtin.debug:
             msg: "{{ kafka_status }}"
 
-        - name: Get KafkaNodePool info
+        - name: Query Kafka NodePools
           kubernetes.core.k8s_info:
             kubeconfig: "{{ kubeconfig_path }}"
             api_version: kafka.strimzi.io/v1beta2
@@ -1041,11 +1041,11 @@
           retries: 60
           delay: 15
 
-        - name: Print kafkanodepool_status to debug
+        - name: Debug Kafka NodePools
           ansible.builtin.debug:
             msg: "{{ kafkanodepool_status }}"
 
-        - name: Get KafkaTopic info
+        - name: Query Kafka topics
           kubernetes.core.k8s_info:
             kubeconfig: "{{ kubeconfig_path }}"
             api_version: kafka.strimzi.io/v1beta2
@@ -1055,11 +1055,11 @@
           retries: 60
           delay: 15
 
-        - name: Print kafkatopic_status to debug
+        - name: Debug Kafka topic
           ansible.builtin.debug:
             msg: "{{ kafkatopic_status }}"
 
-        - name: Get kafka pods info
+        - name: Query Kafka pods
           kubernetes.core.k8s_info:
             kubeconfig: "{{ kubeconfig_path }}"
             api_version: v1
@@ -1069,11 +1069,11 @@
           retries: 60
           delay: 15
 
-        - name: Print kafka_pods to debug
+        - name: Debug Kafka pods
           ansible.builtin.debug:
             msg: "{{ kafka_pods }}"
 
-        - name: Get PVCs info
+        - name: Query Kafka PVCs
           kubernetes.core.k8s_info:
             kubeconfig: "{{ kubeconfig_path }}"
             api_version: v1
@@ -1081,11 +1081,11 @@
             namespace: "{{ kafka_namespace }}"
           register: kafka_pvcs
 
-        - name: Print kafka_pvcs to debug
+        - name: Debug Kafka PVCs
           ansible.builtin.debug:
             msg: "{{ kafka_pvcs }}"
 
-        - name: Get Velero backup
+        - name: Query Velero backups
           kubernetes.core.k8s_info:
             kubeconfig: "{{ kubeconfig_path }}"
             api_version: velero.io/v1
@@ -1095,11 +1095,11 @@
           retries: 60
           delay: 15
 
-        - name: Print backup_status to debug
+        - name: Debug Velero backups
           ansible.builtin.debug:
             msg: "{{ backup_status }}"
 
-        - name: Get Velero restore
+        - name: Query Velero restores
           kubernetes.core.k8s_info:
             kubeconfig: "{{ kubeconfig_path }}"
             api_version: velero.io/v1
@@ -1109,7 +1109,7 @@
           retries: 60
           delay: 15
 
-        - name: Print restore_status to debug
+        - name: Debug Velero restores
           ansible.builtin.debug:
             msg: "{{ restore_status }}"
 
