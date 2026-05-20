@@ -242,10 +242,6 @@
             _pod_data: "{{ _kubectl_pods.stdout | from_json }}"
             _pod_names: "{{ _pod_data | map(attribute='metadata.name') | list }}"
 
-        - name: Debug cluster pod names
-          ansible.builtin.debug:
-            var: _kubectl_pod_names
-
         - name: Verify no workload pods are scheduled on server nodes
           block:
             - name: Set workload pod facts
@@ -280,18 +276,37 @@
             _kubectl_status_list: "{{ _kubectl_status_data }}"
             _kubectl_status_conditions: "{{ _kubectl_status_list | map(attribute='conditions') | map('map', attribute='type') | flatten }}"
 
+      rescue:
+        - name: Debug cluster pod names
+          ansible.builtin.debug:
+            var: _kubectl_pod_names
+
     - name: Validate cluster components
       when: rke2_component_check | default(True) | bool
       run_once: true
       block:
-        - name: Verify hubble pods
-          ansible.builtin.assert:
-            that: _kubectl_pod_names | select('match', '^hubble-.*') | length > 0
-            fail_msg: "No Cilium Hubble pods found"
-
         - name: Set kubeconfig facts
           ansible.builtin.set_fact:
             _config_path: "{{ molecule_local_kubeconfig }}"
+
+        - name: Verify hubble pods
+          ansible.builtin.fail:
+            msg: "The following pods are in failed state {{ _pods_hubble_ko_names }}"
+          vars:
+            _query_ok: "[?status.conditions[?type=='Ready' && status=='True']]"
+            _pods_all: "{{ query('kubernetes.core.k8s', kind='Pod', namespace='kube-system', kubeconfig=_config_path) }}"
+            _pods_hubble: "{{ _pods_all | selectattr('metadata.name', 'match', '^hubble.*') }}"
+            _pods_hubble_ok: "{{ _pods_hubble | json_query(_query_ok) }}"
+            _pods_hubble_ko: "{{ _pods_hubble | difference(_pods_hubble_ok) }}"
+            _pods_hubble_ok_names: "{{ _pods_hubble_ok | map(attribute='metadata.name') }}"
+            _pods_hubble_ko_names: "{{ _pods_hubble_ko | map(attribute='metadata.name') }}"
+            _pods_hubble_failed:
+              - _pods_hubble_ok_names | length > 0
+              - _pods_hubble_ko_names | length == 0
+          retries: "{{ _retry }}"
+          delay: "{{ _delay }}"
+          until: not _pods_hubble_failed | bool
+          when: _pods_hubble_failed | bool
 
         - name: Validate secret namespaces
           ansible.builtin.assert:
@@ -338,7 +353,7 @@
               until: issuers_failed | length == 0
               failed_when: issuers_failed | length > 0
 
-          always:
+          rescue:
             - name: Debug cluster-issuers
               ansible.builtin.debug:
                 var: issuers_query
