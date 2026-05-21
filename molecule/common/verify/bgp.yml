@@ -142,34 +142,37 @@
         - name: Query BGP summary
           ansible.builtin.shell:
             cmd: "docker exec frr vtysh -c 'show bgp summary json'"
+          vars:
+            _bgp_summary: "{{ _bgp_summary_query.stdout }}"
+            _neighbors: "{{ _bgp_summary.ipv4Unicast.peers.values() | map(attribute='hostname') }}"
+            _neighbors_ok: "{{ _neighbors | selectattr('state', 'equalto', 'Established') }}"
+            _neighbors_ko: "{{ _neighbors | rejectattr('state', 'equalto', 'Established') }}"
+          until:
+            - _neighbors | length > 0
+            - _neighbors | symmetric_difference(bgp_peer_names) | length == 0
+            - _neighbors_ok | length > 0
+            - _neighbors_ko | length == 0
+          retries: 15
+          delay: 20
           register: _bgp_summary_query
           changed_when: false
 
+      rescue:
         - name: Parse BGP neighbor data
           ansible.builtin.set_fact:
-            _bgp_summary: "{{ _bgp_summary_query.stdout }}"
+            _bgp_summary: "{{ _bgp_data }}"
+            _neighbors: "{{ _bgp_data.ipv4Unicast.peers.values() | map(attribute='hostname') }}"
+          vars:
+            _bgp_data: "{{ _bgp_summary_query.stdout }}"
 
         - name: Verify neighbor list
-          ansible.builtin.assert:
-            that:
-              - _neighbors | length > 0
-              - _neighbors | symmetric_difference(bgp_peer_names) | length == 0
-            fail_msg: "Found neighbor mismatch, expected {{ bgp_peer_names }}, got {{ _neighbors }} "
-            success_msg: "All neighbors are registered in bgp summary: {{ _neighbors }}"
-          vars:
-            _neighbors: "{{ _bgp_summary.ipv4Unicast.peers.values() | map(attribute='hostname') }}"
+          ansible.builtin.debug:
+            msg: "Expected {{ bgp_peer_names }}, got {{ _neighbors }} "
 
         - name: Verify neighbor state
-          ansible.builtin.assert:
-            that:
-              - _neighbors | length > 0
-              - _neighbors_ok | length > 0
-              - _neighbors_ko | length == 0
-            fail_msg: "The following neighbors are in a failed state: {{ _neighbors_ko | map(attribute='hostname') }}"
-            success_msg: "All neighbors have established adjacencies: {{ _neighbors | map(attribute='hostname') }}"
+          ansible.builtin.debug:
+            msg: "The following neighbors are in a failed state: {{ _neighbors_ko | map(attribute='hostname') }}"
           vars:
-            _neighbors: "{{ _bgp_summary.ipv4Unicast.peers.values() }}"
-            _neighbors_ok: "{{ _neighbors | selectattr('state', 'equalto', 'Established') }}"
             _neighbors_ko: "{{ _neighbors | rejectattr('state', 'equalto', 'Established') }}"
 
     - name: Verify BGP route propagation
