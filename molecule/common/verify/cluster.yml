@@ -530,7 +530,7 @@
               until: pvc_failed | length == 0
               failed_when: pvc_failed | length > 0
 
-          always:
+          rescue:
             - name: Debug persistent claim status
               ansible.builtin.debug:
                 var: pvc_query
