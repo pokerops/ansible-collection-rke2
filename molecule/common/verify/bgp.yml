@@ -58,29 +58,6 @@
             that: _l2_advertisements.resources | length == 0
             fail_msg: "Found L2Advertisement resources in BGP mode: {{ _l2_advertisements.resources | map(attribute='metadata.name') }}"
 
-    - name: Verify ingress controller LoadBalancer services
-      block:
-        - name: Query Ingress controller services
-          ansible.builtin.set_fact:
-            _ingress_ips: "{{ _ips }}"
-            _ingress_svcs: "{{ _ics }}"
-          vars:
-            _services: "{{ query('kubernetes.core.k8s', kubeconfig=molecule_local_kubeconfig, kind='Service') }}"
-            _lbs: "{{ _services | selectattr('spec.type', 'equalto', 'LoadBalancer') }}"
-            _ics: "{{ _lbs | selectattr('metadata.namespace', 'in', ingress_namespaces) }}"
-            _addrs: "{{ _ics | selectattr('status.loadBalancer.ingress', 'defined') }}"
-            _ips: "{{ _addrs | map(attribute='status.loadBalancer.ingress') | map('first') | map(attribute='ip') }}"
-          failed_when: (_ics | length == 0) or (_ips | length) != (_ics | length)
-
-        - name: Verify LoadBalancer IPs
-          ansible.builtin.assert:
-            that: (_ingress_ips | length) == (_ingress_svcs | length)
-            fail_msg: "Expected {{ _ingress_svcs | length }} Ingress controllers addresses, found {{ _ingress_ips | length }}"
-
-        - name: Debug ingress IPs
-          ansible.builtin.debug:
-            var: _ingress_ips
-
     - name: Verify cluster pod status
       ansible.builtin.shell:
         cmd: "/var/lib/rancher/rke2/bin/kubectl get pod -A -o json | jq '.items'"
@@ -99,6 +76,31 @@
         - (_pod_phase | length) != (_pod_data | length)
         - _pod_failed | length > 0
       changed_when: false
+
+    - name: Verify ingress controller LoadBalancer services
+      block:
+        - name: Query Ingress controller services
+          ansible.builtin.set_fact:
+            _ingress_ips: "{{ _ips }}"
+            _ingress_svcs: "{{ _ics }}"
+          vars:
+            _services: "{{ query('kubernetes.core.k8s', kubeconfig=molecule_local_kubeconfig, kind='Service') }}"
+            _lbs: "{{ _services | selectattr('spec.type', 'equalto', 'LoadBalancer') }}"
+            _ics: "{{ _lbs | selectattr('metadata.namespace', 'in', ingress_namespaces) }}"
+            _addrs: "{{ _ics | selectattr('status.loadBalancer.ingress', 'defined') }}"
+            _ips: "{{ _addrs | map(attribute='status.loadBalancer.ingress') | map('first') | map(attribute='ip') }}"
+          retries: 15
+          delay: 20
+          failed_when: (_ics | length == 0) or (_ips | length) != (_ics | length)
+
+        - name: Verify LoadBalancer IPs
+          ansible.builtin.assert:
+            that: (_ingress_ips | length) == (_ingress_svcs | length)
+            fail_msg: "Expected {{ _ingress_svcs | length }} Ingress controllers addresses, found {{ _ingress_ips | length }}"
+
+        - name: Debug ingress IPs
+          ansible.builtin.debug:
+            var: _ingress_ips
 
     - name: Verify FRR container is running
       block:
