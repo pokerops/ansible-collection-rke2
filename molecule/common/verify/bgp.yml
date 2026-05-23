@@ -168,7 +168,7 @@
             _bgp_routes: "{{ _bgp_route_query.stdout | from_json }}"
             _ingress_routes: "{{ _ingress_ips | product(['32']) | map('join', '/') }}"
           register: _bgp_route_query
-          retries: 15
+          retries: 30
           delay: 20
           until:
             - _bgp_routes.totalRoutes | int > 0
