@@ -159,6 +159,10 @@
           vars:
             _neighbors_ko: "{{ _neighbors | rejectattr('state', 'equalto', 'Established') }}"
 
+        - name: Fail BGP checks
+          ansible.builtin.fail:
+            msg: "Failed BGP neighbor verification"
+
     - name: Verify BGP route propagation
       block:
         - name: Query BGP IPv4 unicast routes
@@ -175,20 +179,11 @@
             - _bgp_routes.routes.keys() | symmetric_difference(_ingress_routes) | length == 0
           changed_when: false
 
+      always:
         - name: Parse BGP IPv4 unicast data
           ansible.builtin.set_fact:
             _bgp_routes: "{{ _bgp_route_query.stdout }}"
             _ingress_routes: "{{ _ingress_ips | product(['32']) | map('join', '/') }}"
-
-        - name: Verify ingress IPs exist in BGP table
-          ansible.builtin.assert:
-            that:
-              - _routes | length > 0
-              - _routes | symmetric_difference(_ingress_routes) | length == 0
-            fail_msg: "Found BGP route mismatch, expected {{ _ingress_routes }}, got {{ _routes }}"
-            success_msg: "Found BGP routes for ingress ips {{ _ingress_routes }}"
-          vars:
-            _routes: "{{ _bgp_routes.routes.keys() }}"
 
         - name: Verify route validity
           ansible.builtin.assert:
