@@ -80,51 +80,24 @@
     - name: Verify ingress controller LoadBalancer services
       block:
         - name: Wait for Ingress controller LoadBalancer IPs to be assigned
-          ansible.builtin.fail:
-            msg: >-
-              Timed out waiting for {{ _ics | length }} ingress LoadBalancer service(s)
-              to be assigned IPs ({{ _ips | length }} ready so far)
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ molecule_local_kubeconfig }}"
+            kind: Service
+          register: _svc_info
           vars:
-            _services: "{{ query('kubernetes.core.k8s', kubeconfig=molecule_local_kubeconfig, kind='Service') }}"
-            _ics: >-
-              {{
-                services
-                  | selectattr('spec.type', 'equalto', 'LoadBalancer')
-                  | selectattr('metadata.namespace', 'in', ingress_namespaces)
-              }}
-            _ips: >-
-              {{
-                _ics
-                  | selectattr('status.loadBalancer.ingress', 'defined')
-                  | map(attribute='status.loadBalancer.ingress')
-                  | map('first') | map(attribute='ip') 
-                  | list
-              }}
-          when: (_ics | length == 0) or (_ips | length != _ics | length)
+            _ics: "{{ _svc_info.resources | selectattr('spec.type', 'equalto', 'LoadBalancer') | selectattr('metadata.namespace', 'in', ingress_namespaces) }}"
+            _ingresses: "{{ _ics | selectattr('status.loadBalancer.ingress', 'defined') | map(attribute='status.loadBalancer.ingress') }}"
+            _ips: "{{ _ingresses | map('first') | map(attribute='ip') | list }}"
+          until: (_ics | length > 0) and (_ips | length == _ics | length)
           retries: 15
           delay: 20
 
         - name: Store Ingress controller services and IPs
           ansible.builtin.set_fact:
-            _ingress_svcs: >-
-              {{
-                _services
-                  | selectattr('spec.type', 'equalto', 'LoadBalancer')
-                  | selectattr('metadata.namespace', 'in', ingress_namespaces)
-                  | list
-              }}
-            _ingress_ips: >-
-              {{
-                _services
-                  | selectattr('spec.type', 'equalto', 'LoadBalancer')
-                  | selectattr('metadata.namespace', 'in', ingress_namespaces)
-                  | selectattr('status.loadBalancer.ingress', 'defined')
-                  | map(attribute='status.loadBalancer.ingress')
-                  | map('first') | map(attribute='ip') 
-                  | list
-              }}
+            _ingress_svcs: "{{ _ics }}"
+            _ingress_ips: "{{ _ics | map(attribute='status.loadBalancer.ingress') | map('first') | map(attribute='ip') | list }}"
           vars:
-            _services: "{{ query('kubernetes.core.k8s', kubeconfig=molecule_local_kubeconfig, kind='Service') }}"
+            _ics: "{{ _svc_info.resources | selectattr('spec.type', 'equalto', 'LoadBalancer') | selectattr('metadata.namespace', 'in', ingress_namespaces) }}"
 
         - name: Verify LoadBalancer IPs
           ansible.builtin.assert:
