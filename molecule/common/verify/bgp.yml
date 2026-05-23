@@ -224,7 +224,7 @@
             _routes_hopcount: "{{ _routes_wnexthops | map(attribute='nexthops') | map('length') }}"
           register: _frr_route_query
           changed_when: false
-          retries: 15
+          retries: 30
           delay: 20
           until:
             - _routes_wnexthops | length == _ingress_ips | length
