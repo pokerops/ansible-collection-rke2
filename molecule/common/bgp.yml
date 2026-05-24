@@ -69,6 +69,7 @@
                !
                address-family ipv4 unicast
                 neighbor metallb-peers activate
+                maximum-paths ibgp {{ groups['rke2_agent'] | length }}
                exit-address-family
               exit
               !
