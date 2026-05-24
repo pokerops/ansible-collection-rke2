@@ -172,7 +172,7 @@
             _bgp_routes: "{{ _bgp_route_query.stdout | from_json }}"
             _ingress_routes: "{{ _ingress_ips | product(['32']) | map('join', '/') }}"
           register: _bgp_route_query
-          retries: 15
+          retries: 30
           delay: 20
           until:
             - _bgp_routes.totalRoutes | int > 0
@@ -193,7 +193,7 @@
             fail_msg: "No best route registered for prefix {{ item }}"
             success_msg: "Best path found for prefix {{ item }} through peer {{ (_routes_best | first).peerId }}"
           vars:
-            _routes: "{{ _bgp_routes.routes[item] }}"
+            _routes: "{{ _bgp_routes.routes[item] | default([]) }}"
             _routes_valid: "{{ _routes | selectattr('valid', 'defined') | selectattr('valid', 'equalto', true) }}"
             _routes_best: "{{ _routes_valid | selectattr('bestpath', 'defined') | selectattr('bestpath', 'equalto', true) }}"
           loop: "{{ _ingress_routes }}"
