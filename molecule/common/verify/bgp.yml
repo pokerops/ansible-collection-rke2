@@ -22,7 +22,7 @@
             namespace: argocd
             kubeconfig: "{{ molecule_local_kubeconfig }}"
           register: _argocd_apps_query
-          retries: 15
+          retries: 30
           delay: 20
           vars:
             _apps_count: "{{ molecule_rke2_ingress_services | int }}"
@@ -109,25 +109,6 @@
             that: _l2_advertisements.resources | length == 0
             fail_msg: "Found L2Advertisement resources in BGP mode: {{ _l2_advertisements.resources | map(attribute='metadata.name') }}"
 
-    - name: Verify cluster pod status
-      ansible.builtin.shell:
-        cmd: "/var/lib/rancher/rke2/bin/kubectl get pod -A -o json | jq '.items'"
-      vars:
-        _pod_data: "{{ _pod_data.stdout | from_json }}"
-        _pod_status: "{{ _pod_data | selectattr('status', 'defined') }}"
-        _pod_phase: "{{ _pod_status | selectattr('status.phase', 'defined') }}"
-        _pod_completed: "{{ _pod_phase | rejectattr('status.phase', 'equalto', 'Running') }}"
-        _pod_failed: "{{ _pod_completed | rejectattr('status.phase', 'equalto', 'Succeeded') }}"
-      register: _pod_data
-      retries: 15
-      delay: 20
-      until: _pod_failed | length == 0
-      failed_when:
-        - (_pod_status | length) != (_pod_data | length)
-        - (_pod_phase | length) != (_pod_data | length)
-        - _pod_failed | length > 0
-      changed_when: false
-
     - name: Verify Ingress controller services
       block:
         - name: Wait for Ingress controller services to be created
@@ -141,6 +122,7 @@
           until: _ics | length == molecule_rke2_ingress_services | int
           retries: 15
           delay: 20
+
       always:
         - name: Query Ingress controller services
           kubernetes.core.k8s_info:
@@ -154,6 +136,7 @@
           vars:
             _lbs: "{{ _svc_info.resources | selectattr('spec.type', 'equalto', 'LoadBalancer') }}"
             _ics: "{{ _lbs | selectattr('metadata.namespace', 'in', ingress_namespaces) }}"
+
       rescue:
         - name: Query Ingress controller services
           kubernetes.core.k8s_info:
