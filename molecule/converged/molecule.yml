@@ -51,8 +51,10 @@ provisioner:
           molecule_install_log: "{{ molecule_logdir }}/${MOLECULE_SCENARIO_NAME}"
           molecule_local_kubeconfig: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}/.kubeconfig"
           molecule_bgp_group: "rke2_server"
+          molecule_rke2_ingress_services: 2
           # Optional rke2 params
           rke2_argocd_apps_pokerops_revision: "{{ lookup('ansible.builtin.env', 'MOLECULE_REVISION', default='HEAD') }}"
+          rke2_traefik_controller_deploy: false
           # Required rke2 params
           rke2_cluster_name: rke2.pokerops.net
           rke2_ippool_private: "172.16.16.0/24"

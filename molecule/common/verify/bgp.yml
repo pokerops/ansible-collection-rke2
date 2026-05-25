@@ -88,8 +88,8 @@
             _ics: "{{ _svc_info.resources | selectattr('spec.type', 'equalto', 'LoadBalancer') | selectattr('metadata.namespace', 'in', ingress_namespaces) }}"
             _ingresses: "{{ _ics | selectattr('status.loadBalancer.ingress', 'defined') | map(attribute='status.loadBalancer.ingress') }}"
             _ips: "{{ _ingresses | map('first') | map(attribute='ip') | list }}"
-            _controllers: "{{ 4 if ([rke2_ippool_public | default([])] | flatten | length > 0) else 2 }}"
-          until: (_ics | length == _controllers | int) and (_ips | length == _controllers | int)
+            _controllers: "{{ molecule_rke2_ingress_services }}"
+          until: (_ics | length == controllers | int) and (_ips | length == _controllers | int)
           retries: 15
           delay: 20
 
