@@ -103,8 +103,18 @@
           vars:
             _lbs: "{{ _svc_info.resources | selectattr('spec.type', 'equalto', 'LoadBalancer') }}"
             _ics: "{{ _lbs | selectattr('metadata.namespace', 'in', ingress_namespaces) }}"
+      rescue:
+        - name: Query Ingress controller services
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ molecule_local_kubeconfig }}"
+            kind: Service
+          register: _svc_info
 
-    - name: Verify ingress controller addresses
+        - name: Ignore missing Ingress controllers
+          ansible.builtin.set_fact:
+            molecule_rke2_ingress_services: "{{ _svc_info.resources | length }}"
+
+    - name: Verify Ingress controller addresses
       block:
         - name: Wait for Ingress controller IPs to be assigned
           kubernetes.core.k8s_info:
