@@ -191,7 +191,7 @@
               - _routes | length > 0
               - _routes_best | length > 0
             fail_msg: "No best route registered for prefix {{ item }}"
-            success_msg: "Best path found for prefix {{ item }} through peer {{ (_routes_best | first).peerId }}"
+            success_msg: "Best path found for prefix {{ item }} through peers {{ _routes_best | map(attribute='peerId') }}"
           vars:
             _routes: "{{ _bgp_routes.routes[item] | default([]) }}"
             _routes_valid: "{{ _routes | selectattr('valid', 'defined') | selectattr('valid', 'equalto', true) }}"
