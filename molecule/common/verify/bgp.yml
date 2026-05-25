@@ -335,13 +335,24 @@
 
     - name: Verify HTTP/HTTPS connectivity via ingress
       block:
-        - name: Query ingress namespaces
+        - name: Wait for Ingress IPs to be assigned
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ molecule_local_kubeconfig }}"
+            kind: Ingress
+          register: _ingress_info
+          vars:
+            _ingresses: "{{ _ingress_info.resources | selectattr('status.loadBalancer.ingress', 'defined') | map(attribute='status.loadBalancer.ingress') }}"
+            _ips: "{{ _ingresses | map('first') | map(attribute='ip') | list }}"
+          until: (_ingresses | length > 0) and (_ips | length == _ingresses | length)
+          retries: 15
+          delay: 20
+
+        - name: Set Ingress facts
           ansible.builtin.set_fact:
             _ingress_data: "{{ _keys | zip(_values) | map('combine') }}"
           vars:
-            _ingresses: "{{ query('kubernetes.core.k8s', kubeconfig=molecule_local_kubeconfig, kind='Ingress') }}"
-            _ips: "{{ _ingresses | map(attribute='status.loadBalancer.ingress') | map('first') | map(attribute='ip') }}"
-            _hosts: "{{ _ingresses | map(attribute='spec.tls') | map('first') | map(attribute='hosts') | map('first') }}"
+            _ips: "{{ _ingress_info.resources | map(attribute='status.loadBalancer.ingress') | map('first') | map(attribute='ip') }}"
+            _hosts: "{{ _ingress_info.resources | map(attribute='spec.tls') | map('first') | map(attribute='hosts') | map('first') }}"
             _keys: "{{ _hosts | map('nephelaiio.plugins.to_dict', 'key') }}"
             _values: "{{ _ips | map('nephelaiio.plugins.to_dict', 'value') }}"
 
