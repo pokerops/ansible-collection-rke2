@@ -13,6 +13,57 @@
     bgp_hop_names: "{{ groups[molecule_bgp_group] }}"
     bgp_hop_addrs: "{{ bgp_hop_names | map('extract', hostvars, ['ansible_default_ipv4', 'address']) }}"
   tasks:
+    - name: Verify ArgoCD Ingress Applications
+      block:
+        - name: Query ArgoCD Ingress applications
+          kubernetes.core.k8s_info:
+            api_version: argoproj.io/v1alpha1
+            kind: Application
+            namespace: argocd
+            kubeconfig: "{{ molecule_local_kubeconfig }}"
+          register: _argocd_apps_query
+          retries: 15
+          delay: 20
+          vars:
+            _apps_count: "{{ molecule_rke2_ingress_services | int }}"
+            _apps_all: "{{ _argocd_apps_query.resources }}"
+            _apps_ics: "{{ _apps_all | selectattr('spec.destination.namespace', 'in', ingress_namespaces )}}"
+            _apps_ko: "{{ _apps_ics | rejectattr('status.health.status', 'equalto', 'Healthy') }}"
+          until:
+            - _apps_ko | length == 0
+            - _apps_ics | length == _apps_count | int
+
+      always:
+        - name: Query ArgoCD Ingress applications
+          kubernetes.core.k8s_info:
+            api_version: argoproj.io/v1alpha1
+            kind: Application
+            namespace: argocd
+            kubeconfig: "{{ molecule_local_kubeconfig }}"
+          register: _argocd_apps_query
+
+        - name: Set ArgoCD Ingress application facts
+          ansible.builtin.set_fact:
+            _argocd_ingress_controller_apps: "{{ _apps_ics }}"
+          vars:
+            _apps_all: "{{ _argocd_apps_query.resources }}"
+            _apps_ics: "{{ _apps_all | selectattr('spec.destination.namespace', 'in', ingress_namespaces )}}"
+
+        - name: Verify ArgocD Ingress application count
+          ansible.builtin.assert:
+            that: _apps_ics | length == _apps_count | int
+            fail_msg: "Expected {{ _apps_count }} applications, got {{ _apps_ics | map(attribute='metadata.name') }}"
+          vars:
+            _apps_count: "{{ molecule_rke2_ingress_services | int }}"
+            _apps_ics: "{{ _argocd_ingress_controller_apps }}"
+
+        - name: Verify ArgoCD Ingress application status
+          ansible.builtin.assert:
+            that: _apps_ko | length == 0
+            fail_msg: "The following ingress controllers have failed {{ _apps_ko | map(attribute='metadata.name') }}"
+          vars:
+            _apps_ko: "{{ _argocd_ingress_controller_apps | rejectattr('status.health.status', 'equalto', 'Healthy') }}"
+
     - name: Verify BGP Peer resources exist
       block:
         - name: Query BGPPeer resources
@@ -187,6 +238,7 @@
           ansible.builtin.shell:
             cmd: "docker exec frr vtysh -c 'show bgp summary json'"
           register: _bgp_summary_query
+          changed_when: false
 
         - name: Parse BGP neighbor data
           ansible.builtin.set_fact:
@@ -270,12 +322,12 @@
             _routes_wnexthops: "{{ _routes_ingress | selectattr('nexthops', 'defined') }}"
             _routes_hopcount: "{{ _routes_wnexthops | map(attribute='nexthops') | map('length') }}"
           register: _frr_route_query
-          changed_when: false
           retries: 30
           delay: 20
           until:
             - _routes_wnexthops | length == _ingress_ips | length
             - _routes_hopcount | reject('equalto', bgp_hop_addrs | length) | length == 0
+          changed_when: false
 
         - name: Parse FRR route data
           ansible.builtin.set_fact:
@@ -307,6 +359,7 @@
           ansible.builtin.shell:
             cmd: "docker exec frr ip -j -d route show"
           register: _frr_route_query
+          changed_when: false
 
         - name: Debug FRR route data
           ansible.builtin.debug:
@@ -369,6 +422,7 @@
           ansible.builtin.shell:
             cmd: "ip -j -d route show"
           register: _host_route_query
+          changed_when: false
 
         - name: Debug local route data
           ansible.builtin.debug:
