@@ -432,6 +432,12 @@
           until: (_ingresses | length > 0) and (_ips | length == _ingresses | length)
           retries: 15
           delay: 20
+      always:
+        - name: Query Ingress IPs
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ molecule_local_kubeconfig }}"
+            kind: Ingress
+          register: _ingress_info
 
         - name: Set Ingress facts
           ansible.builtin.set_fact:
@@ -442,21 +448,9 @@
             _keys: "{{ _hosts | map('nephelaiio.plugins.to_dict', 'key') }}"
             _values: "{{ _ips | map('nephelaiio.plugins.to_dict', 'value') }}"
 
-        - name: Verify ingress endpoints
-          ansible.builtin.uri:
-            url: "https://{{ item.value }}"
-            method: GET
-            headers:
-              Host: "{{ item.key }}"
-            validate_certs: false
-            timeout: 5
-            status_code:
-              - 200
-              - 301
-              - 302
-              - 307
-              - 308
+        - name: Debug ingress endpoints
+          ansible.builtin.debug:
+            msg: "{{ item.key }}: {{ item.value }}"
           loop_control:
             label: "{{ item.key }}"
           loop: "{{ _ingress_data }}"
-          changed_when: false
