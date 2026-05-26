@@ -61,6 +61,8 @@ provisioner:
           # Optional rke2 params
           rke2_argocd_apps_pokerops_revision: "{{ lookup('ansible.builtin.env', 'MOLECULE_REVISION', default='HEAD') }}"
           rke2_nginx_controller_deploy: false
+          rke2_argocd_ingress_class: traefik-private
+          rke2_longhorn_ingress_class: traefik-private
           # Required rke2 params
           rke2_cluster_name: rke2.pokerops.net
           rke2_ippool_private: "172.16.16.0/24"
