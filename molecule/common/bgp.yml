@@ -69,10 +69,13 @@
                !
                address-family ipv4 unicast
                 neighbor metallb-peers activate
+                maximum-paths ibgp {{ groups[_group] | length }}
                exit-address-family
               exit
               !
             mode: "0640"
+          vars:
+            _group: "{{ 'rke2_agent' if 'rke2_agent' in groups else 'rke2_server' }}"
 
         - name: Start FRR container
           community.docker.docker_container:

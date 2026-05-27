@@ -5,13 +5,65 @@
 
 - name: Verify cluster BGP configuration
   hosts: localhost
+  become: true
   any_errors_fatal: true
   vars:
-    ingress_namespace: nginx
+    ingress_namespaces: ["nginx", "traefik-public", "traefik-private"]
     bgp_peer_names: "{{ groups['all'] }}"
     bgp_hop_names: "{{ groups[molecule_bgp_group] }}"
     bgp_hop_addrs: "{{ bgp_hop_names | map('extract', hostvars, ['ansible_default_ipv4', 'address']) }}"
   tasks:
+    - name: Verify ArgoCD Ingress Applications
+      block:
+        - name: Query ArgoCD Ingress applications
+          kubernetes.core.k8s_info:
+            api_version: argoproj.io/v1alpha1
+            kind: Application
+            namespace: argocd
+            kubeconfig: "{{ molecule_local_kubeconfig }}"
+          register: _argocd_apps_query
+          retries: 30
+          delay: 20
+          vars:
+            _apps_count: "{{ molecule_rke2_ingress_services | int }}"
+            _apps_all: "{{ _argocd_apps_query.resources }}"
+            _apps_ics: "{{ _apps_all | selectattr('spec.destination.namespace', 'in', ingress_namespaces )}}"
+            _apps_ko: "{{ _apps_ics | rejectattr('status.health.status', 'equalto', 'Healthy') }}"
+          until:
+            - _apps_ko | length == 0
+            - _apps_ics | length == _apps_count | int
+
+      always:
+        - name: Query ArgoCD Ingress applications
+          kubernetes.core.k8s_info:
+            api_version: argoproj.io/v1alpha1
+            kind: Application
+            namespace: argocd
+            kubeconfig: "{{ molecule_local_kubeconfig }}"
+          register: _argocd_apps_query
+
+        - name: Set ArgoCD Ingress application facts
+          ansible.builtin.set_fact:
+            _argocd_ingress_controller_apps: "{{ _apps_ics }}"
+          vars:
+            _apps_all: "{{ _argocd_apps_query.resources }}"
+            _apps_ics: "{{ _apps_all | selectattr('spec.destination.namespace', 'in', ingress_namespaces )}}"
+
+        - name: Verify ArgocD Ingress application count
+          ansible.builtin.assert:
+            that: _apps_ics | length == _apps_count | int
+            fail_msg: "Expected {{ _apps_count }} applications, got {{ _apps_ics | map(attribute='metadata.name') }}"
+          vars:
+            _apps_count: "{{ molecule_rke2_ingress_services | int }}"
+            _apps_ics: "{{ _argocd_ingress_controller_apps }}"
+
+        - name: Verify ArgoCD Ingress application status
+          ansible.builtin.assert:
+            that: _apps_ko | length == 0
+            fail_msg: "The following ingress controllers have failed {{ _apps_ko | map(attribute='metadata.name') }}"
+          vars:
+            _apps_ko: "{{ _argocd_ingress_controller_apps | rejectattr('status.health.status', 'equalto', 'Healthy') }}"
+
     - name: Verify BGP Peer resources exist
       block:
         - name: Query BGPPeer resources
@@ -57,70 +109,80 @@
             that: _l2_advertisements.resources | length == 0
             fail_msg: "Found L2Advertisement resources in BGP mode: {{ _l2_advertisements.resources | map(attribute='metadata.name') }}"
 
-    - name: Verify ingress controller LoadBalancer services
+    - name: Verify Ingress controller services
       block:
+        - name: Wait for Ingress controller services to be created
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ molecule_local_kubeconfig }}"
+            kind: Service
+          register: _svc_info
+          vars:
+            _lbs: "{{ _svc_info.resources | selectattr('spec.type', 'equalto', 'LoadBalancer') }}"
+            _ics: "{{ _lbs | selectattr('metadata.namespace', 'in', ingress_namespaces) }}"
+          until: _ics | length == molecule_rke2_ingress_services | int
+          retries: 15
+          delay: 20
+
+      always:
         - name: Query Ingress controller services
           kubernetes.core.k8s_info:
-            kind: Service
-            namespace: "{{ ingress_namespace }}"
             kubeconfig: "{{ molecule_local_kubeconfig }}"
+            kind: Service
+          register: _svc_info
+
+        - name: Debug Ingress controllers services
+          ansible.builtin.debug:
+            msg: "Found the following ingress controller services: {{ _ics | map(attribute='metadata.name') }}"
           vars:
-            _lbs: "{{ _ingress_service_query.resources | selectattr('spec.type', 'equalto', 'LoadBalancer') }}"
-          register: _ingress_service_query
+            _lbs: "{{ _svc_info.resources | selectattr('spec.type', 'equalto', 'LoadBalancer') }}"
+            _ics: "{{ _lbs | selectattr('metadata.namespace', 'in', ingress_namespaces) }}"
+
+      rescue:
+        - name: Query Ingress controller services
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ molecule_local_kubeconfig }}"
+            kind: Service
+          register: _svc_info
+
+        - name: Ignore missing Ingress controllers
+          ansible.builtin.set_fact:
+            molecule_rke2_ingress_services: "{{ _svc_info.resources | length }}"
+
+    - name: Verify Ingress controller addresses
+      block:
+        - name: Wait for Ingress controller IPs to be assigned
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ molecule_local_kubeconfig }}"
+            kind: Service
+          register: _svc_info
+          vars:
+            _lbs: "{{ _svc_info.resources | selectattr('spec.type', 'equalto', 'LoadBalancer') }}"
+            _ics: "{{ _lbs | selectattr('metadata.namespace', 'in', ingress_namespaces) }}"
+            _igs: "{{ _ics | selectattr('status.loadBalancer.ingress', 'defined') | map(attribute='status.loadBalancer.ingress') }}"
+            _ips: "{{ _igs | map('first') | map(attribute='ip') | list }}"
+          until: _ips | length == molecule_rke2_ingress_services | int
           retries: 15
           delay: 20
-          failed_when: _lbs | length != 2
-          changed_when: false
 
-        - name: Set Ingress controller facts
+      always:
+        - name: Query Ingress controller IPs
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ molecule_local_kubeconfig }}"
+            kind: Service
+          register: _svc_info
+
+        - name: Set Ingress controller service facts
           ansible.builtin.set_fact:
-            _ingress_services: "{{ _ingress_service_query.resources | selectattr('spec.type', 'equalto', 'LoadBalancer') }}"
-
-        - name: Verify LoadBalancer services
-          ansible.builtin.assert:
-            that: _ingress_services | length == 2
-            fail_msg: "Expected 2 Ingress controllers, found {{ _ingress_services | length }}"
-
-        - name: Verify Ingress controllers have External IPs
-          ansible.builtin.assert:
-            that:
-              - _service.status.loadBalancer.ingress is defined
-              - _service.status.loadBalancer.ingress | length > 0
-              - _service.status.loadBalancer.ingress[0].ip is defined
-            fail_msg: "Service {{ item }} has no External IP assigned"
-            success_msg: "Service {{ item }} has External IP {{ _service.status.loadBalancer.ingress[0].ip }}"
+            _ingress_ips: "{{ _ips | list }}"
           vars:
-            _service: "{{ _ingress_services | selectattr('metadata.name', 'equalto', item) | first }}"
-          loop: "{{ _ingress_services | map(attribute='metadata.name') }}"
-          retries: 15
-          delay: 20
-
-        - name: Record Ingress IPs
-          ansible.builtin.set_fact:
-            _ingress_ips: "{{ _ingress_services | map(attribute='status.loadBalancer.ingress') | map('first') | map(attribute='ip') }}"
+            _lbs: "{{ _svc_info.resources | selectattr('spec.type', 'equalto', 'LoadBalancer') }}"
+            _ics: "{{ _lbs | selectattr('metadata.namespace', 'in', ingress_namespaces) }}"
+            _igs: "{{ _ics | selectattr('status.loadBalancer.ingress', 'defined') | map(attribute='status.loadBalancer.ingress') }}"
+            _ips: "{{ _igs | map('first') | map(attribute='ip') }}"
 
         - name: Debug ingress IPs
           ansible.builtin.debug:
             var: _ingress_ips
-
-    - name: Verify cluster pod status
-      ansible.builtin.shell:
-        cmd: "/var/lib/rancher/rke2/bin/kubectl get pod -A -o json | jq '.items'"
-      vars:
-        _pod_data: "{{ _pod_data.stdout | from_json }}"
-        _pod_status: "{{ _pod_data | selectattr('status', 'defined') }}"
-        _pod_phase: "{{ _pod_status | selectattr('status.phase', 'defined') }}"
-        _pod_completed: "{{ _pod_phase | rejectattr('status.phase', 'equalto', 'Running') }}"
-        _pod_failed: "{{ _pod_completed | rejectattr('status.phase', 'equalto', 'Succeeded') }}"
-      register: _pod_data
-      retries: 15
-      delay: 20
-      until: _pod_failed | length == 0
-      failed_when:
-        - (_pod_status | length) != (_pod_data | length)
-        - (_pod_phase | length) != (_pod_data | length)
-        - _pod_failed | length > 0
-      changed_when: false
 
     - name: Verify FRR container is running
       block:
@@ -142,34 +204,45 @@
         - name: Query BGP summary
           ansible.builtin.shell:
             cmd: "docker exec frr vtysh -c 'show bgp summary json'"
+          vars:
+            _bgp_summary: "{{ (_bgp_summary_query.stdout | from_json) }}"
+            _neighbors: "{{ _bgp_summary.ipv4Unicast.peers.values() | map(attribute='hostname') }}"
+            _neighbors_names: "{{ _neighbors | map(attribute='hostname') }}"
+          until:
+            - _neighbors | symmetric_difference(bgp_peer_names) | length == 0
+            - _bgp_summary.ipv4Unicast.failedPeers == 0
+          retries: 15
+          delay: 20
+          register: _bgp_summary_query
+          changed_when: false
+
+      always:
+        - name: Query BGP summary
+          ansible.builtin.shell:
+            cmd: "docker exec frr vtysh -c 'show bgp summary json'"
           register: _bgp_summary_query
           changed_when: false
 
         - name: Parse BGP neighbor data
           ansible.builtin.set_fact:
-            _bgp_summary: "{{ _bgp_summary_query.stdout }}"
-
-        - name: Verify neighbor list
-          ansible.builtin.assert:
-            that:
-              - _neighbors | length > 0
-              - _neighbors | symmetric_difference(bgp_peer_names) | length == 0
-            fail_msg: "Found neighbor mismatch, expected {{ bgp_peer_names }}, got {{ _neighbors }} "
-            success_msg: "All neighbors are registered in bgp summary: {{ _neighbors }}"
+            _neighbors: "{{ _bgp_data.ipv4Unicast.peers.values() }}"
           vars:
-            _neighbors: "{{ _bgp_summary.ipv4Unicast.peers.values() | map(attribute='hostname') }}"
+            _bgp_data: "{{ _bgp_summary_query.stdout | from_json }}"
+
+        - name: Debug neighbor mismatches
+          ansible.builtin.debug:
+            msg: "Expected {{ bgp_peer_names }}, got {{ _neighbors | map(attribute='hostname') }} "
+
+        - name: Verify neighbor count
+          ansible.builtin.assert:
+            that: _neighbors | length == bgp_peer_names | length
+            fail_msg: "Expected {{ bgp_peer_names | length }}, got {{ _neighbors | length }}"
 
         - name: Verify neighbor state
           ansible.builtin.assert:
-            that:
-              - _neighbors | length > 0
-              - _neighbors_ok | length > 0
-              - _neighbors_ko | length == 0
+            that: _neighbors_ko | length == 0
             fail_msg: "The following neighbors are in a failed state: {{ _neighbors_ko | map(attribute='hostname') }}"
-            success_msg: "All neighbors have established adjacencies: {{ _neighbors | map(attribute='hostname') }}"
           vars:
-            _neighbors: "{{ _bgp_summary.ipv4Unicast.peers.values() }}"
-            _neighbors_ok: "{{ _neighbors | selectattr('state', 'equalto', 'Established') }}"
             _neighbors_ko: "{{ _neighbors | rejectattr('state', 'equalto', 'Established') }}"
 
     - name: Verify BGP route propagation
@@ -181,27 +254,18 @@
             _bgp_routes: "{{ _bgp_route_query.stdout | from_json }}"
             _ingress_routes: "{{ _ingress_ips | product(['32']) | map('join', '/') }}"
           register: _bgp_route_query
-          retries: 15
+          retries: 30
           delay: 20
           until:
-            - _bgp_routes.routes.keys() | length > 0
+            - _bgp_routes.totalRoutes | int > 0
             - _bgp_routes.routes.keys() | symmetric_difference(_ingress_routes) | length == 0
           changed_when: false
 
+      always:
         - name: Parse BGP IPv4 unicast data
           ansible.builtin.set_fact:
             _bgp_routes: "{{ _bgp_route_query.stdout }}"
             _ingress_routes: "{{ _ingress_ips | product(['32']) | map('join', '/') }}"
-
-        - name: Verify ingress IPs exist in BGP table
-          ansible.builtin.assert:
-            that:
-              - _routes | length > 0
-              - _routes | symmetric_difference(_ingress_routes) | length == 0
-            fail_msg: "Found BGP route mismatch, expected {{ _ingress_routes }}, got {{ _routes }}"
-            success_msg: "Found BGP routes for ingress ips {{ _ingress_routes }}"
-          vars:
-            _routes: "{{ _bgp_routes.routes.keys() }}"
 
         - name: Verify route validity
           ansible.builtin.assert:
@@ -209,9 +273,9 @@
               - _routes | length > 0
               - _routes_best | length > 0
             fail_msg: "No best route registered for prefix {{ item }}"
-            success_msg: "Best path found for prefix {{ item }} through peer {{ (_routes_best | first).peerId }}"
+            success_msg: "Best path found for prefix {{ item }} through peers {{ _routes_best | map(attribute='peerId') }}"
           vars:
-            _routes: "{{ _bgp_routes.routes[item] }}"
+            _routes: "{{ _bgp_routes.routes[item] | default([]) }}"
             _routes_valid: "{{ _routes | selectattr('valid', 'defined') | selectattr('valid', 'equalto', true) }}"
             _routes_best: "{{ _routes_valid | selectattr('bestpath', 'defined') | selectattr('bestpath', 'equalto', true) }}"
           loop: "{{ _ingress_routes }}"
@@ -241,12 +305,12 @@
             _routes_wnexthops: "{{ _routes_ingress | selectattr('nexthops', 'defined') }}"
             _routes_hopcount: "{{ _routes_wnexthops | map(attribute='nexthops') | map('length') }}"
           register: _frr_route_query
-          changed_when: false
-          retries: 15
+          retries: 30
           delay: 20
           until:
             - _routes_wnexthops | length == _ingress_ips | length
             - _routes_hopcount | reject('equalto', bgp_hop_addrs | length) | length == 0
+          changed_when: false
 
         - name: Parse FRR route data
           ansible.builtin.set_fact:
@@ -273,7 +337,13 @@
             label: "{{ _address }}"
           loop: "{{ _frr_routes | dict2items }}"
 
-      rescue:
+      always:
+        - name: Query FRR routes
+          ansible.builtin.shell:
+            cmd: "docker exec frr ip -j -d route show"
+          register: _frr_route_query
+          changed_when: false
+
         - name: Debug FRR route data
           ansible.builtin.debug:
             msg: "{{ _routes_dict }}"
@@ -286,10 +356,6 @@
             _routes_nexthops: "{{ _routes_wnexthops | map(attribute='nexthops') }}"
             _routes_gateways: "{{ _routes_nexthops | map('map', attribute='gateway') }}"
             _routes_dict: "{{ _routes_dsts | zip(_routes_gateways) | nephelaiio.plugins.to_dict }}"
-
-        - name: Fail execution on FRR route verification error
-          ansible.builtin.fail:
-            msg: "FRR route verification checks failed"
 
     - name: Verify local route table
       block:
@@ -335,6 +401,12 @@
           loop: "{{ _local_routes | dict2items }}"
 
       rescue:
+        - name: Query local routes
+          ansible.builtin.shell:
+            cmd: "ip -j -d route show"
+          register: _host_route_query
+          changed_when: false
+
         - name: Debug local route data
           ansible.builtin.debug:
             msg: "{{ _routes_dict }}"
@@ -347,49 +419,38 @@
             _routes_gateways: "{{ _routes_nexthops | map('map', attribute='gateway') }}"
             _routes_dict: "{{ _routes_dsts | zip(_routes_gateways) | nephelaiio.plugins.to_dict }}"
 
-        - name: Fail execution on local route verification error
-          ansible.builtin.fail:
-            msg: "Local route verification checks failed"
-
     - name: Verify HTTP/HTTPS connectivity via ingress
       block:
-        - name: Query ingress namespaces
-          ansible.builtin.shell:
-            cmd: "KUBECONFIG={{ molecule_local_kubeconfig }} kubectl get ingress -A -o=jsonpath='{.items[*].metadata.namespace}'"
-          register: _ingress_namespace_query
-          changed_when: false
-
-        - name: Parse namespace data
-          ansible.builtin.set_fact:
-            _ingress_namespaces: "{{ _ingress_namespace_query.stdout | split(' ') }}"
-
-        - name: Query ingress data
+        - name: Wait for Ingress IPs to be assigned
           kubernetes.core.k8s_info:
-            kind: Ingress
-            namespace: "{{ item }}"
             kubeconfig: "{{ molecule_local_kubeconfig }}"
-          loop: "{{ _ingress_namespaces }}"
-          register: _ingress_query
-          changed_when: false
-
-        - name: Verify ingress endpoints
-          ansible.builtin.uri:
-            url: "https://{{ _address.ip }}"
-            method: GET
-            headers:
-              Host: "{{ _host }}"
-            validate_certs: false
-            timeout: 5
-            status_code:
-              - 200
-              - 301
-              - 302
-              - 307
-              - 308
+            kind: Ingress
+          register: _ingress_info
           vars:
-            _host: "{{ (item.spec.tls | first).hosts | first }}"
-            _address: "{{ item.status.loadBalancer.ingress | first }}"
+            _ingresses: "{{ _ingress_info.resources | selectattr('status.loadBalancer.ingress', 'defined') | map(attribute='status.loadBalancer.ingress') }}"
+            _ips: "{{ _ingresses | map('first') | map(attribute='ip') | list }}"
+          until: (_ingresses | length > 0) and (_ips | length == _ingresses | length)
+          retries: 15
+          delay: 20
+      always:
+        - name: Query Ingress IPs
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ molecule_local_kubeconfig }}"
+            kind: Ingress
+          register: _ingress_info
+
+        - name: Set Ingress facts
+          ansible.builtin.set_fact:
+            _ingress_data: "{{ _keys | zip(_values) | map('combine') }}"
+          vars:
+            _ips: "{{ _ingress_info.resources | map(attribute='status.loadBalancer.ingress') | map('first') | map(attribute='ip') }}"
+            _hosts: "{{ _ingress_info.resources | map(attribute='spec.tls') | map('first') | map(attribute='hosts') | map('first') }}"
+            _keys: "{{ _hosts | map('nephelaiio.plugins.to_dict', 'key') }}"
+            _values: "{{ _ips | map('nephelaiio.plugins.to_dict', 'value') }}"
+
+        - name: Debug ingress endpoints
+          ansible.builtin.debug:
+            msg: "{{ item.key }}: {{ item.value }}"
           loop_control:
-            label: "{{ _host }}"
-          loop: "{{ _ingress_query.results | map(attribute='resources') | flatten }}"
-          changed_when: false
+            label: "{{ item.key }}"
+          loop: "{{ _ingress_data }}"

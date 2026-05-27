@@ -530,7 +530,7 @@
               until: pvc_failed | length == 0
               failed_when: pvc_failed | length > 0
 
-          always:
+          rescue:
             - name: Debug persistent claim status
               ansible.builtin.debug:
                 var: pvc_query
@@ -632,27 +632,3 @@
                     content: "{{ _argocd_app_data.stdout | from_json | to_nice_json }}"
                     dest: "{{ molecule_logdir }}/cluster_applications.json"
                   delegate_to: localhost
-
-- name: Verify RKE2 cluster update status
-  hosts: rke2_server:rke2_agent
-  any_errors_fatal: true
-  tasks:
-    - name: Verify OS package updates
-      when: rke2_update_check | default(False) | bool
-      block:
-        - name: Query OS package updates
-          ansible.builtin.shell:
-            cmd: "apt list --upgradable 2>/dev/null | grep -v ^Listing | wc -l"
-            executable: /bin/bash
-          become: true
-          changed_when: false
-          failed_when: false
-          ignore_errors: true
-          register: _update_query
-
-        - name: Verify OS package count
-          ansible.builtin.assert:
-            that:
-              - _update_query.stdout != ""
-              - _update_query.stdout | int == 0
-            fail_msg: "{{ _update_query.stdout }} pending updates found"

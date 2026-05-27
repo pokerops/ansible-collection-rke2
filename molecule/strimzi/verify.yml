@@ -952,6 +952,10 @@
               register: consumer_output_after
               changed_when: false
 
+            - name: Debug Kafka consumer log output
+              ansible.builtin.debug:
+                var: consumer_output_after
+
             - name: Save messages after restore
               ansible.builtin.set_fact:
                 kafka_messages_after_restore: >-

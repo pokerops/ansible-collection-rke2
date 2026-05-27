@@ -2,22 +2,22 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: kserve-crd
+  name: traefik
   namespace: argocd
   annotations:
-    argocd.argoproj.io/sync-wave: "-2"
+    argocd.argoproj.io/sync-wave: "-5"
 spec:
   project: default
   source:
-    chart: kserve-crd-minimal
-    repoURL: oci://ghcr.io/kserve/charts/kserve-crd-minimal
-    targetRevision: "v0.15.2"
+    chart: traefik
+    repoURL: https://traefik.github.io/charts
+    targetRevision: "40.0.0"
   destination:
     server: https://kubernetes.default.svc
-    namespace: kube-system
+    namespace: traefik
   syncPolicy:
     automated:
-      prune: false
+      prune: true
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
