@@ -13,6 +13,7 @@
     kubeconfig_path: "{{ molecule_local_kubeconfig }}"
     kafka_operator_namespace: "strimzi"
     kafka_image: "quay.io/strimzi/kafka:0.45.0-kafka-3.9.0"
+    strimzi_deployment_name: "strimzi-cluster-operator"
 
   tasks:
     - name: Test velero with strimzi
@@ -851,6 +852,14 @@
               retries: 60
               delay: 15
 
+            - name: Capture restored clusterId before scale up operator
+              ansible.builtin.set_fact:
+                restored_cluster_id: "{{ restored_kafka.resources[0].status.clusterId }}"
+
+            - name: Print restored clusterId before scale up operator
+              ansible.builtin.set_fact:
+                restored_cluster_id: "{{ restored_kafka.resources[0].status.clusterId }}"
+
             - name: Scale up Strimzi Cluster Operator
               kubernetes.core.k8s:
                 kubeconfig: "{{ kubeconfig_path }}"
@@ -891,7 +900,37 @@
                         enabled: true
                 state: patched
 
-            - name: Capture restored clusterId
+            - name: Get Strimzi operator pod name
+              kubernetes.core.k8s_info:
+                kubeconfig: "{{ kubeconfig_path }}"
+                namespace: "{{ kafka_operator_namespace }}"
+                kind: Pod
+                label_selectors:
+                  - "name=strimzi-cluster-operator"
+                  - "strimzi.io/kind=cluster-operator"
+              register: strimzi_pods
+
+            - name: Set Strimzi operator pod name fact
+              ansible.builtin.set_fact:
+                strimzi_pod_name: "{{ strimzi_pods.resources | selectattr('status.phase', 'equalto', 'Running') | map(attribute='metadata.name') | first }}"
+                strimzi_reconciled: false
+
+            - name: Wait for Strimzi reconciliation
+              kubernetes.core.k8s_log:
+                kubeconfig: "{{ kubeconfig_path }}"
+                namespace: "{{ kafka_operator_namespace }}"
+                name: "{{ strimzi_pod_name }}"
+                container: strimzi-cluster-operator
+              register: strimzi_output
+              until: "strimzi_output.log | regex_search('Kafka\\(' + kafka_namespace + '/' + kafka_cluster_name + '\\): reconciled') is not none"
+              retries: 60
+              delay: 15
+
+            - name: Capture restored clusterId after scale up operator
+              ansible.builtin.set_fact:
+                restored_cluster_id: "{{ restored_kafka.resources[0].status.clusterId }}"
+
+            - name: Print restored clusterId after scale up operator
               ansible.builtin.set_fact:
                 restored_cluster_id: "{{ restored_kafka.resources[0].status.clusterId }}"
 
