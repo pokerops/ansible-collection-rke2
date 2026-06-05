@@ -28,10 +28,14 @@
             _apps_count: "{{ molecule_rke2_ingress_services | int }}"
             _apps_all: "{{ _argocd_apps_query.resources }}"
             _apps_ics: "{{ _apps_all | selectattr('spec.destination.namespace', 'in', ingress_namespaces )}}"
-            _apps_ko: "{{ _apps_ics | rejectattr('status.health.status', 'equalto', 'Healthy') }}"
+            _apps_nostatus: "{{ _apps_ics | rejectattr('status.health.status', 'defined') }}"
+            _apps_status: "{{ _apps_ics | selectattr('status.health.status', 'defined') }}"
+            _apps_unhealthy: "{{ _apps_status | rejectattr('status.health.status', 'equalto', 'Healthy') }}"
+            _apps_healthy: "{{ _apps_status | selectattr('status.health.status', 'equalto', 'Healthy') }}"
           until:
-            - _apps_ko | length == 0
-            - _apps_ics | length == _apps_count | int
+            - _apps_nostatus | length == 0
+            - _apps_unhealthy | length == 0
+            - _apps_healthy | length == _apps_count | int
 
       always:
         - name: Query ArgoCD Ingress applications
@@ -60,9 +64,9 @@
         - name: Verify ArgoCD Ingress application status
           ansible.builtin.assert:
             that: _apps_ko | length == 0
-            fail_msg: "The following ingress controllers have failed {{ _apps_ko | map(attribute='metadata.name') }}"
+            fail_msg: "The following ingress controllers have failed {{ _apps_unhealthy | map(attribute='metadata.name') }}"
           vars:
-            _apps_ko: "{{ _argocd_ingress_controller_apps | rejectattr('status.health.status', 'equalto', 'Healthy') }}"
+            _apps_unhealthy: "{{ _argocd_ingress_controller_apps | rejectattr('status.health.status', 'equalto', 'Healthy') }}"
 
     - name: Verify BGP Peer resources exist
       block:
