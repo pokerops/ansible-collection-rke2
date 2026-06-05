@@ -63,7 +63,7 @@
 
         - name: Verify ArgoCD Ingress application status
           ansible.builtin.assert:
-            that: _apps_ko | length == 0
+            that: _apps_unhealthy | length == 0
             fail_msg: "The following ingress controllers have failed {{ _apps_unhealthy | map(attribute='metadata.name') }}"
           vars:
             _apps_unhealthy: "{{ _argocd_ingress_controller_apps | rejectattr('status.health.status', 'equalto', 'Healthy') }}"
