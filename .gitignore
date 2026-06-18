@@ -14,4 +14,4 @@ libvirt/
 **/__pycache__/**
 pokerops-rke2-*.tar.gz
 *.ymle
-
+*.tgz

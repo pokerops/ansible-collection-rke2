@@ -3,7 +3,7 @@
   hosts: localhost
   gather_facts: true
   vars:
-    kafka_namespace: "molecule-kafka"
+    kafka_namespace: "{{ molecule_namespace | default('molecule') }}"
     kafka_cluster_name: "molecule-kafka-cluster"
     topic_name: "test-topic"
     message_count: 10
@@ -14,7 +14,6 @@
     kafka_operator_namespace: "strimzi"
     kafka_image: "quay.io/strimzi/kafka:0.45.0-kafka-3.9.0"
     strimzi_deployment_name: "strimzi-cluster-operator"
-
   tasks:
     - name: Test velero with strimzi
       block:

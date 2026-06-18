@@ -83,7 +83,7 @@
               aws_access_key_id={{ rke2_velero_s3_access_key_id }}
               aws_secret_access_key={{ rke2_velero_s3_secret_access_key }}
 
-        - name: Wait for BackupStorageLocations crd
+        - name: Wait for BackupStorageLocations CRD
           kubernetes.core.k8s_info:
             kubeconfig: "{{ _config_path }}"
             kind: CustomResourceDefinition
@@ -115,8 +115,8 @@
                   bucket: "{{ rke2_velero_s3_bucket }}"
                 config:
                   region: "{{ rke2_velero_s3_region }}"
-                  s3ForcePathStyle: "" # set to "true" when using MinIO or other S3-compatible services
-                  s3Url: ""
+                  s3ForcePathStyle: "{{ rke2_velero_s3_forcepathstyle | default('') }}" # set to "true" when using MinIO or other S3-compatible services
+                  s3Url: "{{ rke2_velero_s3_url | default('') }}"
                   insecureSkipTLSVerify: "true"
                 credential:
                   name: velero-s3-auth

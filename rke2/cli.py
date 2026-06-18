@@ -26,47 +26,6 @@ type HelmChartVersions = dict[str, Versions]
 type LogLevel = int
 
 
-class GithubChart(pydantic.BaseModel):
-    """Pydantic model representing a GitHub Helm chart."""
-
-    project: str
-    _repository: str
-    _organization: str
-    _chart: str
-    _project: str
-
-    def __init__(self, project: str) -> None:
-        """Initialize GithubChart organization."""
-        super().__init__(project=project)
-        match project:
-            case "grafana-operator":
-                self._repository = project
-                self._organization = "grafana"
-                chart_path = "helm_charts"
-            case _:
-                raise ValueError(f"Unsupported repository: {project}")
-        self._chart = f"oci://ghcr.io/{self._organization}/{chart_path}/{project}"
-        self._project = f"https://api.github.com/repos/{self._organization}/{self._repository}/releases/latest"
-
-    def chart(self) -> str:
-        """Return the chart URL."""
-        return self._chart
-
-    def latest(self) -> str:
-        """Return the releases URL."""
-        session = create_http_session()
-        response = session.get(self._project)
-        response.raise_for_status()
-        release_data = response.json()  # pyright: ignore[reportAny]
-        chart_version = str(release_data["tag_name"])  # pyright: ignore[reportAny]
-        return chart_version
-
-
-GITHUB_CHARTS = [
-    GithubChart(project="grafana-operator"),
-]
-
-
 class Application(pydantic.BaseModel):
     """Pydantic model representing an ArgoCD Application manifest."""
 
@@ -160,11 +119,9 @@ def argocd_application(file: Path) -> Application | None:
 def argocd_application_chart(file: Path) -> Application | None:
     """Check if a file is an ArgoCD Application manifest with a Helm chart."""
     try:
-        valid_protocols = ["http://", "https://", "oci://"]
         app = argocd_application(file)
         if app and app.spec and app.spec.source and app.spec.source.repoURL and app.spec.source.chart:
-            if any([app.spec.source.repoURL.startswith(proto) for proto in valid_protocols]):
-                return app
+            return app
     except AttributeError as e:
         typer.echo(f"Error parsing file {file}: {e}")
     return None
@@ -193,10 +150,9 @@ def argocd_application_helm_index(app: Application) -> HelmChart | None:
         create_file(config_repository)
         create_file(config_registry)
         _ = os.makedirs(config_cache, exist_ok=True)
-        github_charts = [gh.chart() for gh in GITHUB_CHARTS]
+        chart_name = app.spec.source.chart
+        chart_repo = app.spec.source.repoURL
         try:
-            chart_name = app.spec.source.chart
-            chart_repo = app.spec.source.repoURL
             if not chart_repo:
                 typer.echo(f"Skipping chart {chart_name} due to missing repoURL.")
                 return None
@@ -211,18 +167,14 @@ def argocd_application_helm_index(app: Application) -> HelmChart | None:
                 chart_data = yaml.safe_load(result.stdout.strip())  # pyright: ignore[reportAny]
                 chart = HelmChart(**chart_data[0])  # pyright: ignore[reportAny]
                 return chart
-            elif chart_repo in github_charts:
-                github_repos = [gh for gh in GITHUB_CHARTS if gh.chart() == chart_repo]
-                chart_version = github_repos[0].latest()
-                return HelmChart(
-                    name=chart_name,
-                    version=chart_version,
-                )
             else:
-                typer.echo(f"Unsupported Helm chart repository URL: {chart_repo}")
-                return None
+                cmd_show = f"helm show chart oci://{chart_repo}/{chart_name}"
+                result = run(cmd_show.split(), check=True, capture_output=True, text=True)
+                chart_data = yaml.safe_load(result.stdout.strip())  # pyright: ignore[reportAny]
+                chart = HelmChart(**chart_data)  # pyright: ignore[reportAny]
+                return chart
         except (CalledProcessError, yaml.YAMLError, FileNotFoundError):
-            typer.echo(f"Error fetching Helm chart index for {app.spec.source.repoURL}")
+            typer.echo(f"Error fetching Helm chart index for {chart_repo}")
             return None
         except (AttributeError, requests.HTTPError) as e:
             typer.echo(f"Error parsing Helm index data: {e}")
