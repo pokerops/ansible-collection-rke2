@@ -1,9 +1,9 @@
 ---
-- name: Verify Velero backup and restore
+- name: Verify Velero Zalando backup and restore
   hosts: localhost
   gather_facts: true
   vars:
-    postgres_namespace: "molecule"
+    postgres_namespace: "{{ molecule_namespace | default('molecule') }}"
     postgres_cluster_name: "molecule-postgres-cluster"
     postgres_database_name: "pagila"
     postgres_service_name: "{{ postgres_cluster_name }}"

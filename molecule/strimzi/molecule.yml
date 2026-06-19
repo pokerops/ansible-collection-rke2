@@ -93,15 +93,15 @@ provisioner:
                   syncOptions:
                     - ApplyOutOfSyncOnly=true
                 revisionHistoryLimit:
-          # Test rke2 params
-          rke2_retry_num: 30
-          rke2_skip_deploy: false
           rke2_velero_s3: "{{ rke2_cluster_name | replace('.', '-') }}"
           rke2_velero_s3_region: us-east-1
           rke2_velero_s3_bucket: "{{ rke2_velero_s3 }}-strimzi-bucket"
           rke2_velero_s3_policy: "{{ rke2_velero_s3 }}-strimzi-policy"
           rke2_velero_s3_user: "{{ rke2_velero_s3 }}-strimzi-user"
           rke2_velero_s3_storage: "default"
+          # Test rke2 params
+          rke2_retry_num: 30
+          rke2_skip_deploy: false
 verifier:
   name: ansible
 scenario:
