@@ -108,7 +108,7 @@
         label_selectors:
           - app.kubernetes.io/name=seaweedfs
       vars:
-        _ready: "{{ _sw_pods.resources | json_query('[].status.conditions[?type==`Ready`]') | length }}"
+        _ready: "{{ _pod_query.resources | json_query('[].status.conditions[?type==`Ready`].status[]') | length }}"
         _pods: "{{ _pod_query.resources | length }}"
       register: _pod_query
       until:
