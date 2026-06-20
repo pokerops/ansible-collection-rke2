@@ -102,7 +102,7 @@ global:
 ## Collection roles
 
 - pokerops.rke2.components
-- pokerops.rke2.rke2
+- [pokerops.rke2.rke2](https://github.com/lablabs/ansible-role-rke2)
 
 ## Collection playbooks
 
