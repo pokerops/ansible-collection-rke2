@@ -99,6 +99,24 @@
               replicas: 1
               port: "{{ seaweedfs_service_port }}"
 
+    - name: Wait for all SeaweedFS pods to be Ready
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        api_version: v1
+        kind: Pod
+        namespace: "{{ seaweedfs_cluster_namespace }}"
+        label_selectors:
+          - app.kubernetes.io/name=seaweedfs
+      vars:
+        _ready: "{{ _sw_pods.resources | json_query('[].status.conditions[?type==`Ready`]') | length }}"
+        _pods: "{{ _pod_query.resources | length }}"
+      register: _pod_query
+      until:
+        - _pods | int >= 4
+        - _pods | int == _ready | int
+      retries: 60
+      delay: 5
+
     - name: Create SeawedFS bucket
       kubernetes.core.k8s:
         kubeconfig: "{{ molecule_local_kubeconfig }}"
