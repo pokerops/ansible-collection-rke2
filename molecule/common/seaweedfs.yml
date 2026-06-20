@@ -200,6 +200,11 @@
         name: "{{ seaweedfs_service_name }}"
         namespace: "{{ seaweedfs_cluster_namespace }}"
       register: _svc_query
+      retries: 30
+      delay: 12
+      until:
+        - _svc_query.resources | length > 0
+        - _svc_query.resources[0].spec.clusterIP | default('') != ''
 
     - name: Set Velero configuration facts
       ansible.builtin.set_fact:
