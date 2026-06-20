@@ -68,7 +68,7 @@
         - _deployment_count | int > 0
         - _deployment_ready | int > 0
       retries: 30
-      delay: 5
+      delay: 12
 
     - name: Create SeaweedFS cluster
       kubernetes.core.k8s:
