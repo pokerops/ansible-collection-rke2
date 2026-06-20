@@ -1,0 +1,300 @@
+---
+- name: Deploy SeaweedFS as an in-cluster S3 target
+  hosts: localhost
+  connection: local
+  vars:
+    seaweedfs_cluster_name: seaweedfs
+    seaweedfs_cluster_namespace: "{{ molecule_namespace | default('molecule') }}"
+    seaweedfs_cluster_image: "chrislusf/seaweedfs:latest"
+    seaweedfs_service_proto: http
+    seaweedfs_service_name: "{{ seaweedfs_cluster_name }}-s3"
+    seaweedfs_service_port: 8333
+    seaweedfs_service_bucket: velero
+    seaweedfs_service_user: velero
+    seaweedfs_service_secret: auth
+    seaweedfs_service_policy: velero
+    seaweedfs_service_binding: velero-access
+    seaweedfs_velero_secret: velero-auth
+    seaweedfs_operator_chart_template: "../../playbooks/templates/seaweedfs.yml"
+    seaweedfs_operator_chart_manifest: "{{ lookup('ansible.builtin.template', seaweedfs_operator_chart_template) | from_yaml }}"
+  tasks:
+    - name: Query cluster members
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        api_version: v1
+        kind: Node
+        label_selectors:
+          - node-role.kubernetes.io/control-plane=true
+      register: _node_query
+
+    - name: Set cluster facts
+      ansible.builtin.set_fact:
+        _rke2_cluster_master: "{{ _node.metadata.labels['kubernetes.io/hostname'] }}"
+      vars:
+        _node: "{{ _node_query.resources | first }}"
+
+    - name: Create SeaweedFS namespace
+      kubernetes.core.k8s:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        name: "{{ seaweedfs_cluster_namespace }}"
+        api_version: v1
+        kind: Namespace
+        state: present
+
+    - name: Set SeaweedFS facts
+      ansible.builtin.set_fact:
+        seaweedfs_operator_namespace: "{{ seaweedfs_operator_chart_manifest.spec.destination.namespace }}"
+
+    - name: Deploy SeaweedFS operator
+      kubernetes.core.k8s:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        state: present
+        definition: "{{ seaweedfs_operator_chart_manifest }}"
+
+    - name: Wait for the operator controller to be ready
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        api_version: apps/v1
+        kind: Deployment
+        namespace: "{{ seaweedfs_operator_namespace }}"
+        label_selectors:
+          - app.kubernetes.io/name=seaweedfs-operator
+      register: _deployment_query
+      vars:
+        _deployment_count: "{{ _deployment_query.resources | length }}"
+        _deployment: "{{ _deployment_query.resources | first }}"
+        _deployment_ready: "{{ _deployment['status']['readyReplicas'] | default(0) }}"
+      until:
+        - _deployment_count | int > 0
+        - _deployment_ready | int > 0
+      retries: 30
+      delay: 5
+
+    - name: Create SeaweedFS cluster
+      kubernetes.core.k8s:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        state: present
+        definition:
+          apiVersion: seaweed.seaweedfs.com/v1
+          kind: Seaweed
+          metadata:
+            name: "{{ seaweedfs_cluster_name }}"
+            namespace: "{{ seaweedfs_cluster_namespace }}"
+          spec:
+            image: "{{ seaweedfs_cluster_image }}"
+            volumeServerDiskCount: 1
+            master:
+              replicas: 1
+            volume:
+              replicas: 1
+              requests:
+                storage: "{{ seaweedfs_cluster_size | default('2Gi') }}"
+            filer:
+              replicas: 1
+              config: |
+                [leveldb2]
+                enabled = true
+                dir = "/data/filerldb2"
+            s3:
+              replicas: 1
+              port: "{{ seaweedfs_service_port }}"
+
+    - name: Create SeawedFS bucket
+      kubernetes.core.k8s:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        state: present
+        definition:
+          apiVersion: seaweed.seaweedfs.com/v1
+          kind: Bucket
+          metadata:
+            name: "{{ seaweedfs_service_bucket }}"
+            namespace: "{{ seaweedfs_cluster_namespace }}"
+          spec:
+            clusterRef:
+              name: "{{ seaweedfs_cluster_name }}"
+              namespace: "{{ seaweedfs_cluster_namespace }}"
+
+    - name: Create SeaweedFS identity
+      kubernetes.core.k8s:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        state: present
+        definition:
+          apiVersion: seaweed.seaweedfs.com/v1
+          kind: S3Identity
+          metadata:
+            name: "{{ seaweedfs_service_user }}"
+            namespace: "{{ seaweedfs_cluster_namespace }}"
+          spec:
+            seaweedRef:
+              name: "{{ seaweedfs_cluster_name }}"
+
+    - name: Create SeaweedFS credentials
+      kubernetes.core.k8s:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        state: present
+        definition:
+          apiVersion: seaweed.seaweedfs.com/v1
+          kind: S3Credentials
+          metadata:
+            name: "{{ seaweedfs_service_user }}"
+            namespace: "{{ seaweedfs_cluster_namespace }}"
+          spec:
+            seaweedRef:
+              name: "{{ seaweedfs_cluster_name }}"
+            identityRef:
+              name: "{{ seaweedfs_service_user }}"
+            secretRef:
+              name: "{{ seaweedfs_service_secret }}"
+
+    - name: Create SeaweedFS policy
+      kubernetes.core.k8s:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        state: present
+        definition:
+          apiVersion: seaweed.seaweedfs.com/v1
+          kind: S3Policy
+          metadata:
+            name: "{{ seaweedfs_service_policy }}"
+            namespace: "{{ seaweedfs_cluster_namespace }}"
+          spec:
+            seaweedRef:
+              name: "{{ seaweedfs_cluster_name }}"
+            statements:
+              - effect: Allow
+                actions: ["*"]
+                resources: ["*"]
+
+    - name: Bind SeaweedFS policy
+      kubernetes.core.k8s:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        state: present
+        definition:
+          apiVersion: seaweed.seaweedfs.com/v1
+          kind: S3PolicyBinding
+          metadata:
+            name: "{{ seaweedfs_service_binding }}"
+            namespace: "{{ seaweedfs_cluster_namespace }}"
+          spec:
+            seaweedRef:
+              name: seaweedfs
+            policyRef:
+              name: "{{ seaweedfs_service_policy }}"
+            subjects:
+              - kind: S3Identity
+                name: "{{ seaweedfs_service_user }}"
+
+    - name: Query SeaweedFS credentials
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        api_version: v1
+        kind: Secret
+        name: "{{ seaweedfs_service_secret }}"
+        namespace: "{{ seaweedfs_cluster_namespace }}"
+      register: _auth_query
+
+    - name: Query SeaweedFS service
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        api_version: v1
+        kind: Service
+        name: "{{ seaweedfs_service_name }}"
+        namespace: "{{ seaweedfs_cluster_namespace }}"
+      register: _svc_query
+
+    - name: Set Velero configuration facts
+      ansible.builtin.set_fact:
+        rke2_velero_s3_endpoint: "{{ seaweedfs_service_proto }}://{{ _svcaddr }}:{{ seaweedfs_service_port }}"
+        rke2_velero_s3_bucket: "{{ seaweedfs_service_bucket }}"
+        rke2_velero_s3_access_key_id: "{{ _secret.data.accessKey | b64decode }}"
+        rke2_velero_s3_secret_access_key: "{{ _secret.data.secretKey | b64decode }}"
+        rke2_velero_test_object_key: velero/test-file.txt
+        rke2_velero_s3_data: "{{ ansible_date_time.iso8601 }}"
+      vars:
+        _secret: "{{ _auth_query.resources | first }}"
+        _service: "{{ _svc_query.resources | first }}"
+        _svcaddr: "{{ _service.spec.clusterIP }}"
+
+    - name: Create temporary file
+      ansible.builtin.tempfile:
+        state: file
+        prefix: "molecule"
+        suffix: ".txt"
+      register: temp_file
+      changed_when: false
+
+    - name: Test bucket permissions
+      delegate_to: "{{ _rke2_cluster_master }}"
+      environment:
+        AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+        AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+        AWS_EC2_METADATA_DISABLED: "true"
+        AWS_REGION: seaweedfs
+      block:
+        - name: Test bucket write
+          amazon.aws.s3_object:
+            endpoint_url: "{{ rke2_velero_s3_endpoint }}"
+            ceph: true
+            bucket: "{{ rke2_velero_s3_bucket }}"
+            object: "{{ rke2_velero_test_object_key }}"
+            content: "{{ rke2_velero_s3_data }}"
+            mode: put
+            access_key: "{{ rke2_velero_s3_access_key_id }}"
+            secret_key: "{{ rke2_velero_s3_secret_access_key }}"
+
+        - name: Test bucket read
+          amazon.aws.s3_object:
+            endpoint_url: "{{ rke2_velero_s3_endpoint }}"
+            bucket: "{{ rke2_velero_s3_bucket }}"
+            object: "{{ rke2_velero_test_object_key }}"
+            mode: get
+            dest: "{{ temp_file.path }}"
+            access_key: "{{ rke2_velero_s3_access_key_id }}"
+            secret_key: "{{ rke2_velero_s3_secret_access_key }}"
+
+        - name: Slurp bucket file content
+          ansible.builtin.slurp:
+            src: "{{ temp_file.path }}"
+          register: _download
+
+        - name: Verify bucket file integrity
+          ansible.builtin.assert:
+            that:
+              - _download.content | b64decode == rke2_velero_s3_data
+            fail_msg: "Downloaded content does not match uploaded content"
+            success_msg: "Content integrity verified - read/write permissions working correctly"
+
+        - name: Test bucket delete permissions
+          amazon.aws.s3_object:
+            endpoint_url: "{{ rke2_velero_s3_endpoint }}"
+            bucket: "{{ rke2_velero_s3_bucket }}"
+            object: "{{ rke2_velero_test_object_key }}"
+            mode: delobj
+            access_key: "{{ rke2_velero_s3_access_key_id }}"
+            secret_key: "{{ rke2_velero_s3_secret_access_key }}"
+
+      always:
+        - name: Remove temporary file
+          file:
+            path: "{{ temp_file.path }}"
+            state: absent
+          ignore_errors: true
+          changed_when: false
+
+    - name: Create Velero credentials secret
+      kubernetes.core.k8s:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: "{{ seaweedfs_velero_secret }}"
+            namespace: "{{ seaweedfs_cluster_namespace }}"
+          type: Opaque
+          data:
+            cloud: "{{ _secret | b64encode }}"
+      vars:
+        _secret: |
+          [default]
+          aws_access_key_id={{ rke2_velero_s3_access_key_id }}
+          aws_secret_access_key={{ rke2_velero_s3_secret_access_key }}

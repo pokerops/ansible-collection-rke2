@@ -18,3 +18,7 @@
 - name: Include traefik tasks
   ansible.builtin.include_tasks: traefik.yml
   when: rke2_traefik_controller_deploy | bool
+
+- name: Include mariadb tasks
+  ansible.builtin.include_tasks: mariadb.yml
+  when: rke2_mariadb_controller_deploy | bool

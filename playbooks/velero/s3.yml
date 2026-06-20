@@ -93,7 +93,7 @@
           register: backupstoragelocation_crd
           until: backupstoragelocation_crd.resources | length > 0
 
-        - name: Create S3 BackupStorageLocation
+        - name: Create AWS S3 BackupStorageLocation
           kubernetes.core.k8s:
             kubeconfig: "{{ _config_path }}"
             state: present
@@ -114,13 +114,14 @@
                 objectStorage:
                   bucket: "{{ rke2_velero_s3_bucket }}"
                 config:
-                  region: "{{ rke2_velero_s3_region }}"
+                  region: "{{ rke2_velero_s3_region | default('local') }}"
                   s3ForcePathStyle: "{{ rke2_velero_s3_forcepathstyle | default('') }}" # set to "true" when using MinIO or other S3-compatible services
                   s3Url: "{{ rke2_velero_s3_url | default('') }}"
                   insecureSkipTLSVerify: "true"
                 credential:
                   name: velero-s3-auth
                   key: cloud
+          when: rke2_velero_s3_endpoint is not defined
 
         - name: Verify BackupStorageLocation is available
           kubernetes.core.k8s_info:
