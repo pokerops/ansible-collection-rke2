@@ -3,6 +3,7 @@
   hosts: localhost
   connection: local
   vars:
+    seaweedfs_cluster_rebuild: "{{ lookup('ansible.builtin.env', 'MOLECULE_REBUILD', default=true) }}"
     seaweedfs_cluster_name: seaweedfs
     seaweedfs_cluster_namespace: "{{ molecule_namespace | default('molecule') }}"
     seaweedfs_cluster_image: "chrislusf/seaweedfs:latest"
@@ -51,7 +52,7 @@
         state: present
         definition: "{{ seaweedfs_operator_chart_manifest }}"
 
-    - name: Wait for the operator controller to be ready
+    - name: Wait for SeaweedFS operator controller to be ready
       kubernetes.core.k8s_info:
         kubeconfig: "{{ molecule_local_kubeconfig }}"
         api_version: apps/v1
@@ -68,7 +69,34 @@
         - _deployment_count | int > 0
         - _deployment_ready | int > 0
       retries: 30
-      delay: 12
+      delay: 20
+
+    - name: Destroy SeaweedFS cluster
+      when: seaweedfs_cluster_rebuild | bool
+      block:
+        - name: Destroy SeaweedFS cluster
+          kubernetes.core.k8s:
+            kubeconfig: "{{ molecule_local_kubeconfig }}"
+            state: absent
+            definition:
+              apiVersion: seaweed.seaweedfs.com/v1
+              kind: Seaweed
+              metadata:
+                name: "{{ seaweedfs_cluster_name }}"
+                namespace: "{{ seaweedfs_cluster_namespace }}"
+
+        - name: Wait for SeaweedFS cluster destruction
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ molecule_local_kubeconfig }}"
+            api_version: v1
+            kind: Pod
+            namespace: "{{ seaweedfs_cluster_namespace }}"
+            label_selectors:
+              - app.kubernetes.io/name=seaweedfs
+          register: _pod_query
+          retries: 30
+          delay: 20
+          until: _pod_query.resources | length == 0
 
     - name: Create SeaweedFS cluster
       kubernetes.core.k8s:
@@ -85,10 +113,18 @@
             volumeServerDiskCount: 1
             master:
               replicas: 1
+              config: |
+                [master.volume_growth]
+                copy_1 = {{ seaweedfs_volume_growth_step | default(1) }}
+                copy_2 = {{ seaweedfs_volume_growth_step | default(1) }}
+                copy_3 = {{ seaweedfs_volume_growth_step | default(1) }}
+                copy_other = {{ seaweedfs_volume_growth_step | default(1) }}
             volume:
               replicas: 1
+              maxVolumeCounts: 7
+              fileSizeLimitMB: 1000
               requests:
-                storage: "{{ seaweedfs_cluster_size | default('2Gi') }}"
+                storage: "{{ seaweedfs_cluster_size | default('4Gi') }}"
             filer:
               replicas: 1
               config: |
@@ -209,6 +245,9 @@
         name: "{{ seaweedfs_service_secret }}"
         namespace: "{{ seaweedfs_cluster_namespace }}"
       register: _auth_query
+      retries: 30
+      delay: 12
+      until: _auth_query.resources | length > 0
 
     - name: Query SeaweedFS service
       kubernetes.core.k8s_info:
@@ -230,78 +269,24 @@
         rke2_velero_s3_bucket: "{{ seaweedfs_service_bucket }}"
         rke2_velero_s3_access_key_id: "{{ _secret.data.accessKey | b64decode }}"
         rke2_velero_s3_secret_access_key: "{{ _secret.data.secretKey | b64decode }}"
-        rke2_velero_test_object_key: velero/test-file.txt
-        rke2_velero_s3_data: "{{ ansible_date_time.iso8601 }}"
       vars:
         _secret: "{{ _auth_query.resources | first }}"
         _service: "{{ _svc_query.resources | first }}"
         _svcaddr: "{{ _service.spec.clusterIP }}"
 
-    - name: Create temporary file
-      ansible.builtin.tempfile:
-        state: file
-        prefix: "molecule"
-        suffix: ".txt"
-      register: temp_file
-      changed_when: false
-
-    - name: Test bucket permissions
-      delegate_to: "{{ _rke2_cluster_master }}"
-      environment:
-        AWS_REQUEST_CHECKSUM_CALCULATION: when_required
-        AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
-        AWS_EC2_METADATA_DISABLED: "true"
-        AWS_REGION: seaweedfs
-      block:
-        - name: Test bucket write
-          amazon.aws.s3_object:
-            endpoint_url: "{{ rke2_velero_s3_endpoint }}"
-            ceph: true
-            bucket: "{{ rke2_velero_s3_bucket }}"
-            object: "{{ rke2_velero_test_object_key }}"
-            content: "{{ rke2_velero_s3_data }}"
-            mode: put
-            access_key: "{{ rke2_velero_s3_access_key_id }}"
-            secret_key: "{{ rke2_velero_s3_secret_access_key }}"
-
-        - name: Test bucket read
-          amazon.aws.s3_object:
-            endpoint_url: "{{ rke2_velero_s3_endpoint }}"
-            bucket: "{{ rke2_velero_s3_bucket }}"
-            object: "{{ rke2_velero_test_object_key }}"
-            mode: get
-            dest: "{{ temp_file.path }}"
-            access_key: "{{ rke2_velero_s3_access_key_id }}"
-            secret_key: "{{ rke2_velero_s3_secret_access_key }}"
-
-        - name: Slurp bucket file content
-          ansible.builtin.slurp:
-            src: "{{ temp_file.path }}"
-          register: _download
-
-        - name: Verify bucket file integrity
-          ansible.builtin.assert:
-            that:
-              - _download.content | b64decode == rke2_velero_s3_data
-            fail_msg: "Downloaded content does not match uploaded content"
-            success_msg: "Content integrity verified - read/write permissions working correctly"
-
-        - name: Test bucket delete permissions
-          amazon.aws.s3_object:
-            endpoint_url: "{{ rke2_velero_s3_endpoint }}"
-            bucket: "{{ rke2_velero_s3_bucket }}"
-            object: "{{ rke2_velero_test_object_key }}"
-            mode: delobj
-            access_key: "{{ rke2_velero_s3_access_key_id }}"
-            secret_key: "{{ rke2_velero_s3_secret_access_key }}"
-
-      always:
-        - name: Remove temporary file
-          file:
-            path: "{{ temp_file.path }}"
-            state: absent
-          ignore_errors: true
-          changed_when: false
+    - name: Wait for SeaweedFS S3 bucket to be ready
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        api_version: seaweed.seaweedfs.com/v1
+        kind: Bucket
+        name: "{{ seaweedfs_service_bucket }}"
+        namespace: "{{ seaweedfs_cluster_namespace }}"
+      register: _bucket_query
+      retries: 30
+      delay: 10
+      until:
+        - _bucket_query.resources | length > 0
+        - _bucket_query.resources[0].status.phase == "Ready"
 
     - name: Create Velero credentials secret
       kubernetes.core.k8s:
@@ -312,7 +297,7 @@
           kind: Secret
           metadata:
             name: "{{ seaweedfs_velero_secret }}"
-            namespace: "{{ seaweedfs_cluster_namespace }}"
+            namespace: velero
           type: Opaque
           data:
             cloud: "{{ _secret | b64encode }}"
@@ -321,3 +306,60 @@
           [default]
           aws_access_key_id={{ rke2_velero_s3_access_key_id }}
           aws_secret_access_key={{ rke2_velero_s3_secret_access_key }}
+
+    - name: Wait for BackupStorageLocations CRD
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        kind: CustomResourceDefinition
+        name: backupstoragelocations.velero.io
+      retries: 30
+      delay: 12
+      register: backupstoragelocation_crd
+      until: backupstoragelocation_crd.resources | length > 0
+
+    - name: Create Velero BackupStorageLocation
+      kubernetes.core.k8s:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        state: present
+        definition:
+          apiVersion: velero.io/v1
+          kind: BackupStorageLocation
+          metadata:
+            name: "{{ rke2_velero_s3_storage }}"
+            namespace: velero
+            labels:
+              app.kubernetes.io/name: velero
+              app.kubernetes.io/component: backup-storage-location
+              app.kubernetes.io/managed-by: ansible
+          spec:
+            provider: "{{ rke2_velero_s3_provider | default('aws') }}"
+            default: true
+            validationFrequency: "{{ rke2_velero_s3_validation_frequency | default('24h') }}"
+            objectStorage:
+              bucket: "{{ rke2_velero_s3_bucket }}"
+            config:
+              region: "{{ rke2_velero_s3_region | default('local') }}"
+              s3ForcePathStyle: "true"
+              s3Url: "{{ rke2_velero_s3_endpoint }}"
+              checksumAlgorithm: ""
+              insecureSkipTLSVerify: "true"
+            credential:
+              name: "{{ seaweedfs_velero_secret }}"
+              key: cloud
+
+    - name: Verify BackupStorageLocation is available
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        api_version: velero.io/v1
+        kind: BackupStorageLocation
+        name: "{{ rke2_velero_s3_storage }}"
+        namespace: velero
+      vars:
+        _bsl_data: "{{ _bsl_status.resources[0] }}"
+      until:
+        - _bsl_status.resources | length > 0
+        - _bsl_data.status.phase is defined
+        - _bsl_data.status.phase == "Available"
+      register: _bsl_status
+      retries: 30
+      delay: 12

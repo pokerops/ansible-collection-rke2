@@ -1,22 +1,21 @@
 ---
-- name: Verify Velero MariaDB backup and restore
+- name: Verify Velero Zalando backup and restore
   hosts: localhost
   gather_facts: true
   vars:
-    mariadb_namespace: "molecule"
-    mariadb_cluster_name: "molecule-postgres-cluster"
-    mariadb_database_name: "sakila"
-    mariadb_service_name: "{{ postgres_cluster_name }}"
-    mariadb_service_port: 5432
-    mariadb_user: root
+    postgres_namespace: "{{ molecule_namespace | default('molecule') }}"
+    postgres_cluster_name: "molecule-postgres-cluster"
+    postgres_database_name: "pagila"
+    postgres_service_name: "{{ postgres_cluster_name }}"
+    postgres_service_port: 5432
+    postgres_user: postgres
     backup_name: "molecule-backup-{{ ansible_date_time.epoch }}"
     restore_name: "molecule-restore-{{ ansible_date_time.epoch }}"
     kubeconfig_path: "{{ molecule_local_kubeconfig }}"
   tasks:
-    - name: Clean up any previous MariaDB deployment
-      when: false
+    - name: Clean up any previous PostgreSQL deployment
       block:
-        - name: Check if MariaDB namespace exists
+        - name: Check if PostgreSQL namespace exists
           kubernetes.core.k8s_info:
             kubeconfig: "{{ kubeconfig_path }}"
             api_version: v1
@@ -78,68 +77,6 @@
                         wait: false
                       ignore_errors: true
 
-            - name: Force delete all PVCs
-              kubernetes.core.k8s:
-                kubeconfig: "{{ kubeconfig_path }}"
-                api_version: v1
-                kind: PersistentVolumeClaim
-                namespace: "{{ postgres_namespace }}"
-                state: absent
-                wait: false
-              ignore_errors: true
-
-            - name: Wait for PVC deletion to complete
-              kubernetes.core.k8s_info:
-                kubeconfig: "{{ kubeconfig_path }}"
-                api_version: v1
-                kind: PersistentVolumeClaim
-                namespace: "{{ postgres_namespace }}"
-              register: pvc_check
-              until: pvc_check.resources | length == 0
-              retries: 30
-              delay: 10
-
-            - name: Query existing PVs
-              kubernetes.core.k8s_info:
-                kubeconfig: "{{ kubeconfig_path }}"
-                api_version: v1
-                kind: PersistentVolume
-              register: existing_pvs
-
-            - name: Delete existing PVs
-              kubernetes.core.k8s:
-                kubeconfig: "{{ kubeconfig_path }}"
-                api_version: v1
-                kind: PersistentVolume
-                namespace: "{{ postgres_namespace }}"
-                name: "{{ item.metadata.name }}"
-                state: absent
-                wait: true
-              loop: "{{ existing_pvs.resources }}"
-
-            - name: Delete existing PostgreSQL namespace
-              kubernetes.core.k8s:
-                kubeconfig: "{{ kubeconfig_path }}"
-                api_version: v1
-                kind: Namespace
-                name: "{{ postgres_namespace }}"
-                state: absent
-                wait: true
-                wait_timeout: 300
-              ignore_errors: true
-
-            - name: Wait for namespace deletion to complete
-              kubernetes.core.k8s_info:
-                kubeconfig: "{{ kubeconfig_path }}"
-                api_version: v1
-                kind: Namespace
-                name: "{{ postgres_namespace }}"
-              register: namespace_cleanup_check
-              until: namespace_cleanup_check.resources | length == 0
-              retries: 60
-              delay: 5
-              ignore_errors: true
-
         - name: Clean up any previous Velero test backups and restores
           block:
             - name: Get all existing test backups
@@ -189,17 +126,15 @@
               when: existing_restores.resources | length > 0
               ignore_errors: true
 
-    - name: Create MariaDB test namespace
+    - name: Create PostgreSQL test namespace
       kubernetes.core.k8s:
         kubeconfig: "{{ kubeconfig_path }}"
-        name: "{{ mariadb_namespace }}"
+        name: "{{ postgres_namespace }}"
         api_version: v1
         kind: Namespace
         state: present
 
-    - fail:
-
-    - name: Deploy MariaDB cluster
+    - name: Deploy PostgreSQL cluster with Zalando operator
       kubernetes.core.k8s:
         kubeconfig: "{{ kubeconfig_path }}"
         definition:
@@ -319,7 +254,7 @@
       block:
         - name: Download Pagila database
           ansible.builtin.git:
-            repo: "https://downloads.mysql.com/docs/sakila-db.tar.gz"
+            repo: "https://github.com/devrimgunduz/pagila.git"
             dest: "{{ pagila_temp_dir.path }}/pagila"
             version: master
           changed_when: false
@@ -831,7 +766,7 @@
           Missing tables: {{ original_pagila_tables | difference(restored_pagila_tables) }}
           Extra tables: {{ restored_pagila_tables | difference(original_pagila_tables) }}
         success_msg: |
-          ✅ Database restore verification successful!
+          Database restore verification successful!
           All {{ original_pagila_tables | length }} tables were successfully restored.
 
     - name: Compare original and restored data counts
@@ -842,12 +777,12 @@
           Data count mismatch detected!
           Original counts: {{ original_pagila_data_counts }}
           Restored counts: {{ restored_pagila_data_counts }}
-        success_msg: "✅ Data integrity verification successful!"
+        success_msg: Data integrity verification successful!
 
     - name: Display verification results
       ansible.builtin.debug:
         msg: |
-          🎉 Velero Backup and Restore Verification Completed Successfully!
+          Velero Backup and Restore Verification Completed Successfully!
 
           Summary:
           - Backup Name: {{ backup_name }}
@@ -857,4 +792,4 @@
           - Database: {{ postgres_database_name }}
           - Tables Verified: {{ original_pagila_tables | length }}
 
-          All verification tests passed! ✅
+          All verification tests passed!
