@@ -15,7 +15,7 @@ spec:
     helm:
       valuesObject:
         deployNodeAgent: true
-        features: enableCSI
+        features: EnableCSI
         snapshotsEnabled: true
         configuration:
           defaultVolumesToFsBackup: false
