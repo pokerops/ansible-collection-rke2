@@ -67,12 +67,6 @@ provisioner:
           rke2_api_url: "https://api.{{ rke2_cluster_name }}:6443"
           rke2_token: "secret"
           # Velero params
-          rke2_secrets:
-            - name: velero-s3-auth
-              namespace: velero
-              data:
-                AWS_ACCESS_KEY_ID: "{{ lookup('ansible.builtin.env', 'AWS_ACCESS_KEY_ID') }}"
-                AWS_SECRET_ACCESS_KEY: "{{ lookup('ansible.builtin.env', 'AWS_SECRET_ACCESS_KEY') }}"
           rke2_argocd_apps_values_extra:
             applications:
               velero:
@@ -102,6 +96,7 @@ provisioner:
           # Test rke2 params
           rke2_retry_num: 30
           rke2_skip_deploy: false
+          rke2_longhorn_snapshot_retention: Delete
 verifier:
   name: ansible
 scenario:

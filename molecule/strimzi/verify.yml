@@ -17,170 +17,94 @@
   tasks:
     - name: Test velero with strimzi
       block:
-        - name: Clean test environment
+        - name: Clean up any previous Kafka deployment
           block:
-            - name: Clean velero backups and restores
-              block:
-                - name: Delete Velero restore
-                  kubernetes.core.k8s:
-                    kubeconfig: "{{ kubeconfig_path }}"
-                    definition:
-                      apiVersion: velero.io/v1
-                      kind: Restore
-                      metadata:
-                        name: "{{ restore_name }}"
-                        namespace: velero
-                    state: absent
+            - name: Query existing PVCs
+              kubernetes.core.k8s_info:
+                kubeconfig: "{{ kubeconfig_path }}"
+                api_version: v1
+                kind: PersistentVolumeClaim
+                namespace: "{{ kafka_namespace }}"
+              register: existing_pvcs
 
-                - name: Delete Velero backup
-                  kubernetes.core.k8s:
-                    kubeconfig: "{{ kubeconfig_path }}"
-                    definition:
-                      apiVersion: velero.io/v1
-                      kind: Backup
-                      metadata:
-                        name: "{{ backup_name }}"
-                        namespace: velero
-                    state: absent
+            - name: Delete kafka topic
+              kubernetes.core.k8s:
+                kubeconfig: "{{ kubeconfig_path }}"
+                api_version: kafka.strimzi.io/v1beta2
+                kind: KafkaTopic
+                name: "{{ topic_name }}"
+                namespace: "{{ kafka_namespace }}"
+                state: absent
+                wait: true
+                wait_timeout: 300
 
-            - name: Clean Kafka namespace
-              block:
-                - name: Query existing PVCs
-                  kubernetes.core.k8s_info:
-                    kubeconfig: "{{ kubeconfig_path }}"
-                    api_version: v1
-                    kind: PersistentVolumeClaim
-                    namespace: "{{ kafka_namespace }}"
-                  register: existing_pvcs
+            - name: Delete kafka cluster
+              kubernetes.core.k8s:
+                kubeconfig: "{{ kubeconfig_path }}"
+                api_version: kafka.strimzi.io/v1beta2
+                kind: Kafka
+                name: "{{ kafka_cluster_name }}"
+                namespace: "{{ kafka_namespace }}"
+                state: absent
+                wait: true
+                wait_timeout: 300
 
-                - name: Get PVs names
-                  ansible.builtin.set_fact:
-                    pvs: "{{ existing_pvcs.resources | map(attribute='spec.volumeName') | list  }}"
+            - name: Delete kafkanodepools brokers
+              kubernetes.core.k8s:
+                kubeconfig: "{{ kubeconfig_path }}"
+                api_version: kafka.strimzi.io/v1beta2
+                kind: KafkaNodePool
+                name: "{{ kafka_cluster_name }}-brokers"
+                namespace: "{{ kafka_namespace }}"
+                state: absent
+                wait: true
+                wait_timeout: 300
 
-                - name: PV to remove
-                  ansible.builtin.debug:
-                    msg: "{{ pvs }}"
+            - name: Delete kafkanodepools controllers
+              kubernetes.core.k8s:
+                kubeconfig: "{{ kubeconfig_path }}"
+                api_version: kafka.strimzi.io/v1beta2
+                kind: KafkaNodePool
+                name: "{{ kafka_cluster_name }}-controllers"
+                namespace: "{{ kafka_namespace }}"
+                state: absent
+                wait: true
+                wait_timeout: 300
 
-                - name: Delete kafka topic
-                  kubernetes.core.k8s:
-                    kubeconfig: "{{ kubeconfig_path }}"
-                    api_version: kafka.strimzi.io/v1beta2
-                    kind: KafkaTopic
-                    name: "{{ topic_name }}"
-                    namespace: "{{ kafka_namespace }}"
-                    state: absent
-                    wait: true
-                    wait_timeout: 300
+            - name: Wait for pod deletion to complete
+              kubernetes.core.k8s_info:
+                kubeconfig: "{{ kubeconfig_path }}"
+                api_version: v1
+                kind: Pod
+                namespace: "{{ kafka_namespace }}"
+              register: existing_pods
+              until: existing_pods.resources | length == 0
+              retries: 30
+              delay: 10
 
-                - name: Delete kafka cluster
-                  kubernetes.core.k8s:
-                    kubeconfig: "{{ kubeconfig_path }}"
-                    api_version: kafka.strimzi.io/v1beta2
-                    kind: Kafka
-                    name: "{{ kafka_cluster_name }}"
-                    namespace: "{{ kafka_namespace }}"
-                    state: absent
-                    wait: true
-                    wait_timeout: 300
+            - name: Force delete all PVCs
+              kubernetes.core.k8s:
+                kubeconfig: "{{ kubeconfig_path }}"
+                api_version: v1
+                kind: PersistentVolumeClaim
+                namespace: "{{ kafka_namespace }}"
+                name: "{{ item }}"
+                state: absent
+                wait: true
+              loop: "{{ existing_pvcs.resources | map(attribute='metadata.name') }}"
 
-                - name: Delete kafkanodepools brokers
-                  kubernetes.core.k8s:
-                    kubeconfig: "{{ kubeconfig_path }}"
-                    api_version: kafka.strimzi.io/v1beta2
-                    kind: KafkaNodePool
-                    name: "{{ kafka_cluster_name }}-brokers"
-                    namespace: "{{ kafka_namespace }}"
-                    state: absent
-                    wait: true
-                    wait_timeout: 300
+            - name: Wait for PVC deletion to complete
+              kubernetes.core.k8s_info:
+                kubeconfig: "{{ kubeconfig_path }}"
+                api_version: v1
+                kind: PersistentVolumeClaim
+                namespace: "{{ kafka_namespace }}"
+              register: pvc_check
+              until: pvc_check.resources | length == 0
+              retries: 30
+              delay: 10
 
-                - name: Delete kafkanodepools controllers
-                  kubernetes.core.k8s:
-                    kubeconfig: "{{ kubeconfig_path }}"
-                    api_version: kafka.strimzi.io/v1beta2
-                    kind: KafkaNodePool
-                    name: "{{ kafka_cluster_name }}-controllers"
-                    namespace: "{{ kafka_namespace }}"
-                    state: absent
-                    wait: true
-                    wait_timeout: 300
-
-                - name: Wait for pod deletion to complete
-                  kubernetes.core.k8s_info:
-                    kubeconfig: "{{ kubeconfig_path }}"
-                    api_version: v1
-                    kind: Pod
-                    namespace: "{{ kafka_namespace }}"
-                  register: existing_pods
-                  until: existing_pods.resources | length == 0
-                  retries: 30
-                  delay: 10
-
-                - name: Force delete all PVCs
-                  kubernetes.core.k8s:
-                    kubeconfig: "{{ kubeconfig_path }}"
-                    api_version: v1
-                    kind: PersistentVolumeClaim
-                    namespace: "{{ kafka_namespace }}"
-                    name: "{{ item }}"
-                    state: absent
-                    wait: true
-                  loop: "{{ existing_pvcs.resources | map(attribute='metadata.name') }}"
-
-                - name: Wait for PVC deletion to complete
-                  kubernetes.core.k8s_info:
-                    kubeconfig: "{{ kubeconfig_path }}"
-                    api_version: v1
-                    kind: PersistentVolumeClaim
-                    namespace: "{{ kafka_namespace }}"
-                  register: pvc_check
-                  until: pvc_check.resources | length == 0
-                  retries: 30
-                  delay: 10
-
-                - name: Delete existing PVs
-                  kubernetes.core.k8s:
-                    kubeconfig: "{{ kubeconfig_path }}"
-                    api_version: v1
-                    kind: PersistentVolume
-                    name: "{{ item }}"
-                    state: absent
-                    wait: true
-                  loop: "{{ pvs }}"
-
-                - name: Delete existing Vs
-                  kubernetes.core.k8s:
-                    kubeconfig: "{{ kubeconfig_path }}"
-                    api_version: longhorn.io/v1beta2
-                    kind: Volume
-                    namespace: "longhorn-system"
-                    name: "{{ item }}"
-                    state: absent
-                    wait: true
-                  loop: "{{ pvs }}"
-
-                - name: Delete Kafka namespace
-                  kubernetes.core.k8s:
-                    kubeconfig: "{{ kubeconfig_path }}"
-                    api_version: v1
-                    kind: Namespace
-                    name: "{{ kafka_namespace }}"
-                    state: absent
-                    wait: true
-                    wait_timeout: 300
-
-                - name: Wait for namespace deletion to complete
-                  kubernetes.core.k8s_info:
-                    kubeconfig: "{{ kubeconfig_path }}"
-                    api_version: v1
-                    kind: Namespace
-                    name: "{{ kafka_namespace }}"
-                  register: namespace_check
-                  until: namespace_check.resources | length == 0
-                  retries: 30
-                  delay: 10
-
-        - name: Ensure Kafka namespace exists
+        - name: Create Kafka test namespace
           kubernetes.core.k8s:
             kubeconfig: "{{ kubeconfig_path }}"
             name: "{{ kafka_namespace }}"

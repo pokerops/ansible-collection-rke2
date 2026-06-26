@@ -16,9 +16,9 @@ spec:
       valuesObject:
         deployNodeAgent: true
         features: enableCSI
-        snapshotsEnabled: false
+        snapshotsEnabled: true
         configuration:
-          defaultVolumesToFsBackup: true
+          defaultVolumesToFsBackup: false
           backupStorageLocation: []
           volumeSnapshotLocation: []
         initContainers:

@@ -16,12 +16,3 @@
     resource_definition: "{{ _mariadb_operator_chart_manifest }}"
   vars:
     _mariadb_operator_chart_manifest: "{{ lookup('ansible.builtin.template', 'templates/mariadb-operator.yml' ) | from_yaml }}"
-
-- name: Deploy MariaDB cluster operator
-  kubernetes.core.k8s:
-    state: present
-    apply: true
-    kubeconfig: "{{ rke2_config_path }}"
-    resource_definition: "{{ _mariadb_cluster_chart_manifest }}"
-  vars:
-    _mariadb_cluster_chart_manifest: "{{ lookup('ansible.builtin.template', 'templates/mariadb-cluster.yml' ) | from_yaml }}"
