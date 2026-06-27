@@ -64,7 +64,6 @@
                             finalizers: []
                         state: present
                         merge_type: merge
-                      ignore_errors: true
 
                     - name: Force delete PostgreSQL cluster
                       kubernetes.core.k8s:
@@ -75,7 +74,6 @@
                         namespace: "{{ postgres_namespace }}"
                         state: absent
                         wait: false
-                      ignore_errors: true
 
             - name: Force delete all PVCs
               kubernetes.core.k8s:
@@ -85,7 +83,6 @@
                 namespace: "{{ postgres_namespace }}"
                 state: absent
                 wait: false
-              ignore_errors: true
 
             - name: Wait for PVC deletion to complete
               kubernetes.core.k8s_info:
@@ -108,7 +105,7 @@
                 namespace: velero
                 label_selectors:
                   - "app.kubernetes.io/managed-by=ansible"
-                  - "backup.velero.io/type=full-cluster"
+                  - "backup.velero.io/type=molecule"
               register: existing_backups
 
             - name: Delete existing test backups
@@ -140,7 +137,6 @@
                 namespace: velero
                 state: absent
               loop: "{{ existing_restores.resources | map(attribute='metadata.name') }}"
-              ignore_errors: true
 
     - name: Create PostgreSQL test namespace
       kubernetes.core.k8s:
@@ -386,7 +382,7 @@
             namespace: velero
             labels:
               app.kubernetes.io/managed-by: ansible
-              backup.velero.io/type: namespaced
+              backup.velero.io/type: molecule
           spec:
             includedNamespaces:
               - "{{ postgres_namespace }}"
@@ -492,14 +488,25 @@
       delay: 10
       loop: "{{ _pvs }}"
 
-    - name: Restore PostgreSQL cluster PVs
+    - name: Scale postgres-operator down to 0
+      kubernetes.core.k8s_scale:
+        kubeconfig: "{{ kubeconfig_path }}"
+        api_version: apps/v1
+        kind: Deployment
+        name: postgres-operator
+        namespace: postgres-operator
+        replicas: 0
+        wait: true
+        wait_timeout: 120
+
+    - name: Restore PostgreSQL namespace (CR + secrets + PVC + volume data)
       kubernetes.core.k8s:
         kubeconfig: "{{ kubeconfig_path }}"
         definition:
           apiVersion: velero.io/v1
           kind: Restore
           metadata:
-            name: "{{ restore_name }}-pv"
+            name: "{{ restore_name }}"
             namespace: velero
             labels:
               app.kubernetes.io/managed-by: ansible
@@ -509,67 +516,13 @@
             includedNamespaces:
               - "{{ postgres_namespace }}"
             restorePVs: true
-            includeClusterResources: true
-            includedResources:
-              - persistentvolumes
-        state: present
-
-    - name: Wait for PV restore to complete
-      kubernetes.core.k8s_info:
-        kubeconfig: "{{ kubeconfig_path }}"
-        api_version: velero.io/v1
-        kind: Restore
-        name: "{{ restore_name }}-pv"
-        namespace: velero
-      register: pv_restore_status
-      until:
-        - pv_restore_status.resources[0].status.phase is defined
-        - pv_restore_status.resources[0].status.phase in ["Completed"]
-      retries: 60
-      delay: 10
-      ignore_errors: true
-
-    - name: Verify PV restore completed successfully
-      assert:
-        that: pv_restore_status.resources[0].status.phase == "Completed"
-        fail_msg: |
-          PV restore failed with status: {{ pv_restore_status.resources[0].status.phase }}
-          Errors: {{ pv_restore_status.resources[0].status.errors | default([]) }}
-
-    - name: Query restored PVs
-      kubernetes.core.k8s_info:
-        kubeconfig: "{{ kubeconfig_path }}"
-        api_version: v1
-        kind: PersistentVolume
-        namespace: "{{ postgres_namespace }}"
-      register: restored_pvs
-
-    - name: Display restored PVs
-      ansible.builtin.debug:
-        msg: "Restored PVs: {{ restored_pvs.resources | map(attribute='metadata.name') | list }}"
-
-    - name: Restore PostgreSQL CRD and secrets
-      kubernetes.core.k8s:
-        kubeconfig: "{{ kubeconfig_path }}"
-        definition:
-          apiVersion: velero.io/v1
-          kind: Restore
-          metadata:
-            name: "{{ restore_name }}-crd"
-            namespace: velero
-            labels:
-              app.kubernetes.io/managed-by: ansible
-              restore.velero.io/backup: "{{ backup_name }}"
-          spec:
-            backupName: "{{ backup_name }}"
-            includedNamespaces:
-              - "{{ postgres_namespace }}"
-            restorePVs: false
             includeClusterResources: false
             includedResources:
               - persistentvolumeclaims
               - secrets
+              - configmaps
               - postgresqls.acid.zalan.do
+            existingResourcePolicy: update
         state: present
 
     - name: Wait for CRD restore to complete
@@ -577,22 +530,76 @@
         kubeconfig: "{{ kubeconfig_path }}"
         api_version: velero.io/v1
         kind: Restore
-        name: "{{ restore_name }}-crd"
+        name: "{{ restore_name }}"
         namespace: velero
       register: crd_restore_status
       until:
         - crd_restore_status.resources[0].status.phase is defined
-        - crd_restore_status.resources[0].status.phase in ["Completed"]
-      retries: 60
+        - crd_restore_status.resources[0].status.phase in ["Completed", "PartiallyFailed", "Failed", "FailedValidation"]
+      retries: 30
       delay: 10
 
-    - name: Verify CRD restore completed successfully
-      assert:
+    - name: Verify restore completed successfully
+      ansible.builtin.assert:
+        that: restore_status.resources[0].status.phase == "Completed"
+        fail_msg: >-
+          Restore phase is {{ restore_status.resources[0].status.phase }}.
+          Errors: {{ restore_status.resources[0].status.errors | default('n/a') }}
+          Warnings: {{ restore_status.resources[0].status.warnings | default('n/a') }}
+
+    - name: Query restore DataDownloads
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig_path }}"
+        api_version: velero.io/v2alpha1
+        kind: DataDownload
+        namespace: velero
+        label_selectors:
+          - "velero.io/restore-name={{ restore_name }}"
+      register: datadownloads
+      until:
+        - datadownloads.resources | length > 0
+        - datadownloads.resources
+          | selectattr('status.phase', 'defined')
+          | map(attribute='status.phase') | list
+          | reject('in', ['Completed', 'Failed', 'Canceled']) | list | length == 0
+      retries: 30
+      delay: 10
+
+    - name: Verify DataDownload completed successfully
+      ansible.builtin.assert:
         that:
-          - crd_restore_status.resources[0].status.phase == "Completed"
-        fail_msg: |
-          CRD restore failed with status: {{ crd_restore_status.resources[0].status.phase }}
-          Errors: {{ crd_restore_status.resources[0].status.errors | default([]) }}
+          - datadownloads.resources | length > 0
+          - datadownloads.resources
+            | selectattr('status.phase', 'equalto', 'Completed')
+            | list | length > 0
+        fail_msg: >-
+          No completed DataDownload for restore {{ restore_name }} — the PVC may
+          have been recreated empty instead of restored from object storage.
+
+    - name: Verify restored PVC is bound
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig_path }}"
+        api_version: v1
+        kind: PersistentVolumeClaim
+        namespace: "{{ postgres_namespace }}"
+        name: "pgdata-{{ postgres_cluster_name }}-0"
+      register: restored_pvc
+      until:
+        - restored_pvc.resources | length == 1
+        - restored_pvc.resources[0].status.phase == "Bound"
+      retries: 30
+      delay: 10
+
+    - name: Scale up postgres-operator
+      kubernetes.core.k8s_scale:
+        kubeconfig: "{{ kubeconfig_path }}"
+        api_version: apps/v1
+        kind: Deployment
+        name: "{{ postgres_operator_deployment }}"
+        namespace: "{{ postgres_operator_namespace }}"
+        replicas: 1
+        wait: true
+        wait_timeout: 120
 
     - name: Wait for PostgreSQL cluster to be ready after restore
       kubernetes.core.k8s_info:
