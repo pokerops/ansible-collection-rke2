@@ -432,12 +432,7 @@
           - Phase: {{ backup_status.resources[0].status.phase }}
           - Start Time: {{ backup_status.resources[0].status.startTimestamp }}
           - Completion Time: {{ backup_status.resources[0].status.completionTimestamp }}
-          - Items Backed Up: {{ backup_status.resources[0].status.itemsBackedUp | default(0) }}
-
-    - debug:
-        var: backup_status
-
-    - fail:
+          - Items Backed Up: {{ backup_status.resources[0].status.progress.itemsBackedUp | default(0) }}
 
     - name: Quey PostgreSQL persistent volume claims
       kubernetes.core.k8s_info:
@@ -445,77 +440,57 @@
         api_version: v1
         kind: PersistentVolumeClaim
         namespace: "{{ postgres_namespace }}"
-      register: postgres_pvcs
+      register: _postgres_pvcs
+
+    - name: Set storage facts
+      ansible.builtin.set_fact:
+        _pvcs: "{{ _postgres_pvcs.resources | map(attribute='metadata.name') }}"
+        _pvs: "{{ _postgres_pvcs.resources | map(attribute='spec.volumeName') }}"
 
     - name: Debug PostgreSQL PVCs
       ansible.builtin.debug:
-        msg: "{{ postgres_pvcs.resources | map(attribute='metadata.name') | list }}"
-
-    - name: Query PostgreSQL physical volumes
-      kubernetes.core.k8s_info:
-        kubeconfig: "{{ kubeconfig_path }}"
-        api_version: v1
-        kind: PersistentVolume
-      register: postgres_pvs
+        var: _pvcs
 
     - name: Debug PostgreSQL PVs
       ansible.builtin.debug:
-        msg: "{{ postgres_pvs.resources | map(attribute='metadata.name') | list }}"
+        var: _pvs
 
-    - name: Destroy PostgreSQL cluster and PVCs
-      block:
-        - name: Delete PostgreSQL cluster
-          kubernetes.core.k8s:
-            kubeconfig: "{{ kubeconfig_path }}"
-            api_version: acid.zalan.do/v1
-            kind: postgresql
-            name: "{{ postgres_cluster_name }}"
-            namespace: "{{ postgres_namespace }}"
-            state: absent
-            wait: true
-            wait_timeout: 300
+    - name: Delete PostgreSQL cluster
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kubeconfig_path }}"
+        api_version: acid.zalan.do/v1
+        kind: postgresql
+        name: "{{ postgres_cluster_name }}"
+        namespace: "{{ postgres_namespace }}"
+        state: absent
+        wait: true
+        wait_timeout: 300
 
-        - name: Query existing PVCs
-          kubernetes.core.k8s_info:
-            kubeconfig: "{{ kubeconfig_path }}"
-            api_version: v1
-            kind: PersistentVolumeClaim
-            namespace: "{{ postgres_namespace }}"
-          register: existing_pvcs
-
-        - name: Force delete all PVCs
-          kubernetes.core.k8s:
-            kubeconfig: "{{ kubeconfig_path }}"
-            api_version: v1
-            kind: PersistentVolumeClaim
-            namespace: "{{ postgres_namespace }}"
-            name: "{{ item }}"
-            state: absent
-            wait: false
-          ignore_errors: true
-          loop: "{{ existing_pvcs.resources | map(attribute='metadata.name') }}"
-
-        - name: Wait for PVC deletion to complete
-          kubernetes.core.k8s_info:
-            kubeconfig: "{{ kubeconfig_path }}"
-            api_version: v1
-            kind: PersistentVolumeClaim
-            namespace: "{{ postgres_namespace }}"
-          register: pvc_check
-          until: pvc_check.resources | length == 0
-          retries: 30
-          delay: 10
-
-    - name: Verify PostgreSQL PVC deletion
+    - name: Wait for PVC deletion to complete
       kubernetes.core.k8s_info:
         kubeconfig: "{{ kubeconfig_path }}"
         api_version: v1
         kind: PersistentVolumeClaim
+        name: "{{ item }}"
         namespace: "{{ postgres_namespace }}"
       register: pvc_check
       until: pvc_check.resources | length == 0
       retries: 30
       delay: 10
+      loop: "{{ _pvcs }}"
+
+    - name: Wait for PV deletion to complete
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig_path }}"
+        api_version: v1
+        kind: PersistentVolume
+        namespace: "{{ postgres_namespace }}"
+        name: "{{ item }}"
+      register: pvc_check
+      until: pvc_check.resources | length == 0
+      retries: 30
+      delay: 10
+      loop: "{{ _pvs }}"
 
     - name: Restore PostgreSQL cluster PVs
       kubernetes.core.k8s:
@@ -556,8 +531,7 @@
 
     - name: Verify PV restore completed successfully
       assert:
-        that:
-          - pv_restore_status.resources[0].status.phase == "Completed"
+        that: pv_restore_status.resources[0].status.phase == "Completed"
         fail_msg: |
           PV restore failed with status: {{ pv_restore_status.resources[0].status.phase }}
           Errors: {{ pv_restore_status.resources[0].status.errors | default([]) }}
@@ -593,6 +567,7 @@
             restorePVs: false
             includeClusterResources: false
             includedResources:
+              - persistentvolumeclaims
               - secrets
               - postgresqls.acid.zalan.do
         state: present
