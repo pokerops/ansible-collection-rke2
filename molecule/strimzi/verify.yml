@@ -22,44 +22,44 @@
             - name: Delete Kafka topic
               kubernetes.core.k8s:
                 kubeconfig: "{{ kubeconfig_path }}"
+                state: absent
                 api_version: kafka.strimzi.io/v1beta2
                 kind: KafkaTopic
                 name: "{{ topic_name }}"
                 namespace: "{{ kafka_namespace }}"
-                state: absent
                 wait: true
                 wait_timeout: 300
 
             - name: Delete Kafka cluster
               kubernetes.core.k8s:
                 kubeconfig: "{{ kubeconfig_path }}"
+                state: absent
                 api_version: kafka.strimzi.io/v1beta2
                 kind: Kafka
                 name: "{{ kafka_cluster_name }}"
                 namespace: "{{ kafka_namespace }}"
-                state: absent
                 wait: true
                 wait_timeout: 300
 
             - name: Delete brokers KafkaNodePool
               kubernetes.core.k8s:
                 kubeconfig: "{{ kubeconfig_path }}"
+                state: absent
                 api_version: kafka.strimzi.io/v1beta2
                 kind: KafkaNodePool
                 name: "{{ kafka_cluster_name }}-brokers"
                 namespace: "{{ kafka_namespace }}"
-                state: absent
                 wait: true
                 wait_timeout: 300
 
             - name: Delete controllers KafkaNodePool
               kubernetes.core.k8s:
                 kubeconfig: "{{ kubeconfig_path }}"
+                state: absent
                 api_version: kafka.strimzi.io/v1beta2
                 kind: KafkaNodePool
                 name: "{{ kafka_cluster_name }}-controllers"
                 namespace: "{{ kafka_namespace }}"
-                state: absent
                 wait: true
                 wait_timeout: 300
 
@@ -88,10 +88,10 @@
         - name: Create Kafka test namespace
           kubernetes.core.k8s:
             kubeconfig: "{{ kubeconfig_path }}"
+            state: present
             name: "{{ kafka_namespace }}"
             api_version: v1
             kind: Namespace
-            state: present
 
         - name: Deploy Kafka cluster
           block:
@@ -111,6 +111,7 @@
             - name: Deploy controllers KafkaNodePool
               kubernetes.core.k8s:
                 kubeconfig: "{{ kubeconfig_path }}"
+                state: present
                 definition:
                   apiVersion: kafka.strimzi.io/v1beta2
                   kind: KafkaNodePool
@@ -130,11 +131,11 @@
                       size: 2Gi
                       deleteClaim: true
                       class: longhorn-static
-                state: present
 
             - name: Deploy brokers KafkaNodePool
               kubernetes.core.k8s:
                 kubeconfig: "{{ kubeconfig_path }}"
+                state: present
                 definition:
                   apiVersion: kafka.strimzi.io/v1beta2
                   kind: KafkaNodePool
@@ -154,11 +155,11 @@
                       size: 2Gi
                       deleteClaim: true
                       class: longhorn-static
-                state: present
 
             - name: Deploy Kafka cluster in KRaft mode
               kubernetes.core.k8s:
                 kubeconfig: "{{ kubeconfig_path }}"
+                state: present
                 definition:
                   apiVersion: kafka.strimzi.io/v1beta2
                   kind: Kafka
@@ -209,7 +210,6 @@
                     kafkaExporter:
                       topicRegex: ".*"
                       groupRegex: ".*"
-                state: present
 
             - name: Wait for Kafka cluster to be ready
               kubernetes.core.k8s_info:
@@ -443,6 +443,7 @@
             - name: Create Velero backup of Kafka namespace
               kubernetes.core.k8s:
                 kubeconfig: "{{ kubeconfig_path }}"
+                state: present
                 definition:
                   apiVersion: velero.io/v1
                   kind: Backup
@@ -464,7 +465,6 @@
                     csiSnapshotTimeout: 5m
                     itemOperationTimeout: 10m
                     ttl: "72h0m0s"
-                state: present
 
             - name: Wait for Velero backup to complete
               kubernetes.core.k8s_info:
@@ -494,44 +494,44 @@
             - name: Delete Kafka topic
               kubernetes.core.k8s:
                 kubeconfig: "{{ kubeconfig_path }}"
+                state: absent
                 api_version: kafka.strimzi.io/v1beta2
                 kind: KafkaTopic
                 name: "{{ topic_name }}"
                 namespace: "{{ kafka_namespace }}"
-                state: absent
                 wait: true
                 wait_timeout: 300
 
             - name: Delete Kafka cluster
               kubernetes.core.k8s:
                 kubeconfig: "{{ kubeconfig_path }}"
+                state: absent
                 api_version: kafka.strimzi.io/v1beta2
                 kind: Kafka
                 name: "{{ kafka_cluster_name }}"
                 namespace: "{{ kafka_namespace }}"
-                state: absent
                 wait: true
                 wait_timeout: 300
 
             - name: Delete brokers KafkaNodePool
               kubernetes.core.k8s:
                 kubeconfig: "{{ kubeconfig_path }}"
+                state: absent
                 api_version: kafka.strimzi.io/v1beta2
                 kind: KafkaNodePool
                 name: "{{ kafka_cluster_name }}-brokers"
                 namespace: "{{ kafka_namespace }}"
-                state: absent
                 wait: true
                 wait_timeout: 300
 
             - name: Delete controllers KafkaNodePool
               kubernetes.core.k8s:
                 kubeconfig: "{{ kubeconfig_path }}"
+                state: absent
                 api_version: kafka.strimzi.io/v1beta2
                 kind: KafkaNodePool
                 name: "{{ kafka_cluster_name }}-controllers"
                 namespace: "{{ kafka_namespace }}"
-                state: absent
                 wait: true
                 wait_timeout: 300
 
@@ -562,6 +562,7 @@
             - name: Disable ArgoCD auto-sync for Strimzi operator
               kubernetes.core.k8s:
                 kubeconfig: "{{ kubeconfig_path }}"
+                state: patched
                 api_version: argoproj.io/v1alpha1
                 kind: Application
                 name: strimzi-kafka-operator
@@ -571,7 +572,6 @@
                     syncPolicy:
                       automated:
                         enabled: false
-                state: patched
 
             - name: Scale down Strimzi operator
               kubernetes.core.k8s_scale:
@@ -587,6 +587,7 @@
             - name: Restore Kafka namespace from Velero backup (including status)
               kubernetes.core.k8s:
                 kubeconfig: "{{ kubeconfig_path }}"
+                state: present
                 definition:
                   apiVersion: velero.io/v1
                   kind: Restore
@@ -608,7 +609,6 @@
                       includedResources:
                         - "*"
                     existingResourcePolicy: update
-                state: present
 
             - name: Wait for Kafka restore to complete
               kubernetes.core.k8s_info:
@@ -617,20 +617,20 @@
                 kind: Restore
                 name: "{{ restore_name }}"
                 namespace: velero
-              register: restore_status
+              register: _restore_query
               until:
-                - restore_status.resources[0].status.phase is defined
-                - restore_status.resources[0].status.phase in ["Completed", "PartiallyFailed", "Failed", "FailedValidation"]
+                - _restore_query.resources[0].status.phase is defined
+                - _restore_query.resources[0].status.phase in ["Completed", "PartiallyFailed", "Failed", "FailedValidation"]
               retries: 60
               delay: 20
 
             - name: Verify restore completed successfully
               ansible.builtin.assert:
-                that: restore_status.resources[0].status.phase == "Completed"
+                that: _restore_query.resources[0].status.phase == "Completed"
                 fail_msg: >-
-                  Restore phase is {{ restore_status.resources[0].status.phase }}.
-                  Errors: {{ restore_status.resources[0].status.errors | default('n/a') }}
-                  Warnings: {{ restore_status.resources[0].status.warnings | default('n/a') }}
+                  Restore phase is {{ _restore_query.resources[0].status.phase }}.
+                  Errors: {{ _restore_query.resources[0].status.errors | default('n/a') }}
+                  Warnings: {{ _restore_query.resources[0].status.warnings | default('n/a') }}
 
             - name: Query restore DataDownloads
               kubernetes.core.k8s_info:
@@ -743,6 +743,7 @@
             - name: Enable ArgoCD auto-sync for Strimzi operator
               kubernetes.core.k8s:
                 kubeconfig: "{{ kubeconfig_path }}"
+                state: patched
                 api_version: argoproj.io/v1alpha1
                 kind: Application
                 name: strimzi-kafka-operator
@@ -752,7 +753,6 @@
                     syncPolicy:
                       automated:
                         enabled: true
-                state: patched
 
             - name: Wait for Strimzi to reconcile restored Kafka cluster
               kubernetes.core.k8s_info:
@@ -988,16 +988,15 @@
             api_version: velero.io/v1
             kind: Restore
             namespace: velero
-          register: restore_status
-          retries: 60
-          delay: 15
+          register: _restore_query
 
         - name: Debug Velero restores
           ansible.builtin.debug:
-            msg: "{{ restore_status }}"
+            msg: "{{ _restore_query }}"
 
         - name: Terminate playbook
-          fail:
+          ansible.builtin.fail:
+            msg: "backup verification failed"
 
     - name: Verify no workload pods are scheduled on server nodes
       block:
