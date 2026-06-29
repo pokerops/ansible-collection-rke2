@@ -13,130 +13,73 @@
     restore_name: "molecule-restore-{{ ansible_date_time.epoch }}"
     kubeconfig_path: "{{ molecule_local_kubeconfig }}"
   tasks:
-    - name: Clean up any previous PostgreSQL deployment
+    - name: Destroy PostgreSQL deployment
       block:
-        - name: Check if PostgreSQL namespace exists
-          kubernetes.core.k8s_info:
-            kubeconfig: "{{ kubeconfig_path }}"
-            api_version: v1
-            kind: Namespace
-            name: "{{ postgres_namespace }}"
-          register: existing_namespace
-
-        - name: Clean up existing PostgreSQL resources
-          when: existing_namespace.resources | length > 0
+        - name: Delete existing PostgreSQL cluster gracefully
           block:
-            - name: Check for existing PostgreSQL cluster
-              kubernetes.core.k8s_info:
+            - name: Delete PostgreSQL cluster
+              kubernetes.core.k8s:
                 kubeconfig: "{{ kubeconfig_path }}"
                 api_version: acid.zalan.do/v1
                 kind: postgresql
                 name: "{{ postgres_cluster_name }}"
                 namespace: "{{ postgres_namespace }}"
-              register: existing_cluster
+                state: absent
+                wait: true
+                wait_timeout: 300
 
-            - name: Delete existing PostgreSQL cluster gracefully
-              when: existing_cluster.resources | length > 0
-              block:
-                - name: Delete PostgreSQL cluster
-                  kubernetes.core.k8s:
-                    kubeconfig: "{{ kubeconfig_path }}"
-                    api_version: acid.zalan.do/v1
-                    kind: postgresql
-                    name: "{{ postgres_cluster_name }}"
-                    namespace: "{{ postgres_namespace }}"
-                    state: absent
-                    wait: true
-                    wait_timeout: 300
-
-              rescue:
-                - name: Force delete PostgreSQL cluster on graceful deletion failure
-                  block:
-                    - name: Remove finalizers from PostgreSQL cluster
-                      kubernetes.core.k8s:
-                        kubeconfig: "{{ kubeconfig_path }}"
-                        api_version: acid.zalan.do/v1
-                        kind: postgresql
-                        name: "{{ postgres_cluster_name }}"
-                        namespace: "{{ postgres_namespace }}"
-                        definition:
-                          metadata:
-                            finalizers: []
-                        state: present
-                        merge_type: merge
-
-                    - name: Force delete PostgreSQL cluster
-                      kubernetes.core.k8s:
-                        kubeconfig: "{{ kubeconfig_path }}"
-                        api_version: acid.zalan.do/v1
-                        kind: postgresql
-                        name: "{{ postgres_cluster_name }}"
-                        namespace: "{{ postgres_namespace }}"
-                        state: absent
-                        wait: false
-
-            - name: Force delete all PVCs
+          rescue:
+            - name: Remove finalizers from PostgreSQL cluster
               kubernetes.core.k8s:
                 kubeconfig: "{{ kubeconfig_path }}"
-                api_version: v1
-                kind: PersistentVolumeClaim
+                api_version: acid.zalan.do/v1
+                kind: postgresql
+                name: "{{ postgres_cluster_name }}"
+                namespace: "{{ postgres_namespace }}"
+                definition:
+                  metadata:
+                    finalizers: []
+                state: present
+                merge_type: merge
+
+            - name: Force delete PostgreSQL cluster
+              kubernetes.core.k8s:
+                kubeconfig: "{{ kubeconfig_path }}"
+                api_version: acid.zalan.do/v1
+                kind: postgresql
+                name: "{{ postgres_cluster_name }}"
                 namespace: "{{ postgres_namespace }}"
                 state: absent
                 wait: false
 
-            - name: Wait for PVC deletion to complete
-              kubernetes.core.k8s_info:
-                kubeconfig: "{{ kubeconfig_path }}"
-                api_version: v1
-                kind: PersistentVolumeClaim
-                namespace: "{{ postgres_namespace }}"
-              register: pvc_check
-              until: pvc_check.resources | length == 0
-              retries: 30
-              delay: 10
+        - name: Query existing PVCs
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ kubeconfig_path }}"
+            api_version: v1
+            kind: PersistentVolumeClaim
+            namespace: "{{ postgres_namespace }}"
+          register: _pvc_query
 
-        - name: Clean up any previous Velero test backups and restores
-          block:
-            - name: Get all existing test backups
-              kubernetes.core.k8s_info:
-                kubeconfig: "{{ kubeconfig_path }}"
-                api_version: velero.io/v1
-                kind: Backup
-                namespace: velero
-                label_selectors:
-                  - "app.kubernetes.io/managed-by=ansible"
-                  - "backup.velero.io/type=molecule"
-              register: existing_backups
+        - name: Force delete existing PVCs
+          kubernetes.core.k8s:
+            kubeconfig: "{{ kubeconfig_path }}"
+            api_version: v1
+            kind: PersistentVolumeClaim
+            name: "{{ item }}"
+            namespace: "{{ postgres_namespace }}"
+            state: absent
+          loop: "{{ _pvc_query.resources | map(attribute='metadata.name') }}"
 
-            - name: Delete existing test backups
-              kubernetes.core.k8s:
-                kubeconfig: "{{ kubeconfig_path }}"
-                api_version: velero.io/v1
-                kind: Backup
-                name: "{{ item }}"
-                namespace: velero
-                state: absent
-              loop: "{{ existing_backups.resources | map(attribute='metadata.name') }}"
-
-            - name: Get all existing test restores
-              kubernetes.core.k8s_info:
-                kubeconfig: "{{ kubeconfig_path }}"
-                api_version: velero.io/v1
-                kind: Restore
-                namespace: velero
-                label_selectors:
-                  - "app.kubernetes.io/managed-by=ansible"
-              register: existing_restores
-
-            - name: Delete existing test restores
-              kubernetes.core.k8s:
-                kubeconfig: "{{ kubeconfig_path }}"
-                api_version: velero.io/v1
-                kind: Restore
-                name: "{{ item }}"
-                namespace: velero
-                state: absent
-              loop: "{{ existing_restores.resources | map(attribute='metadata.name') }}"
+        - name: Wait for PVC deletion to complete
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ kubeconfig_path }}"
+            api_version: v1
+            kind: PersistentVolumeClaim
+            namespace: "{{ postgres_namespace }}"
+          register: _pvc_query
+          until: _pvc_query.resources | length == 0
+          retries: 30
+          delay: 10
 
     - name: Create PostgreSQL test namespace
       kubernetes.core.k8s:
@@ -207,18 +150,18 @@
             kind: postgresql
             name: "{{ postgres_cluster_name }}"
             namespace: "{{ postgres_namespace }}"
-          register: postgres_cluster_status
+          register: _cluster_query
           until:
-            - postgres_cluster_status.resources[0].status is defined
-            - postgres_cluster_status.resources[0].status.PostgresClusterStatus is defined
-            - postgres_cluster_status.resources[0].status.PostgresClusterStatus == "Running"
+            - _cluster_query.resources[0].status is defined
+            - _cluster_query.resources[0].status.PostgresClusterStatus is defined
+            - _cluster_query.resources[0].status.PostgresClusterStatus == "Running"
           retries: 60
-          delay: 15
+          delay: 20
 
       rescue:
         - name: Debug PostgreSQL cluster startup failure
           ansible.builtin.debug:
-            var: postgres_cluster_status
+            var: _cluster_query
 
         - name: Fail the playbook if PostgreSQL cluster is not ready
           ansible.builtin.fail:
@@ -231,17 +174,17 @@
         kind: Service
         name: "{{ postgres_cluster_name }}"
         namespace: "{{ postgres_namespace }}"
-      register: postgres_lb_service
+      register: _lb_query
       until:
-        - postgres_lb_service.resources[0].status.loadBalancer is defined
-        - postgres_lb_service.resources[0].status.loadBalancer.ingress is defined
-        - postgres_lb_service.resources[0].status.loadBalancer.ingress | length > 0
+        - _lb_query.resources[0].status.loadBalancer is defined
+        - _lb_query.resources[0].status.loadBalancer.ingress is defined
+        - _lb_query.resources[0].status.loadBalancer.ingress | length > 0
       retries: 30
       delay: 10
 
     - name: Get PostgreSQL LoadBalancer external IP
       ansible.builtin.set_fact:
-        postgres_external_ip: "{{ postgres_lb_service.resources[0].status.loadBalancer.ingress[0].ip }}"
+        postgres_external_ip: "{{ _lb_query.resources[0].status.loadBalancer.ingress[0].ip }}"
 
     - name: Get PostgreSQL user password from secret
       kubernetes.core.k8s_info:
@@ -250,11 +193,11 @@
         kind: Secret
         name: "{{ postgres_user }}.{{ postgres_cluster_name }}.credentials.postgresql.acid.zalan.do"
         namespace: "{{ postgres_namespace }}"
-      register: postgres_secret
+      register: _secret_query
 
     - name: Set PostgreSQL password from secret
       ansible.builtin.set_fact:
-        postgres_password: "{{ postgres_secret.resources[0].data.password | b64decode }}"
+        postgres_password: "{{ _secret_query.resources[0].data.password | b64decode }}"
 
     - name: Create temporary directory for Pagila
       ansible.builtin.tempfile:
@@ -278,8 +221,8 @@
             login_port: "{{ postgres_service_port }}"
             login_user: "{{ postgres_user }}"
             login_password: "{{ postgres_password }}"
-          register: postgres_ping
-          until: postgres_ping is succeeded
+          register: _ping
+          until: _ping is succeeded
           retries: 30
           delay: 10
 
@@ -331,11 +274,11 @@
           FROM information_schema.tables
           WHERE table_schema = 'public'
           ORDER BY table_name;
-      register: pagila_tables_before
+      register: _table_query
 
     - name: Store original table list as fact
       ansible.builtin.set_fact:
-        original_pagila_tables: "{{ pagila_tables_before.query_result | map(attribute='table_name') | list | sort }}"
+        original_pagila_tables: "{{ _table_query.query_result | map(attribute='table_name') | list | sort }}"
 
     - name: Get sample data count for verification
       community.postgresql.postgresql_query:
@@ -354,11 +297,11 @@
           SELECT
             'customer' as table_name, COUNT(*) as row_count FROM customer
           ORDER BY table_name;
-      register: pagila_data_counts_before
+      register: _data_query
 
     - name: Store original data counts as fact
       ansible.builtin.set_fact:
-        original_pagila_data_counts: "{{ pagila_data_counts_before.query_result }}"
+        original_pagila_data_counts: "{{ _data_query.query_result }}"
 
     - name: Display original table list and data counts
       ansible.builtin.debug:
@@ -404,20 +347,20 @@
         kind: Backup
         name: "{{ backup_name }}"
         namespace: velero
-      register: backup_status
+      register: _backup_query
       until:
-        - backup_status.resources | length == 1
-        - backup_status.resources[0].status.phase is defined
-        - backup_status.resources[0].status.phase in ["Completed"]
+        - _backup_query.resources | length == 1
+        - _backup_query.resources[0].status.phase is defined
+        - _backup_query.resources[0].status.phase in ["Completed"]
       retries: 60
       delay: 10
 
     - name: Verify backup completed successfully
       ansible.builtin.assert:
-        that: backup_status.resources[0].status.phase == "Completed"
+        that: _backup_query.resources[0].status.phase == "Completed"
         fail_msg: |
-          Backup failed with status: {{ backup_status.resources[0].status.phase }}
-          Errors: {{ backup_status.resources[0].status.errors | default([]) }}
+          Backup failed with status: {{ _backup_query.resources[0].status.phase }}
+          Errors: {{ _backup_query.resources[0].status.errors | default([]) }}
         success_msg: "Backup completed successfully"
 
     - name: Display backup completion details
@@ -425,10 +368,10 @@
         msg: |
           Backup Status:
           - Name: {{ backup_name }}
-          - Phase: {{ backup_status.resources[0].status.phase }}
-          - Start Time: {{ backup_status.resources[0].status.startTimestamp }}
-          - Completion Time: {{ backup_status.resources[0].status.completionTimestamp }}
-          - Items Backed Up: {{ backup_status.resources[0].status.progress.itemsBackedUp | default(0) }}
+          - Phase: {{ _backup_query.resources[0].status.phase }}
+          - Start Time: {{ _backup_query.resources[0].status.startTimestamp }}
+          - Completion Time: {{ _backup_query.resources[0].status.completionTimestamp }}
+          - Items Backed Up: {{ _backup_query.resources[0].status.progress.itemsBackedUp | default(0) }}
 
     - name: Quey PostgreSQL persistent volume claims
       kubernetes.core.k8s_info:
@@ -436,20 +379,12 @@
         api_version: v1
         kind: PersistentVolumeClaim
         namespace: "{{ postgres_namespace }}"
-      register: _postgres_pvcs
+      register: _pvc_query
 
     - name: Set storage facts
       ansible.builtin.set_fact:
-        _pvcs: "{{ _postgres_pvcs.resources | map(attribute='metadata.name') }}"
-        _pvs: "{{ _postgres_pvcs.resources | map(attribute='spec.volumeName') }}"
-
-    - name: Debug PostgreSQL PVCs
-      ansible.builtin.debug:
-        var: _pvcs
-
-    - name: Debug PostgreSQL PVs
-      ansible.builtin.debug:
-        var: _pvs
+        _pvcs: "{{ _pvc_query.resources | map(attribute='metadata.name') }}"
+        _pvs: "{{ _pvc_query.resources | map(attribute='spec.volumeName') }}"
 
     - name: Delete PostgreSQL cluster
       kubernetes.core.k8s:
@@ -469,8 +404,8 @@
         kind: PersistentVolumeClaim
         name: "{{ item }}"
         namespace: "{{ postgres_namespace }}"
-      register: pvc_check
-      until: pvc_check.resources | length == 0
+      register: _pvc_query
+      until: _pvc_query.resources | length == 0
       retries: 30
       delay: 10
       loop: "{{ _pvcs }}"
@@ -482,13 +417,13 @@
         kind: PersistentVolume
         namespace: "{{ postgres_namespace }}"
         name: "{{ item }}"
-      register: pvc_check
-      until: pvc_check.resources | length == 0
+      register: _pv_query
+      until: _pv_query.resources | length == 0
       retries: 30
       delay: 10
       loop: "{{ _pvs }}"
 
-    - name: Scale postgres-operator down to 0
+    - name: Scale down Postgres operator
       kubernetes.core.k8s_scale:
         kubeconfig: "{{ kubeconfig_path }}"
         api_version: apps/v1
@@ -499,7 +434,7 @@
         wait: true
         wait_timeout: 120
 
-    - name: Restore PostgreSQL namespace (CR + secrets + PVC + volume data)
+    - name: Restore PostgreSQL database
       kubernetes.core.k8s:
         kubeconfig: "{{ kubeconfig_path }}"
         definition:
@@ -532,20 +467,20 @@
         kind: Restore
         name: "{{ restore_name }}"
         namespace: velero
-      register: crd_restore_status
+      register: _restore_query
       until:
-        - crd_restore_status.resources[0].status.phase is defined
-        - crd_restore_status.resources[0].status.phase in ["Completed", "PartiallyFailed", "Failed", "FailedValidation"]
+        - _restore_query.resources[0].status.phase is defined
+        - _restore_query.resources[0].status.phase in ["Completed", "PartiallyFailed", "Failed", "FailedValidation"]
       retries: 30
       delay: 10
 
     - name: Verify restore completed successfully
       ansible.builtin.assert:
-        that: restore_status.resources[0].status.phase == "Completed"
+        that: _restore_query.resources[0].status.phase == "Completed"
         fail_msg: >-
-          Restore phase is {{ restore_status.resources[0].status.phase }}.
-          Errors: {{ restore_status.resources[0].status.errors | default('n/a') }}
-          Warnings: {{ restore_status.resources[0].status.warnings | default('n/a') }}
+          Restore phase is {{ _restore_query.resources[0].status.phase }}.
+          Errors: {{ _restore_query.resources[0].status.errors | default('n/a') }}
+          Warnings: {{ _restore_query.resources[0].status.warnings | default('n/a') }}
 
     - name: Query restore DataDownloads
       kubernetes.core.k8s_info:
@@ -555,10 +490,10 @@
         namespace: velero
         label_selectors:
           - "velero.io/restore-name={{ restore_name }}"
-      register: datadownloads
+      register: _download_query
       until:
-        - datadownloads.resources | length > 0
-        - datadownloads.resources
+        - _download_query.resources | length > 0
+        - _download_query.resources
           | selectattr('status.phase', 'defined')
           | map(attribute='status.phase') | list
           | reject('in', ['Completed', 'Failed', 'Canceled']) | list | length == 0
@@ -568,8 +503,8 @@
     - name: Verify DataDownload completed successfully
       ansible.builtin.assert:
         that:
-          - datadownloads.resources | length > 0
-          - datadownloads.resources
+          - _download_query.resources | length > 0
+          - _download_query.resources
             | selectattr('status.phase', 'equalto', 'Completed')
             | list | length > 0
         fail_msg: >-
@@ -583,10 +518,10 @@
         kind: PersistentVolumeClaim
         namespace: "{{ postgres_namespace }}"
         name: "pgdata-{{ postgres_cluster_name }}-0"
-      register: restored_pvc
+      register: _pvc_query
       until:
-        - restored_pvc.resources | length == 1
-        - restored_pvc.resources[0].status.phase == "Bound"
+        - _pvc_query.resources | length == 1
+        - _pvc_query.resources[0].status.phase == "Bound"
       retries: 30
       delay: 10
 
@@ -595,8 +530,8 @@
         kubeconfig: "{{ kubeconfig_path }}"
         api_version: apps/v1
         kind: Deployment
-        name: "{{ postgres_operator_deployment }}"
-        namespace: "{{ postgres_operator_namespace }}"
+        name: postgres-operator
+        namespace: postgres-operator
         replicas: 1
         wait: true
         wait_timeout: 120
@@ -608,11 +543,11 @@
         kind: postgresql
         name: "{{ postgres_cluster_name }}"
         namespace: "{{ postgres_namespace }}"
-      register: restored_cluster_check
+      register: _postgresql_query
       until:
-        - restored_cluster_check.resources[0].status is defined
-        - restored_cluster_check.resources[0].status.PostgresClusterStatus is defined
-        - restored_cluster_check.resources[0].status.PostgresClusterStatus == "Running"
+        - _postgresql_query.resources[0].status is defined
+        - _postgresql_query.resources[0].status.PostgresClusterStatus is defined
+        - _postgresql_query.resources[0].status.PostgresClusterStatus == "Running"
       retries: 60
       delay: 20
 
@@ -623,21 +558,21 @@
         kind: Service
         name: "{{ postgres_cluster_name }}"
         namespace: "{{ postgres_namespace }}"
-      register: restored_postgres_lb_service
+      register: _lb_service
       until:
-        - restored_postgres_lb_service.resources[0].status.loadBalancer is defined
-        - restored_postgres_lb_service.resources[0].status.loadBalancer.ingress is defined
-        - restored_postgres_lb_service.resources[0].status.loadBalancer.ingress | length > 0
+        - _lb_service.resources[0].status.loadBalancer is defined
+        - _lb_service.resources[0].status.loadBalancer.ingress is defined
+        - _lb_service.resources[0].status.loadBalancer.ingress | length > 0
       retries: 30
       delay: 10
 
     - name: Set restored PostgreSQL facts
       ansible.builtin.set_fact:
-        restored_postgres_external_ip: "{{ restored_postgres_lb_service.resources[0].status.loadBalancer.ingress[0].ip }}"
+        postgres_external_ip: "{{ _lb_service.resources[0].status.loadBalancer.ingress[0].ip }}"
 
     - name: Wait for restored PostgreSQL to be accessible
       ansible.builtin.wait_for:
-        host: "{{ restored_postgres_external_ip }}"
+        host: "{{ postgres_external_ip }}"
         port: "{{ postgres_service_port }}"
         timeout: 300
 
@@ -648,45 +583,45 @@
         kind: Secret
         name: "{{ postgres_user }}.{{ postgres_cluster_name }}.credentials.postgresql.acid.zalan.do"
         namespace: "{{ postgres_namespace }}"
-      register: postgres_secret
+      register: _secret_query
 
     - name: Set PostgreSQL password from secret
       ansible.builtin.set_fact:
-        postgres_password: "{{ postgres_secret.resources[0].data.password | b64decode }}"
+        postgres_password: "{{ _secret_query.resources[0].data.password | b64decode }}"
 
     - name: Wait for PostgreSQL connection to be ready after restore
       community.postgresql.postgresql_ping:
         login_db: "{{ postgres_database_name }}"
-        login_host: "{{ restored_postgres_external_ip }}"
+        login_host: "{{ postgres_external_ip }}"
         login_port: "{{ postgres_service_port }}"
         login_user: "{{ postgres_user }}"
         login_password: "{{ postgres_password }}"
-      register: restored_postgres_ping
-      until: restored_postgres_ping is succeeded
+      register: _ping
+      until: _ping is succeeded
       retries: 30
       delay: 10
 
     - name: Verify Pagila database exists after restore
       community.postgresql.postgresql_query:
         login_db: "{{ postgres_database_name }}"
-        login_host: "{{ restored_postgres_external_ip }}"
+        login_host: "{{ postgres_external_ip }}"
         login_port: "{{ postgres_service_port }}"
         login_user: "{{ postgres_user }}"
         login_password: "{{ postgres_password }}"
         query: "SELECT datname FROM pg_database WHERE datname = '{{ postgres_database_name }}'"
-      register: pagila_db_check
+      register: _db_query
 
     - name: Assert Pagila database was restored
       assert:
         that:
-          - pagila_db_check.query_result | length > 0
+          - _db_query.query_result | length > 0
         fail_msg: "Pagila database was not found after restore"
         success_msg: "Pagila database successfully restored"
 
     - name: Get list of tables in restored Pagila database
       community.postgresql.postgresql_query:
         login_db: "{{ postgres_database_name }}"
-        login_host: "{{ restored_postgres_external_ip }}"
+        login_host: "{{ postgres_external_ip }}"
         login_port: "{{ postgres_service_port }}"
         login_user: "{{ postgres_user }}"
         login_password: "{{ postgres_password }}"
@@ -695,16 +630,16 @@
           FROM information_schema.tables
           WHERE table_schema = 'public'
           ORDER BY table_name;
-      register: pagila_tables_after
+      register: _table_query
 
     - name: Store restored table list as fact
       ansible.builtin.set_fact:
-        restored_pagila_tables: "{{ pagila_tables_after.query_result | map(attribute='table_name') | list | sort }}"
+        restored_pagila_tables: "{{ _table_query.query_result | map(attribute='table_name') | list | sort }}"
 
     - name: Get restored data counts for verification
       community.postgresql.postgresql_query:
         login_db: "{{ postgres_database_name }}"
-        login_host: "{{ restored_postgres_external_ip }}"
+        login_host: "{{ postgres_external_ip }}"
         login_port: "{{ postgres_service_port }}"
         login_user: "{{ postgres_user }}"
         login_password: "{{ postgres_password }}"
@@ -718,11 +653,11 @@
           SELECT
             'customer' as table_name, COUNT(*) as row_count FROM customer
           ORDER BY table_name;
-      register: pagila_data_counts_after
+      register: _data_query
 
     - name: Store restored data counts as fact
       ansible.builtin.set_fact:
-        restored_pagila_data_counts: "{{ pagila_data_counts_after.query_result }}"
+        restored_pagila_data_counts: "{{ _data_query.query_result }}"
 
     - name: Compare original and restored table lists
       assert:
@@ -758,7 +693,7 @@
           - Backup Name: {{ backup_name }}
           - Restore Name: {{ restore_name }}
           - Original PostgreSQL IP: {{ postgres_external_ip }}
-          - Restored PostgreSQL IP: {{ restored_postgres_external_ip }}
+          - Restored PostgreSQL IP: {{ postgres_external_ip }}
           - Database: {{ postgres_database_name }}
           - Tables Verified: {{ original_pagila_tables | length }}
 
