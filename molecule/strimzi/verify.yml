@@ -15,7 +15,7 @@
     kafka_image: "quay.io/strimzi/kafka:0.45.0-kafka-3.9.0"
     strimzi_deployment_name: "strimzi-cluster-operator"
   tasks:
-    - name: Test velero with strimzi
+    - name: Test Strimzi Velero backup and restore
       block:
         - name: Delete existing Kafka deployment
           block:
@@ -993,6 +993,17 @@
         - name: Debug Velero restores
           ansible.builtin.debug:
             msg: "{{ _restore_query }}"
+
+        - name: Query restore DataDownloads
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ kubeconfig_path }}"
+            api_version: velero.io/v2alpha1
+            kind: DataDownload
+          register: _download_query
+
+        - name: Debug Velero DataDownloads
+          ansible.builtin.debug:
+            msg: "{{ _download_query }}"
 
         - name: Terminate playbook
           ansible.builtin.fail:
