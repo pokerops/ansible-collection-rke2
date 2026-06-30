@@ -772,6 +772,68 @@
           ansible.builtin.debug:
             msg: "{{ _download_query }}"
 
+        - name: Query backup DataUploads
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ kubeconfig_path }}"
+            api_version: velero.io/v2alpha1
+            kind: DataUpload
+            namespace: velero
+          register: _upload_query
+
+        - name: Debug backup DataUploads
+          ansible.builtin.debug:
+            msg: "{{ _upload_query }}"
+
+        - name: Query VolumeSnapshotClasses
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ kubeconfig_path }}"
+            api_version: snapshot.storage.k8s.io/v1
+            kind: VolumeSnapshotClass
+          register: _vsc_query
+
+        - name: Debug VolumeSnapshotClasses
+          ansible.builtin.debug:
+            msg: "{{ _vsc_query.resources | map(attribute='metadata') | list }}"
+
+        - name: Query VolumeSnapshots
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ kubeconfig_path }}"
+            api_version: snapshot.storage.k8s.io/v1
+            kind: VolumeSnapshot
+            namespace: "{{ postgres_namespace }}"
+          register: _vs_query
+
+        - name: Debug VolumeSnapshots
+          ansible.builtin.debug:
+            msg: "{{ _vs_query }}"
+
+        - name: Query VolumeSnapshotContents
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ kubeconfig_path }}"
+            api_version: snapshot.storage.k8s.io/v1
+            kind: VolumeSnapshotContent
+          register: _vscontent_query
+
+        - name: Debug VolumeSnapshotContents
+          ansible.builtin.debug:
+            msg: "{{ _vscontent_query }}"
+
+        - name: Query Velero node-agent pods
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ kubeconfig_path }}"
+            api_version: v1
+            kind: Pod
+            namespace: velero
+            label_selectors:
+              - "name=node-agent"
+          register: _nodeagent_query
+
+        - name: Debug Velero node-agent pods
+          ansible.builtin.debug:
+            msg: >-
+              {{ _nodeagent_query.resources
+                 | map(attribute='status.phase') | list }}
+
         - name: Terminate playbook
           ansible.builtin.fail:
             msg: "backup verification failed"
