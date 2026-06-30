@@ -473,21 +473,21 @@
                 kind: Backup
                 name: "{{ backup_name }}"
                 namespace: velero
-              register: backup_status
+              register: _backup_query
               until:
-                - backup_status.resources | length == 1
-                - backup_status.resources[0].status.phase is defined
-                - backup_status.resources[0].status.phase == "Completed"
+                - _backup_query.resources | length == 1
+                - _backup_query.resources[0].status.phase is defined
+                - _backup_query.resources[0].status.phase == "Completed"
               retries: 60
               delay: 15
 
             - name: Verify backup completed successfully
               ansible.builtin.assert:
-                that: backup_status.resources[0].status.phase == "Completed"
+                that: _backup_query.resources[0].status.phase == "Completed"
                 fail_msg: >-
-                  Backup failed with status: {{ backup_status.resources[0].status.phase }}.
-                  Errors: {{ backup_status.resources[0].status.errors | default([]) }}
-                  Warnings: {{ backup_status.resources[0].status.warnings | default(0) }}
+                  Backup failed with status: {{ _backup_query.resources[0].status.phase }}.
+                  Errors: {{ _backup_query.resources[0].status.errors | default([]) }}
+                  Warnings: {{ _backup_query.resources[0].status.warnings | default(0) }}
                 success_msg: "Backup completed successfully"
 
             - name: Verify backup moved volume data to object storage
@@ -1002,13 +1002,13 @@
             api_version: velero.io/v1
             kind: Backup
             namespace: velero
-          register: backup_status
+          register: _backup_query
           retries: 60
           delay: 15
 
         - name: Debug Velero backups
           ansible.builtin.debug:
-            msg: "{{ backup_status }}"
+            msg: "{{ _backup_query }}"
 
         - name: Query Velero restores
           kubernetes.core.k8s_info:
@@ -1061,7 +1061,7 @@
             kubeconfig: "{{ kubeconfig_path }}"
             api_version: snapshot.storage.k8s.io/v1
             kind: VolumeSnapshot
-            namespace: "{{ kafka_namespace }}"
+            namespace: velero
           register: _vs_query
 
         - name: Debug VolumeSnapshots
@@ -1106,7 +1106,11 @@
 
         - name: Debug Velero server args
           ansible.builtin.debug:
-            msg: "{{ _velero_deploy.resources[0].spec.template.spec.containers[0].args | default('n/a') }}"
+            msg: "{{ _arguments }}"
+          vars:
+            _deployments: "{{ _velero_deploy.resources }}"
+            _containers: "{{ _deployments | map(attribute='spec.template.spec.containers') | flatten }}"
+            _arguments: "{{ _containers | map(attribute='args') }}"
 
         - name: Query Velero server pod
           kubernetes.core.k8s_info:
