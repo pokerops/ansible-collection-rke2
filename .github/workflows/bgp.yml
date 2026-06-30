@@ -27,7 +27,6 @@ jobs:
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
       MOLECULE_OUTPUT_DIR: /tmp/logs
-      MOLECULE_REVISION: ${{ github.head_ref || github.ref_name }}
     steps:
       - name: Run devbox tests
         uses: pokerops/ansible-utils@master
@@ -36,6 +35,7 @@ jobs:
             just
             --set MOLECULE_SCENARIO ${{ matrix.scenario }}
             --set MOLECULE_KVM_IMAGE ${{ matrix.image }}
+            --set MOLECULE_REVISION ${{ github.head_ref || github.ref_name }}
             requirements test
 
       - name: Upload install logs
