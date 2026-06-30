@@ -1095,6 +1095,44 @@
               {{ _nodeagent_query.resources
                  | map(attribute='status.phase') | list }}
 
+        - name: Query Velero server deployment
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ kubeconfig_path }}"
+            api_version: apps/v1
+            kind: Deployment
+            namespace: velero
+            name: velero
+          register: _velero_deploy
+
+        - name: Debug Velero server args
+          ansible.builtin.debug:
+            msg: "{{ _velero_deploy.resources[0].spec.template.spec.containers[0].args | default('n/a') }}"
+
+        - name: Query Velero server pod
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ kubeconfig_path }}"
+            api_version: v1
+            kind: Pod
+            namespace: velero
+            label_selectors:
+              - "name=velero"
+          register: _velero_pod_query
+
+        - name: Get Velero server logs
+          kubernetes.core.k8s_log:
+            kubeconfig: "{{ kubeconfig_path }}"
+            namespace: velero
+            name: "{{ _velero_pod_query.resources | map(attribute='metadata.name') | first }}"
+            container: velero
+          register: _velero_log
+          when: _velero_pod_query.resources | length > 0
+
+        - name: Debug Velero warning/snapshot log lines
+          ansible.builtin.debug:
+            msg: >-
+              {{ _velero_log.log_lines | default([])
+                 | select('search', 'level=warning|skip|snapshot|VolumeSnapshot') | list }}
+
         - name: Terminate playbook
           ansible.builtin.fail:
             msg: "backup verification failed"
