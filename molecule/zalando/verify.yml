@@ -705,7 +705,7 @@
         - name: Query PostgreSQL clusters
           kubernetes.core.k8s_info:
             kubeconfig: "{{ kubeconfig_path }}"
-            apiVersion: acid.zalan.do/v1
+            api_version: acid.zalan.do/v1
             kind: postgresql
             namespace: "{{ postgres_namespace }}"
           register: _cluster_query
