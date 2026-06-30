@@ -438,7 +438,7 @@
                 name: kafka-consumer-before-backup
               changed_when: false
 
-        - name: Create backup
+        - name: Create Velero backup
           block:
             - name: Create Velero backup of Kafka namespace
               kubernetes.core.k8s:
@@ -461,7 +461,7 @@
                     defaultVolumesToFsBackup: false
                     excludedResources: []
                     snapshotMoveData: true
-                    storageLocation: default
+                    storageLocation: "{{ rke2_velero_s3_storage }}"
                     csiSnapshotTimeout: 5m
                     itemOperationTimeout: 10m
                     ttl: "72h0m0s"

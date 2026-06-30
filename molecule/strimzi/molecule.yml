@@ -67,31 +67,6 @@ provisioner:
           rke2_api_url: "https://api.{{ rke2_cluster_name }}:6443"
           rke2_token: "secret"
           # Velero params
-          rke2_argocd_apps_values_extra:
-            applications:
-              velero:
-                project: default
-                source:
-                  repoURL: https://github.com/pokerops/ansible-collection-rke2.git
-                  targetRevision: "{{ rke2_argocd_apps_pokerops_revision }}"
-                  path: argocd/molecule/velero
-                  directory:
-                    recurse: false
-                destination:
-                  server: https://kubernetes.default.svc
-                  namespace: default
-                syncPolicy:
-                  automated:
-                    prune: true
-                    selfHeal: true
-                  syncOptions:
-                    - ApplyOutOfSyncOnly=true
-                revisionHistoryLimit:
-          rke2_velero_s3: "{{ rke2_cluster_name | replace('.', '-') }}"
-          rke2_velero_s3_region: us-east-1
-          rke2_velero_s3_bucket: "{{ rke2_velero_s3 }}-strimzi-bucket"
-          rke2_velero_s3_policy: "{{ rke2_velero_s3 }}-strimzi-policy"
-          rke2_velero_s3_user: "{{ rke2_velero_s3 }}-strimzi-user"
           rke2_velero_s3_storage: "default"
           # Test rke2 params
           rke2_retry_num: 30

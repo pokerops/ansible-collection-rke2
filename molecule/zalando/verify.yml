@@ -316,46 +316,48 @@
               - {{ count.table_name }}: {{ count.row_count }} rows
               {% endfor %}
 
-        - name: Create Velero full cluster backup
-          kubernetes.core.k8s:
-            kubeconfig: "{{ kubeconfig_path }}"
-            definition:
-              apiVersion: velero.io/v1
-              kind: Backup
-              metadata:
+        - name: Create Velero backup
+          block:
+            - name: Create Velero full cluster backup
+              kubernetes.core.k8s:
+                kubeconfig: "{{ kubeconfig_path }}"
+                definition:
+                  apiVersion: velero.io/v1
+                  kind: Backup
+                  metadata:
+                    name: "{{ backup_name }}"
+                    namespace: velero
+                    labels:
+                      app.kubernetes.io/managed-by: ansible
+                      backup.velero.io/type: molecule
+                  spec:
+                    includedNamespaces:
+                      - "{{ postgres_namespace }}"
+                    volumeSnapshotLocations: []
+                    includeClusterResources: true
+                    defaultVolumesToFsBackup: false
+                    excludedResources: []
+                    snapshotMoveData: true
+                    storageLocation: "{{ rke2_velero_s3_storage }}"
+                    csiSnapshotTimeout: 5m
+                    itemOperationTimeout: 10m
+                    ttl: "72h0m0s"
+                state: present
+
+            - name: Wait for backup to complete
+              kubernetes.core.k8s_info:
+                kubeconfig: "{{ kubeconfig_path }}"
+                api_version: velero.io/v1
+                kind: Backup
                 name: "{{ backup_name }}"
                 namespace: velero
-                labels:
-                  app.kubernetes.io/managed-by: ansible
-                  backup.velero.io/type: molecule
-              spec:
-                includedNamespaces:
-                  - "{{ postgres_namespace }}"
-                volumeSnapshotLocations: []
-                includeClusterResources: true
-                defaultVolumesToFsBackup: false
-                excludedResources: []
-                snapshotMoveData: true
-                storageLocation: default
-                csiSnapshotTimeout: 5m
-                itemOperationTimeout: 10m
-                ttl: "72h0m0s"
-            state: present
-
-        - name: Wait for backup to complete
-          kubernetes.core.k8s_info:
-            kubeconfig: "{{ kubeconfig_path }}"
-            api_version: velero.io/v1
-            kind: Backup
-            name: "{{ backup_name }}"
-            namespace: velero
-          register: _backup_query
-          until:
-            - _backup_query.resources | length == 1
-            - _backup_query.resources[0].status.phase is defined
-            - _backup_query.resources[0].status.phase in ["Completed"]
-          retries: 60
-          delay: 10
+              register: _backup_query
+              until:
+                - _backup_query.resources | length == 1
+                - _backup_query.resources[0].status.phase is defined
+                - _backup_query.resources[0].status.phase in ["Completed"]
+              retries: 60
+              delay: 10
 
         - name: Verify backup completed successfully
           ansible.builtin.assert:
