@@ -27,4 +27,6 @@
         labels:
           velero.io/csi-volumesnapshot-class: "true"
       driver: driver.longhorn.io
-      deletionPolicy: Retain
+      deletionPolicy: "{{ rke2_longhorn_snapshot_retention }}"
+      parameters:
+        type: snap

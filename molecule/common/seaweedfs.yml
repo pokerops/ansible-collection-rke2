@@ -1,0 +1,369 @@
+---
+- name: Deploy SeaweedFS as an in-cluster S3 target
+  hosts: localhost
+  connection: local
+  vars:
+    seaweedfs_cluster_rebuild: "{{ lookup('ansible.builtin.env', 'MOLECULE_REBUILD', default=false) }}"
+    seaweedfs_cluster_name: seaweedfs
+    seaweedfs_cluster_namespace: velero
+    seaweedfs_cluster_image: "chrislusf/seaweedfs:latest"
+    seaweedfs_service_proto: http
+    seaweedfs_service_name: "{{ seaweedfs_cluster_name }}-s3"
+    seaweedfs_service_port: 8333
+    seaweedfs_service_bucket: velero
+    seaweedfs_service_user: velero
+    seaweedfs_service_secret: auth
+    seaweedfs_service_policy: velero
+    seaweedfs_service_binding: velero-access
+    seaweedfs_velero_secret: velero-auth
+    seaweedfs_operator_chart_template: "../../playbooks/templates/seaweedfs.yml"
+    seaweedfs_operator_chart_manifest: "{{ lookup('ansible.builtin.template', seaweedfs_operator_chart_template) | from_yaml }}"
+  tasks:
+    - name: Query cluster members
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        api_version: v1
+        kind: Node
+        label_selectors:
+          - node-role.kubernetes.io/control-plane=true
+      register: _node_query
+
+    - name: Set cluster facts
+      ansible.builtin.set_fact:
+        _rke2_cluster_master: "{{ _node.metadata.labels['kubernetes.io/hostname'] }}"
+      vars:
+        _node: "{{ _node_query.resources | first }}"
+
+    - name: Create SeaweedFS namespace
+      kubernetes.core.k8s:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        name: "{{ seaweedfs_cluster_namespace }}"
+        api_version: v1
+        kind: Namespace
+        state: present
+
+    - name: Set SeaweedFS facts
+      ansible.builtin.set_fact:
+        seaweedfs_operator_namespace: "{{ seaweedfs_operator_chart_manifest.spec.destination.namespace }}"
+
+    - name: Deploy SeaweedFS operator
+      kubernetes.core.k8s:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        state: present
+        definition: "{{ seaweedfs_operator_chart_manifest }}"
+
+    - name: Wait for SeaweedFS operator controller to be ready
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        api_version: apps/v1
+        kind: Deployment
+        namespace: "{{ seaweedfs_operator_namespace }}"
+        label_selectors:
+          - app.kubernetes.io/name=seaweedfs-operator
+      register: _deployment_query
+      vars:
+        _deployment_count: "{{ _deployment_query.resources | length }}"
+        _deployment: "{{ _deployment_query.resources | first }}"
+        _deployment_ready: "{{ _deployment['status']['readyReplicas'] | default(0) }}"
+      until:
+        - _deployment_count | int > 0
+        - _deployment_ready | int > 0
+      retries: 30
+      delay: 20
+
+    - name: Destroy SeaweedFS cluster
+      when: seaweedfs_cluster_rebuild | bool
+      block:
+        - name: Destroy SeaweedFS cluster
+          kubernetes.core.k8s:
+            kubeconfig: "{{ molecule_local_kubeconfig }}"
+            state: absent
+            definition:
+              apiVersion: seaweed.seaweedfs.com/v1
+              kind: Seaweed
+              metadata:
+                name: "{{ seaweedfs_cluster_name }}"
+                namespace: "{{ seaweedfs_cluster_namespace }}"
+
+        - name: Wait for SeaweedFS cluster destruction
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ molecule_local_kubeconfig }}"
+            api_version: v1
+            kind: Pod
+            namespace: "{{ seaweedfs_cluster_namespace }}"
+            label_selectors:
+              - app.kubernetes.io/name=seaweedfs
+          register: _pod_query
+          until: _pod_query.resources | length == 0
+          retries: 30
+          delay: 20
+
+    - name: Create SeaweedFS cluster
+      kubernetes.core.k8s:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        state: present
+        definition:
+          apiVersion: seaweed.seaweedfs.com/v1
+          kind: Seaweed
+          metadata:
+            name: "{{ seaweedfs_cluster_name }}"
+            namespace: "{{ seaweedfs_cluster_namespace }}"
+          spec:
+            image: "{{ seaweedfs_cluster_image }}"
+            volumeServerDiskCount: 1
+            master:
+              replicas: 1
+              config: |
+                [master.volume_growth]
+                copy_1 = {{ seaweedfs_volume_growth_step | default(1) }}
+                copy_2 = {{ seaweedfs_volume_growth_step | default(1) }}
+                copy_3 = {{ seaweedfs_volume_growth_step | default(1) }}
+                copy_other = {{ seaweedfs_volume_growth_step | default(1) }}
+            volume:
+              replicas: 1
+              maxVolumeCounts: 7
+              fileSizeLimitMB: 1000
+              requests:
+                storage: "{{ seaweedfs_cluster_size | default('4Gi') }}"
+            filer:
+              replicas: 1
+              config: |
+                [leveldb2]
+                enabled = true
+                dir = "/data/filerldb2"
+            s3:
+              replicas: 1
+              port: "{{ seaweedfs_service_port }}"
+      register: _cluster_create
+      until: _cluster_create is succeeded
+      retries: 30
+      delay: 20
+
+    - name: Wait for all SeaweedFS pods to be Ready
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        api_version: v1
+        kind: Pod
+        namespace: "{{ seaweedfs_cluster_namespace }}"
+        label_selectors:
+          - app.kubernetes.io/name=seaweedfs
+      vars:
+        _ready: "{{ _pod_query.resources | json_query('[].status.conditions[?type==`Ready`].status[]') | length }}"
+        _pods: "{{ _pod_query.resources | length }}"
+      register: _pod_query
+      until:
+        - _pods | int >= 4
+        - _pods | int == _ready | int
+      retries: 30
+      delay: 20
+
+    - name: Create SeawedFS bucket
+      kubernetes.core.k8s:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        state: present
+        definition:
+          apiVersion: seaweed.seaweedfs.com/v1
+          kind: Bucket
+          metadata:
+            name: "{{ seaweedfs_service_bucket }}"
+            namespace: "{{ seaweedfs_cluster_namespace }}"
+          spec:
+            clusterRef:
+              name: "{{ seaweedfs_cluster_name }}"
+              namespace: "{{ seaweedfs_cluster_namespace }}"
+
+    - name: Create SeaweedFS identity
+      kubernetes.core.k8s:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        state: present
+        definition:
+          apiVersion: seaweed.seaweedfs.com/v1
+          kind: S3Identity
+          metadata:
+            name: "{{ seaweedfs_service_user }}"
+            namespace: "{{ seaweedfs_cluster_namespace }}"
+          spec:
+            seaweedRef:
+              name: "{{ seaweedfs_cluster_name }}"
+
+    - name: Create SeaweedFS credentials
+      kubernetes.core.k8s:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        state: present
+        definition:
+          apiVersion: seaweed.seaweedfs.com/v1
+          kind: S3Credentials
+          metadata:
+            name: "{{ seaweedfs_service_user }}"
+            namespace: "{{ seaweedfs_cluster_namespace }}"
+          spec:
+            seaweedRef:
+              name: "{{ seaweedfs_cluster_name }}"
+            identityRef:
+              name: "{{ seaweedfs_service_user }}"
+            secretRef:
+              name: "{{ seaweedfs_service_secret }}"
+
+    - name: Create SeaweedFS policy
+      kubernetes.core.k8s:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        state: present
+        definition:
+          apiVersion: seaweed.seaweedfs.com/v1
+          kind: S3Policy
+          metadata:
+            name: "{{ seaweedfs_service_policy }}"
+            namespace: "{{ seaweedfs_cluster_namespace }}"
+          spec:
+            seaweedRef:
+              name: "{{ seaweedfs_cluster_name }}"
+            statements:
+              - effect: Allow
+                actions: ["*"]
+                resources: ["*"]
+
+    - name: Bind SeaweedFS policy
+      kubernetes.core.k8s:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        state: present
+        definition:
+          apiVersion: seaweed.seaweedfs.com/v1
+          kind: S3PolicyBinding
+          metadata:
+            name: "{{ seaweedfs_service_binding }}"
+            namespace: "{{ seaweedfs_cluster_namespace }}"
+          spec:
+            seaweedRef:
+              name: seaweedfs
+            policyRef:
+              name: "{{ seaweedfs_service_policy }}"
+            subjects:
+              - kind: S3Identity
+                name: "{{ seaweedfs_service_user }}"
+
+    - name: Query SeaweedFS credentials
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        api_version: v1
+        kind: Secret
+        name: "{{ seaweedfs_service_secret }}"
+        namespace: "{{ seaweedfs_cluster_namespace }}"
+      register: _auth_query
+      until: _auth_query.resources | length > 0
+      retries: 30
+      delay: 20
+
+    - name: Query SeaweedFS service
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        api_version: v1
+        kind: Service
+        name: "{{ seaweedfs_service_name }}"
+        namespace: "{{ seaweedfs_cluster_namespace }}"
+      register: _svc_query
+      until:
+        - _svc_query.resources | length > 0
+        - _svc_query.resources[0].spec.clusterIP | default('') != ''
+      retries: 30
+      delay: 20
+
+    - name: Set Velero configuration facts
+      ansible.builtin.set_fact:
+        rke2_velero_s3_endpoint: "{{ seaweedfs_service_proto }}://{{ _svcaddr }}:{{ seaweedfs_service_port }}"
+        rke2_velero_s3_bucket: "{{ seaweedfs_service_bucket }}"
+        rke2_velero_s3_access_key_id: "{{ _secret.data.accessKey | b64decode }}"
+        rke2_velero_s3_secret_access_key: "{{ _secret.data.secretKey | b64decode }}"
+      vars:
+        _secret: "{{ _auth_query.resources | first }}"
+        _service: "{{ _svc_query.resources | first }}"
+        _svcaddr: "{{ _service.spec.clusterIP }}"
+
+    - name: Wait for SeaweedFS S3 bucket to be ready
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        api_version: seaweed.seaweedfs.com/v1
+        kind: Bucket
+        name: "{{ seaweedfs_service_bucket }}"
+        namespace: "{{ seaweedfs_cluster_namespace }}"
+      register: _bucket_query
+      until:
+        - _bucket_query.resources | length > 0
+        - _bucket_query.resources[0].status.phase == "Ready"
+      retries: 30
+      delay: 20
+
+    - name: Create Velero credentials secret
+      kubernetes.core.k8s:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: "{{ seaweedfs_velero_secret }}"
+            namespace: velero
+          type: Opaque
+          data:
+            cloud: "{{ _secret | b64encode }}"
+      vars:
+        _secret: |
+          [default]
+          aws_access_key_id={{ rke2_velero_s3_access_key_id }}
+          aws_secret_access_key={{ rke2_velero_s3_secret_access_key }}
+
+    - name: Wait for BackupStorageLocations CRD
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        kind: CustomResourceDefinition
+        name: backupstoragelocations.velero.io
+      retries: 30
+      delay: 12
+      register: backupstoragelocation_crd
+      until: backupstoragelocation_crd.resources | length > 0
+
+    - name: Create Velero BackupStorageLocation
+      kubernetes.core.k8s:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        state: present
+        definition:
+          apiVersion: velero.io/v1
+          kind: BackupStorageLocation
+          metadata:
+            name: "{{ rke2_velero_s3_storage }}"
+            namespace: velero
+            labels:
+              app.kubernetes.io/name: velero
+              app.kubernetes.io/component: backup-storage-location
+              app.kubernetes.io/managed-by: ansible
+          spec:
+            provider: "{{ rke2_velero_s3_provider | default('aws') }}"
+            default: true
+            validationFrequency: "{{ rke2_velero_s3_validation_frequency | default('24h') }}"
+            objectStorage:
+              bucket: "{{ rke2_velero_s3_bucket }}"
+            config:
+              region: "{{ rke2_velero_s3_region | default('local') }}"
+              s3ForcePathStyle: "true"
+              s3Url: "{{ rke2_velero_s3_endpoint }}"
+              checksumAlgorithm: ""
+              insecureSkipTLSVerify: "true"
+            credential:
+              name: "{{ seaweedfs_velero_secret }}"
+              key: cloud
+
+    - name: Verify BackupStorageLocation is available
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        api_version: velero.io/v1
+        kind: BackupStorageLocation
+        name: "{{ rke2_velero_s3_storage }}"
+        namespace: velero
+      vars:
+        _bsl_data: "{{ _bsl_status.resources[0] }}"
+      until:
+        - _bsl_status.resources | length > 0
+        - _bsl_data.status.phase is defined
+        - _bsl_data.status.phase == "Available"
+      register: _bsl_status
+      retries: 30
+      delay: 12

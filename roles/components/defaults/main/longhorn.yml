@@ -1,6 +1,7 @@
 ---
 rke2_longhorn_hostname: "longhorn.{{ rke2_cluster_name }}"
 rke2_longhorn_ingress_class: nginx-private
+rke2_longhorn_snapshot_retention: Retain
 rke2_longhorn_values:
   ingress:
     ingressClassName: "{{ rke2_longhorn_ingress_class }}"

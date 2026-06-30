@@ -15,12 +15,12 @@ spec:
     helm:
       valuesObject:
         deployNodeAgent: true
-        features: enableCSI
-        snapshotsEnabled: false
+        snapshotsEnabled: true
         configuration:
-          defaultVolumesToFsBackup: true
+          defaultVolumesToFsBackup: false
           backupStorageLocation: []
           volumeSnapshotLocation: []
+          features: EnableCSI
         initContainers:
           - name: velero-plugin-for-aws
             image: velero/velero-plugin-for-aws:v1.14.1

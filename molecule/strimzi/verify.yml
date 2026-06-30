@@ -15,180 +15,85 @@
     kafka_image: "quay.io/strimzi/kafka:0.45.0-kafka-3.9.0"
     strimzi_deployment_name: "strimzi-cluster-operator"
   tasks:
-    - name: Test velero with strimzi
+    - name: Test Strimzi Velero backup and restore
       block:
-        - name: Clean test environment
+        - name: Delete existing Kafka deployment
           block:
-            - name: Clean velero backups and restores
-              block:
-                - name: Delete Velero restore
-                  kubernetes.core.k8s:
-                    kubeconfig: "{{ kubeconfig_path }}"
-                    definition:
-                      apiVersion: velero.io/v1
-                      kind: Restore
-                      metadata:
-                        name: "{{ restore_name }}"
-                        namespace: velero
-                    state: absent
+            - name: Delete Kafka topic
+              kubernetes.core.k8s:
+                kubeconfig: "{{ kubeconfig_path }}"
+                state: absent
+                api_version: kafka.strimzi.io/v1beta2
+                kind: KafkaTopic
+                name: "{{ topic_name }}"
+                namespace: "{{ kafka_namespace }}"
+                wait: true
+                wait_timeout: 300
 
-                - name: Delete Velero backup
-                  kubernetes.core.k8s:
-                    kubeconfig: "{{ kubeconfig_path }}"
-                    definition:
-                      apiVersion: velero.io/v1
-                      kind: Backup
-                      metadata:
-                        name: "{{ backup_name }}"
-                        namespace: velero
-                    state: absent
+            - name: Delete Kafka cluster
+              kubernetes.core.k8s:
+                kubeconfig: "{{ kubeconfig_path }}"
+                state: absent
+                api_version: kafka.strimzi.io/v1beta2
+                kind: Kafka
+                name: "{{ kafka_cluster_name }}"
+                namespace: "{{ kafka_namespace }}"
+                wait: true
+                wait_timeout: 300
 
-            - name: Clean Kafka namespace
-              block:
-                - name: Query existing PVCs
-                  kubernetes.core.k8s_info:
-                    kubeconfig: "{{ kubeconfig_path }}"
-                    api_version: v1
-                    kind: PersistentVolumeClaim
-                    namespace: "{{ kafka_namespace }}"
-                  register: existing_pvcs
+            - name: Delete brokers KafkaNodePool
+              kubernetes.core.k8s:
+                kubeconfig: "{{ kubeconfig_path }}"
+                state: absent
+                api_version: kafka.strimzi.io/v1beta2
+                kind: KafkaNodePool
+                name: "{{ kafka_cluster_name }}-brokers"
+                namespace: "{{ kafka_namespace }}"
+                wait: true
+                wait_timeout: 300
 
-                - name: Get PVs names
-                  ansible.builtin.set_fact:
-                    pvs: "{{ existing_pvcs.resources | map(attribute='spec.volumeName') | list  }}"
+            - name: Delete controllers KafkaNodePool
+              kubernetes.core.k8s:
+                kubeconfig: "{{ kubeconfig_path }}"
+                state: absent
+                api_version: kafka.strimzi.io/v1beta2
+                kind: KafkaNodePool
+                name: "{{ kafka_cluster_name }}-controllers"
+                namespace: "{{ kafka_namespace }}"
+                wait: true
+                wait_timeout: 300
 
-                - name: PV to remove
-                  ansible.builtin.debug:
-                    msg: "{{ pvs }}"
+            - name: Wait for pod deletion to complete
+              kubernetes.core.k8s_info:
+                kubeconfig: "{{ kubeconfig_path }}"
+                api_version: v1
+                kind: Pod
+                namespace: "{{ kafka_namespace }}"
+              register: existing_pods
+              until: existing_pods.resources | length == 0
+              retries: 30
+              delay: 10
 
-                - name: Delete kafka topic
-                  kubernetes.core.k8s:
-                    kubeconfig: "{{ kubeconfig_path }}"
-                    api_version: kafka.strimzi.io/v1beta2
-                    kind: KafkaTopic
-                    name: "{{ topic_name }}"
-                    namespace: "{{ kafka_namespace }}"
-                    state: absent
-                    wait: true
-                    wait_timeout: 300
+            - name: Wait for PVC deletion to complete
+              kubernetes.core.k8s_info:
+                kubeconfig: "{{ kubeconfig_path }}"
+                api_version: v1
+                kind: PersistentVolumeClaim
+                namespace: "{{ kafka_namespace }}"
+              register: pvc_check
+              until: pvc_check.resources | length == 0
+              retries: 30
+              delay: 10
 
-                - name: Delete kafka cluster
-                  kubernetes.core.k8s:
-                    kubeconfig: "{{ kubeconfig_path }}"
-                    api_version: kafka.strimzi.io/v1beta2
-                    kind: Kafka
-                    name: "{{ kafka_cluster_name }}"
-                    namespace: "{{ kafka_namespace }}"
-                    state: absent
-                    wait: true
-                    wait_timeout: 300
-
-                - name: Delete kafkanodepools brokers
-                  kubernetes.core.k8s:
-                    kubeconfig: "{{ kubeconfig_path }}"
-                    api_version: kafka.strimzi.io/v1beta2
-                    kind: KafkaNodePool
-                    name: "{{ kafka_cluster_name }}-brokers"
-                    namespace: "{{ kafka_namespace }}"
-                    state: absent
-                    wait: true
-                    wait_timeout: 300
-
-                - name: Delete kafkanodepools controllers
-                  kubernetes.core.k8s:
-                    kubeconfig: "{{ kubeconfig_path }}"
-                    api_version: kafka.strimzi.io/v1beta2
-                    kind: KafkaNodePool
-                    name: "{{ kafka_cluster_name }}-controllers"
-                    namespace: "{{ kafka_namespace }}"
-                    state: absent
-                    wait: true
-                    wait_timeout: 300
-
-                - name: Wait for pod deletion to complete
-                  kubernetes.core.k8s_info:
-                    kubeconfig: "{{ kubeconfig_path }}"
-                    api_version: v1
-                    kind: Pod
-                    namespace: "{{ kafka_namespace }}"
-                  register: existing_pods
-                  until: existing_pods.resources | length == 0
-                  retries: 30
-                  delay: 10
-
-                - name: Force delete all PVCs
-                  kubernetes.core.k8s:
-                    kubeconfig: "{{ kubeconfig_path }}"
-                    api_version: v1
-                    kind: PersistentVolumeClaim
-                    namespace: "{{ kafka_namespace }}"
-                    name: "{{ item }}"
-                    state: absent
-                    wait: true
-                  loop: "{{ existing_pvcs.resources | map(attribute='metadata.name') }}"
-
-                - name: Wait for PVC deletion to complete
-                  kubernetes.core.k8s_info:
-                    kubeconfig: "{{ kubeconfig_path }}"
-                    api_version: v1
-                    kind: PersistentVolumeClaim
-                    namespace: "{{ kafka_namespace }}"
-                  register: pvc_check
-                  until: pvc_check.resources | length == 0
-                  retries: 30
-                  delay: 10
-
-                - name: Delete existing PVs
-                  kubernetes.core.k8s:
-                    kubeconfig: "{{ kubeconfig_path }}"
-                    api_version: v1
-                    kind: PersistentVolume
-                    name: "{{ item }}"
-                    state: absent
-                    wait: true
-                  loop: "{{ pvs }}"
-
-                - name: Delete existing Vs
-                  kubernetes.core.k8s:
-                    kubeconfig: "{{ kubeconfig_path }}"
-                    api_version: longhorn.io/v1beta2
-                    kind: Volume
-                    namespace: "longhorn-system"
-                    name: "{{ item }}"
-                    state: absent
-                    wait: true
-                  loop: "{{ pvs }}"
-
-                - name: Delete Kafka namespace
-                  kubernetes.core.k8s:
-                    kubeconfig: "{{ kubeconfig_path }}"
-                    api_version: v1
-                    kind: Namespace
-                    name: "{{ kafka_namespace }}"
-                    state: absent
-                    wait: true
-                    wait_timeout: 300
-
-                - name: Wait for namespace deletion to complete
-                  kubernetes.core.k8s_info:
-                    kubeconfig: "{{ kubeconfig_path }}"
-                    api_version: v1
-                    kind: Namespace
-                    name: "{{ kafka_namespace }}"
-                  register: namespace_check
-                  until: namespace_check.resources | length == 0
-                  retries: 30
-                  delay: 10
-
-        - name: Ensure Kafka namespace exists
+        - name: Create Kafka test namespace
           kubernetes.core.k8s:
             kubeconfig: "{{ kubeconfig_path }}"
+            state: present
             name: "{{ kafka_namespace }}"
             api_version: v1
             kind: Namespace
-            state: present
 
-        - name: Deploy kafka
+        - name: Deploy Kafka cluster
           block:
             - name: Wait until Strimzi operator pods ready
               kubernetes.core.k8s_info:
@@ -203,9 +108,10 @@
               retries: 60
               delay: 15
 
-            - name: Deploy KafkaNodePool for controllers
+            - name: Deploy controllers KafkaNodePool
               kubernetes.core.k8s:
                 kubeconfig: "{{ kubeconfig_path }}"
+                state: present
                 definition:
                   apiVersion: kafka.strimzi.io/v1beta2
                   kind: KafkaNodePool
@@ -224,12 +130,12 @@
                       type: persistent-claim
                       size: 2Gi
                       deleteClaim: true
-                      class: longhorn
-                state: present
+                      class: longhorn-static
 
-            - name: Deploy KafkaNodePool for brokers
+            - name: Deploy brokers KafkaNodePool
               kubernetes.core.k8s:
                 kubeconfig: "{{ kubeconfig_path }}"
+                state: present
                 definition:
                   apiVersion: kafka.strimzi.io/v1beta2
                   kind: KafkaNodePool
@@ -248,12 +154,12 @@
                       type: persistent-claim
                       size: 2Gi
                       deleteClaim: true
-                      class: longhorn
-                state: present
+                      class: longhorn-static
 
             - name: Deploy Kafka cluster in KRaft mode
               kubernetes.core.k8s:
                 kubeconfig: "{{ kubeconfig_path }}"
+                state: present
                 definition:
                   apiVersion: kafka.strimzi.io/v1beta2
                   kind: Kafka
@@ -304,7 +210,6 @@
                     kafkaExporter:
                       topicRegex: ".*"
                       groupRegex: ".*"
-                state: present
 
             - name: Wait for Kafka cluster to be ready
               kubernetes.core.k8s_info:
@@ -314,17 +219,17 @@
                 name: "{{ kafka_cluster_name }}"
                 namespace: "{{ kafka_namespace }}"
               register: kafka_status
-              until: kafka_status.resources | length > 0 and
-                kafka_status.resources[0].status.conditions[0].status is defined and
-                kafka_status.resources[0].status.conditions[0].type == "Ready" and
-                kafka_status.resources[0].status.conditions[0].status == "True"
+              until:
+                - kafka_status.resources | length > 0
+                - kafka_status.resources[0].status.clusterId is defined
+                - kafka_status.resources[0].status.conditions[0].type == "Ready"
+                - kafka_status.resources[0].status.conditions[0].status == "True"
               retries: 60
               delay: 15
 
             - name: Capture original Kafka clusterId
               ansible.builtin.set_fact:
                 original_cluster_id: "{{ kafka_status.resources[0].status.clusterId }}"
-              when: kafka_status.resources[0].status.clusterId is defined
 
             - name: Display detected clusterId
               ansible.builtin.debug:
@@ -374,49 +279,36 @@
               loop_control:
                 label: "broker-{{ item.item }}"
 
-        - name: Create kafkaTopic
-          block:
-            - name: Delete kafka topic
-              kubernetes.core.k8s:
-                kubeconfig: "{{ kubeconfig_path }}"
-                api_version: kafka.strimzi.io/v1beta2
-                kind: KafkaTopic
+        - name: Create KafkaTopic
+          kubernetes.core.k8s:
+            kubeconfig: "{{ kubeconfig_path }}"
+            definition:
+              apiVersion: kafka.strimzi.io/v1beta2
+              kind: KafkaTopic
+              metadata:
                 name: "{{ topic_name }}"
                 namespace: "{{ kafka_namespace }}"
-                state: absent
-                wait: true
-                wait_timeout: 300
+                labels:
+                  strimzi.io/cluster: "{{ kafka_cluster_name }}"
+              spec:
+                config:
+                  retention.ms: 259200000
+                  segment.ms: 86400000
+            state: present
+            wait: true
+            wait_timeout: 300
 
-            - name: Create KafkaTopic for testing
-              kubernetes.core.k8s:
-                kubeconfig: "{{ kubeconfig_path }}"
-                definition:
-                  apiVersion: kafka.strimzi.io/v1beta2
-                  kind: KafkaTopic
-                  metadata:
-                    name: "{{ topic_name }}"
-                    namespace: "{{ kafka_namespace }}"
-                    labels:
-                      strimzi.io/cluster: "{{ kafka_cluster_name }}"
-                  spec:
-                    config:
-                      retention.ms: 259200000
-                      segment.ms: 86400000
-                state: present
-                wait: true
-                wait_timeout: 300
-
-            - name: Wait for topic creation
-              kubernetes.core.k8s_info:
-                kubeconfig: "{{ kubeconfig_path }}"
-                api_version: kafka.strimzi.io/v1beta2
-                kind: KafkaTopic
-                name: "{{ topic_name }}"
-                namespace: "{{ kafka_namespace }}"
-              register: topic_info
-              until: topic_info.resources | length > 0
-              retries: 20
-              delay: 5
+        - name: Wait for KafkaTopic creation
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ kubeconfig_path }}"
+            api_version: kafka.strimzi.io/v1beta2
+            kind: KafkaTopic
+            name: "{{ topic_name }}"
+            namespace: "{{ kafka_namespace }}"
+          register: topic_info
+          until: topic_info.resources | length > 0
+          retries: 20
+          delay: 5
 
         - name: Produce messages
           block:
@@ -546,11 +438,12 @@
                 name: kafka-consumer-before-backup
               changed_when: false
 
-        - name: Create backup
+        - name: Create Velero backup
           block:
             - name: Create Velero backup of Kafka namespace
               kubernetes.core.k8s:
                 kubeconfig: "{{ kubeconfig_path }}"
+                state: present
                 definition:
                   apiVersion: velero.io/v1
                   kind: Backup
@@ -563,10 +456,15 @@
                   spec:
                     includedNamespaces:
                       - "{{ kafka_namespace }}"
+                    volumeSnapshotLocations: []
                     includeClusterResources: true
-                    defaultVolumesToFsBackup: true
+                    defaultVolumesToFsBackup: false
+                    excludedResources: []
+                    snapshotMoveData: true
+                    storageLocation: "{{ rke2_velero_s3_storage }}"
+                    csiSnapshotTimeout: 5m
+                    itemOperationTimeout: 10m
                     ttl: "72h0m0s"
-                state: present
 
             - name: Wait for Velero backup to complete
               kubernetes.core.k8s_info:
@@ -575,72 +473,93 @@
                 kind: Backup
                 name: "{{ backup_name }}"
                 namespace: velero
-              register: backup_status
+              register: _backup_query
               until:
-                - backup_status.resources[0].status.phase is defined
-                - backup_status.resources[0].status.phase == "Completed"
+                - _backup_query.resources | length == 1
+                - _backup_query.resources[0].status.phase is defined
+                - _backup_query.resources[0].status.phase == "Completed"
               retries: 60
               delay: 15
 
-        - name: Destroy kafka cluster and PVCs
-          block:
-            - name: Query existing PVCs before delete all kafka
+            - name: Verify backup completed successfully
+              ansible.builtin.assert:
+                that: _backup_query.resources[0].status.phase == "Completed"
+                fail_msg: >-
+                  Backup failed with status: {{ _backup_query.resources[0].status.phase }}.
+                  Errors: {{ _backup_query.resources[0].status.errors | default([]) }}
+                  Warnings: {{ _backup_query.resources[0].status.warnings | default(0) }}
+                success_msg: "Backup completed successfully"
+
+            - name: Verify backup moved volume data to object storage
               kubernetes.core.k8s_info:
                 kubeconfig: "{{ kubeconfig_path }}"
-                api_version: v1
-                kind: PersistentVolumeClaim
-                namespace: "{{ kafka_namespace }}"
-              register: existing_pvcs
+                api_version: velero.io/v2alpha1
+                kind: DataUpload
+                namespace: velero
+                label_selectors:
+                  - "velero.io/backup-name={{ backup_name }}"
+              register: _upload_query
+              until:
+                - _upload_query.resources | length > 0
+                - _upload_query.resources
+                  | selectattr('status.phase', 'defined')
+                  | map(attribute='status.phase') | list
+                  | reject('in', ['Completed', 'Failed', 'Canceled']) | list | length == 0
+              retries: 30
+              delay: 10
 
-            - name: GPriniet PVs names
-              ansible.builtin.set_fact:
-                pvs: "{{ existing_pvcs.resources | map(attribute='spec.volumeName') | list  }}"
+            - name: Assert backup DataUpload completed successfully
+              ansible.builtin.assert:
+                that:
+                  - _upload_query.resources | length > 0
+                  - _upload_query.resources
+                    | selectattr('status.phase', 'equalto', 'Completed')
+                    | list | length > 0
+                fail_msg: No DataUpload completed for backup {{ backup_name }}
 
-            - name: PV to remove
-              ansible.builtin.debug:
-                msg: "{{ pvs }}"
-
-            - name: Delete kafka topic
+        - name: Destroy kafka cluster and PVCs
+          block:
+            - name: Delete Kafka topic
               kubernetes.core.k8s:
                 kubeconfig: "{{ kubeconfig_path }}"
+                state: absent
                 api_version: kafka.strimzi.io/v1beta2
                 kind: KafkaTopic
                 name: "{{ topic_name }}"
                 namespace: "{{ kafka_namespace }}"
-                state: absent
                 wait: true
                 wait_timeout: 300
 
-            - name: Delete kafka cluster
+            - name: Delete Kafka cluster
               kubernetes.core.k8s:
                 kubeconfig: "{{ kubeconfig_path }}"
+                state: absent
                 api_version: kafka.strimzi.io/v1beta2
                 kind: Kafka
                 name: "{{ kafka_cluster_name }}"
                 namespace: "{{ kafka_namespace }}"
-                state: absent
                 wait: true
                 wait_timeout: 300
 
-            - name: Delete kafkanodepools brokers
+            - name: Delete brokers KafkaNodePool
               kubernetes.core.k8s:
                 kubeconfig: "{{ kubeconfig_path }}"
+                state: absent
                 api_version: kafka.strimzi.io/v1beta2
                 kind: KafkaNodePool
                 name: "{{ kafka_cluster_name }}-brokers"
                 namespace: "{{ kafka_namespace }}"
-                state: absent
                 wait: true
                 wait_timeout: 300
 
-            - name: Delete kafkanodepools controllers
+            - name: Delete controllers KafkaNodePool
               kubernetes.core.k8s:
                 kubeconfig: "{{ kubeconfig_path }}"
+                state: absent
                 api_version: kafka.strimzi.io/v1beta2
                 kind: KafkaNodePool
                 name: "{{ kafka_cluster_name }}-controllers"
                 namespace: "{{ kafka_namespace }}"
-                state: absent
                 wait: true
                 wait_timeout: 300
 
@@ -655,17 +574,6 @@
               retries: 30
               delay: 10
 
-            - name: Force delete all PVCs
-              kubernetes.core.k8s:
-                kubeconfig: "{{ kubeconfig_path }}"
-                api_version: v1
-                kind: PersistentVolumeClaim
-                namespace: "{{ kafka_namespace }}"
-                name: "{{ item }}"
-                state: absent
-                wait: true
-              loop: "{{ existing_pvcs.resources | map(attribute='metadata.name') }}"
-
             - name: Wait for PVC deletion to complete
               kubernetes.core.k8s_info:
                 kubeconfig: "{{ kubeconfig_path }}"
@@ -677,53 +585,12 @@
               retries: 30
               delay: 10
 
-            - name: Delete existing PVs
-              kubernetes.core.k8s:
-                kubeconfig: "{{ kubeconfig_path }}"
-                api_version: v1
-                kind: PersistentVolume
-                name: "{{ item }}"
-                state: absent
-                wait: true
-              loop: "{{ pvs }}"
-
-            - name: Delete existing Vs
-              kubernetes.core.k8s:
-                kubeconfig: "{{ kubeconfig_path }}"
-                api_version: longhorn.io/v1beta2
-                kind: Volume
-                namespace: "longhorn-system"
-                name: "{{ item }}"
-                state: absent
-                wait: true
-              loop: "{{ pvs }}"
-
-            - name: Delete Kafka namespace
-              kubernetes.core.k8s:
-                kubeconfig: "{{ kubeconfig_path }}"
-                api_version: v1
-                kind: Namespace
-                name: "{{ kafka_namespace }}"
-                state: absent
-                wait: true
-                wait_timeout: 300
-
-            - name: Wait for namespace deletion to complete
-              kubernetes.core.k8s_info:
-                kubeconfig: "{{ kubeconfig_path }}"
-                api_version: v1
-                kind: Namespace
-                name: "{{ kafka_namespace }}"
-              register: namespace_check
-              until: namespace_check.resources | length == 0
-              retries: 30
-              delay: 10
-
         - name: Restore kafka
           block:
-            - name: Disable argocd auto-sync applicationn for strimizi operator
+            - name: Disable ArgoCD auto-sync for Strimzi operator
               kubernetes.core.k8s:
                 kubeconfig: "{{ kubeconfig_path }}"
+                state: patched
                 api_version: argoproj.io/v1alpha1
                 kind: Application
                 name: strimzi-kafka-operator
@@ -733,35 +600,22 @@
                     syncPolicy:
                       automated:
                         enabled: false
-                state: patched
 
-            - name: Scale down Strimzi Cluster Operator
-              kubernetes.core.k8s:
+            - name: Scale down Strimzi operator
+              kubernetes.core.k8s_scale:
                 kubeconfig: "{{ kubeconfig_path }}"
                 api_version: apps/v1
                 kind: Deployment
                 name: strimzi-cluster-operator
                 namespace: "{{ kafka_operator_namespace }}"
-                definition:
-                  spec:
-                    replicas: 0
-                state: present
-              register: scale_down_operator
-
-            - name: Wait until Strimzi operator pods terminate
-              kubernetes.core.k8s_info:
-                kubeconfig: "{{ kubeconfig_path }}"
-                api_version: v1
-                kind: Pod
-                namespace: "{{ kafka_operator_namespace }}"
-              register: operator_pods
-              until: operator_pods.resources | length == 0
-              retries: 60
-              delay: 15
+                replicas: 0
+                wait: true
+                wait_timeout: 120
 
             - name: Restore Kafka namespace from Velero backup (including status)
               kubernetes.core.k8s:
                 kubeconfig: "{{ kubeconfig_path }}"
+                state: present
                 definition:
                   apiVersion: velero.io/v1
                   kind: Restore
@@ -782,7 +636,7 @@
                     restoreStatus:
                       includedResources:
                         - "*"
-                state: present
+                    existingResourcePolicy: update
 
             - name: Wait for Kafka restore to complete
               kubernetes.core.k8s_info:
@@ -791,12 +645,64 @@
                 kind: Restore
                 name: "{{ restore_name }}"
                 namespace: velero
-              register: restore_status
+              register: _restore_query
               until:
-                - restore_status.resources[0].status.phase is defined
-                - restore_status.resources[0].status.phase == "Completed"
+                - _restore_query.resources[0].status.phase is defined
+                - _restore_query.resources[0].status.phase in ["Completed", "PartiallyFailed", "Failed", "FailedValidation"]
               retries: 60
               delay: 20
+
+            - name: Verify restore completed successfully
+              ansible.builtin.assert:
+                that: _restore_query.resources[0].status.phase == "Completed"
+                fail_msg: >-
+                  Restore phase is {{ _restore_query.resources[0].status.phase }}.
+                  Errors: {{ _restore_query.resources[0].status.errors | default('n/a') }}
+                  Warnings: {{ _restore_query.resources[0].status.warnings | default('n/a') }}
+
+            - name: Query restore DataDownloads
+              kubernetes.core.k8s_info:
+                kubeconfig: "{{ kubeconfig_path }}"
+                api_version: velero.io/v2alpha1
+                kind: DataDownload
+                namespace: velero
+                label_selectors:
+                  - "velero.io/restore-name={{ restore_name }}"
+              register: _download_query
+              until:
+                - _download_query.resources | length > 0
+                - _download_query.resources
+                  | selectattr('status.phase', 'defined')
+                  | map(attribute='status.phase') | list
+                  | reject('in', ['Completed', 'Failed', 'Canceled']) | list | length == 0
+              retries: 30
+              delay: 10
+
+            - name: Verify DataDownload completed successfully
+              ansible.builtin.assert:
+                that:
+                  - _download_query.resources | length > 0
+                  - _download_query.resources
+                    | selectattr('status.phase', 'equalto', 'Completed')
+                    | list | length > 0
+                fail_msg: >-
+                  No completed DataDownload for restore {{ restore_name }} — the PVCs may
+                  have been recreated empty instead of restored from object storage.
+
+            - name: Verify restored PVCs are bound
+              kubernetes.core.k8s_info:
+                kubeconfig: "{{ kubeconfig_path }}"
+                api_version: v1
+                kind: PersistentVolumeClaim
+                namespace: "{{ kafka_namespace }}"
+              register: _restored_pvcs
+              until:
+                - _restored_pvcs.resources | length > 0
+                - _restored_pvcs.resources
+                  | rejectattr('status.phase', 'equalto', 'Bound')
+                  | list | length == 0
+              retries: 30
+              delay: 10
 
             - name: Wait for Kafka cluster to be restored and ready
               kubernetes.core.k8s_info:
@@ -851,43 +757,21 @@
               retries: 60
               delay: 15
 
-            - name: Capture restored clusterId before scale up operator
-              ansible.builtin.set_fact:
-                restored_cluster_id: "{{ restored_kafka.resources[0].status.clusterId }}"
-
-            - name: Print restored clusterId before scale up operator
-              ansible.builtin.set_fact:
-                restored_cluster_id: "{{ restored_kafka.resources[0].status.clusterId }}"
-
-            - name: Scale up Strimzi Cluster Operator
-              kubernetes.core.k8s:
+            - name: Scale up Strimzi operator
+              kubernetes.core.k8s_scale:
                 kubeconfig: "{{ kubeconfig_path }}"
                 api_version: apps/v1
                 kind: Deployment
                 name: strimzi-cluster-operator
                 namespace: "{{ kafka_operator_namespace }}"
-                definition:
-                  spec:
-                    replicas: 1
-                state: present
-              register: scale_up_operator
+                replicas: 1
+                wait: true
+                wait_timeout: 120
 
-            - name: Wait until Strimzi operator pods create
-              kubernetes.core.k8s_info:
-                kubeconfig: "{{ kubeconfig_path }}"
-                api_version: v1
-                kind: Pod
-                namespace: "{{ kafka_operator_namespace }}"
-              register: operator_pods
-              until:
-                operator_pods.resources[0].status.containerStatuses[0].ready is defined and
-                operator_pods.resources[0].status.containerStatuses[0].ready == true
-              retries: 60
-              delay: 15
-
-            - name: Disable argocd auto-sync applicationn for strimizi operator
+            - name: Enable ArgoCD auto-sync for Strimzi operator
               kubernetes.core.k8s:
                 kubeconfig: "{{ kubeconfig_path }}"
+                state: patched
                 api_version: argoproj.io/v1alpha1
                 kind: Application
                 name: strimzi-kafka-operator
@@ -897,39 +781,24 @@
                     syncPolicy:
                       automated:
                         enabled: true
-                state: patched
 
-            - name: Get Strimzi operator pod name
+            - name: Wait for Strimzi to reconcile restored Kafka cluster
               kubernetes.core.k8s_info:
                 kubeconfig: "{{ kubeconfig_path }}"
-                namespace: "{{ kafka_operator_namespace }}"
-                kind: Pod
-                label_selectors:
-                  - "name=strimzi-cluster-operator"
-                  - "strimzi.io/kind=cluster-operator"
-              register: strimzi_pods
-
-            - name: Set Strimzi operator pod name fact
-              ansible.builtin.set_fact:
-                strimzi_pod_name: "{{ strimzi_pods.resources | selectattr('status.phase', 'equalto', 'Running') | map(attribute='metadata.name') | first }}"
-                strimzi_reconciled: false
-
-            - name: Wait for Strimzi reconciliation
-              kubernetes.core.k8s_log:
-                kubeconfig: "{{ kubeconfig_path }}"
-                namespace: "{{ kafka_operator_namespace }}"
-                name: "{{ strimzi_pod_name }}"
-                container: strimzi-cluster-operator
-              register: strimzi_output
-              until: "strimzi_output.log | regex_search('Kafka\\(' + kafka_namespace + '/' + kafka_cluster_name + '\\): reconciled') is not none"
+                api_version: kafka.strimzi.io/v1beta2
+                kind: Kafka
+                name: "{{ kafka_cluster_name }}"
+                namespace: "{{ kafka_namespace }}"
+              register: restored_kafka
+              until:
+                - restored_kafka.resources | length > 0
+                - restored_kafka.resources[0].status.clusterId is defined
+                - restored_kafka.resources[0].status.conditions[0].type == "Ready"
+                - restored_kafka.resources[0].status.conditions[0].status == "True"
               retries: 60
               delay: 15
 
-            - name: Capture restored clusterId after scale up operator
-              ansible.builtin.set_fact:
-                restored_cluster_id: "{{ restored_kafka.resources[0].status.clusterId }}"
-
-            - name: Print restored clusterId after scale up operator
+            - name: Capture restored clusterId after reconciliation
               ansible.builtin.set_fact:
                 restored_cluster_id: "{{ restored_kafka.resources[0].status.clusterId }}"
 
@@ -1133,13 +1002,13 @@
             api_version: velero.io/v1
             kind: Backup
             namespace: velero
-          register: backup_status
+          register: _backup_query
           retries: 60
           delay: 15
 
         - name: Debug Velero backups
           ansible.builtin.debug:
-            msg: "{{ backup_status }}"
+            msg: "{{ _backup_query }}"
 
         - name: Query Velero restores
           kubernetes.core.k8s_info:
@@ -1147,16 +1016,130 @@
             api_version: velero.io/v1
             kind: Restore
             namespace: velero
-          register: restore_status
-          retries: 60
-          delay: 15
+          register: _restore_query
 
         - name: Debug Velero restores
           ansible.builtin.debug:
-            msg: "{{ restore_status }}"
+            msg: "{{ _restore_query }}"
+
+        - name: Query restore DataDownloads
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ kubeconfig_path }}"
+            api_version: velero.io/v2alpha1
+            kind: DataDownload
+          register: _download_query
+
+        - name: Debug Velero DataDownloads
+          ansible.builtin.debug:
+            msg: "{{ _download_query }}"
+
+        - name: Query backup DataUploads
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ kubeconfig_path }}"
+            api_version: velero.io/v2alpha1
+            kind: DataUpload
+            namespace: velero
+          register: _upload_query
+
+        - name: Debug backup DataUploads
+          ansible.builtin.debug:
+            msg: "{{ _upload_query }}"
+
+        - name: Query VolumeSnapshotClasses
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ kubeconfig_path }}"
+            api_version: snapshot.storage.k8s.io/v1
+            kind: VolumeSnapshotClass
+          register: _vsc_query
+
+        - name: Debug VolumeSnapshotClasses
+          ansible.builtin.debug:
+            msg: "{{ _vsc_query.resources | map(attribute='metadata') | list }}"
+
+        - name: Query VolumeSnapshots
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ kubeconfig_path }}"
+            api_version: snapshot.storage.k8s.io/v1
+            kind: VolumeSnapshot
+            namespace: velero
+          register: _vs_query
+
+        - name: Debug VolumeSnapshots
+          ansible.builtin.debug:
+            msg: "{{ _vs_query }}"
+
+        - name: Query VolumeSnapshotContents
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ kubeconfig_path }}"
+            api_version: snapshot.storage.k8s.io/v1
+            kind: VolumeSnapshotContent
+          register: _vscontent_query
+
+        - name: Debug VolumeSnapshotContents
+          ansible.builtin.debug:
+            msg: "{{ _vscontent_query }}"
+
+        - name: Query Velero node-agent pods
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ kubeconfig_path }}"
+            api_version: v1
+            kind: Pod
+            namespace: velero
+            label_selectors:
+              - "name=node-agent"
+          register: _nodeagent_query
+
+        - name: Debug Velero node-agent pods
+          ansible.builtin.debug:
+            msg: >-
+              {{ _nodeagent_query.resources
+                 | map(attribute='status.phase') | list }}
+
+        - name: Query Velero server deployment
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ kubeconfig_path }}"
+            api_version: apps/v1
+            kind: Deployment
+            namespace: velero
+            name: velero
+          register: _velero_deploy
+
+        - name: Debug Velero server args
+          ansible.builtin.debug:
+            msg: "{{ _arguments }}"
+          vars:
+            _deployments: "{{ _velero_deploy.resources }}"
+            _containers: "{{ _deployments | map(attribute='spec.template.spec.containers') | flatten }}"
+            _arguments: "{{ _containers | map(attribute='args') }}"
+
+        - name: Query Velero server pod
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ kubeconfig_path }}"
+            api_version: v1
+            kind: Pod
+            namespace: velero
+            label_selectors:
+              - "name=velero"
+          register: _velero_pod_query
+
+        - name: Get Velero server logs
+          kubernetes.core.k8s_log:
+            kubeconfig: "{{ kubeconfig_path }}"
+            namespace: velero
+            name: "{{ _velero_pod_query.resources | map(attribute='metadata.name') | first }}"
+            container: velero
+          register: _velero_log
+          when: _velero_pod_query.resources | length > 0
+
+        - name: Debug Velero warning/snapshot log lines
+          ansible.builtin.debug:
+            msg: >-
+              {{ _velero_log.log_lines | default([])
+                 | select('search', 'level=warning|skip|snapshot|VolumeSnapshot') | list }}
 
         - name: Terminate playbook
-          fail:
+          ansible.builtin.fail:
+            msg: "backup verification failed"
 
     - name: Verify no workload pods are scheduled on server nodes
       block:

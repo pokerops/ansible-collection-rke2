@@ -10,7 +10,7 @@ platforms:
   - name: rke2-${MOLECULE_SCENARIO_NAME}-server-01
     image: "${MOLECULE_KVM_IMAGE}"
     cpu: 4
-    mem: 4
+    mem: 8
     groups:
       - rke2_server
   - name: rke2-${MOLECULE_SCENARIO_NAME}-agent-01
@@ -37,8 +37,8 @@ provisioner:
     create: ../common/libvirt.yml
     prepare: ../common/prepare.yml
     converge: ../common/install.yml
-    side_effect: ../common/aws_backup.yml
-    destroy: ../common/aws_destroy.yml
+    side_effect: ../common/seaweedfs.yml
+    destroy: ../common/destroy.yml
   config_options:
     defaults:
       callbacks_enabled: ansible.posix.profile_tasks
@@ -67,41 +67,11 @@ provisioner:
           rke2_api_url: "https://api.{{ rke2_cluster_name }}:6443"
           rke2_token: "secret"
           # Velero params
-          rke2_secrets:
-            - name: velero-s3-auth
-              namespace: velero
-              data:
-                AWS_ACCESS_KEY_ID: "{{ lookup('ansible.builtin.env', 'AWS_ACCESS_KEY_ID') }}"
-                AWS_SECRET_ACCESS_KEY: "{{ lookup('ansible.builtin.env', 'AWS_SECRET_ACCESS_KEY') }}"
-          rke2_argocd_apps_values_extra:
-            applications:
-              velero:
-                project: default
-                source:
-                  repoURL: https://github.com/pokerops/ansible-collection-rke2.git
-                  targetRevision: "{{ rke2_argocd_apps_pokerops_revision }}"
-                  path: argocd/molecule/velero
-                  directory:
-                    recurse: false
-                destination:
-                  server: https://kubernetes.default.svc
-                  namespace: default
-                syncPolicy:
-                  automated:
-                    prune: true
-                    selfHeal: true
-                  syncOptions:
-                    - ApplyOutOfSyncOnly=true
-                revisionHistoryLimit:
+          rke2_velero_s3_storage: "default"
           # Test rke2 params
           rke2_retry_num: 30
           rke2_skip_deploy: false
-          rke2_velero_s3: "{{ rke2_cluster_name | replace('.', '-') }}"
-          rke2_velero_s3_region: us-east-1
-          rke2_velero_s3_bucket: "{{ rke2_velero_s3 }}-bucket"
-          rke2_velero_s3_policy: "{{ rke2_velero_s3 }}-policy"
-          rke2_velero_s3_user: "{{ rke2_velero_s3 }}-user"
-          rke2_velero_s3_storage: "default"
+          rke2_longhorn_snapshot_retention: Delete
 verifier:
   name: ansible
 scenario:

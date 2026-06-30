@@ -102,7 +102,7 @@ global:
 ## Collection roles
 
 - pokerops.rke2.components
-- pokerops.rke2.rke2
+- [pokerops.rke2.rke2](https://github.com/lablabs/ansible-role-rke2)
 
 ## Collection playbooks
 
@@ -110,8 +110,7 @@ global:
 - pokerops.rke2.deploy: Deploy individual cluster components
 - pokerops.rke2.secrets: Deploy cluster secrets
 - pokerops.rke2.init: Deploy base cluster components
-- pokerops.rke2.update: Start rke2 cluster services
-- pokerops.rke2.velero.s3: Start rke2 cluster services
+- pokerops.rke2.update: Update OS for rke2 cluster members
 
 ## Testing
 
