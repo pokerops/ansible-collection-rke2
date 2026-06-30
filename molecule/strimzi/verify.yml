@@ -487,7 +487,35 @@
                 fail_msg: >-
                   Backup failed with status: {{ backup_status.resources[0].status.phase }}.
                   Errors: {{ backup_status.resources[0].status.errors | default([]) }}
+                  Warnings: {{ backup_status.resources[0].status.warnings | default(0) }}
                 success_msg: "Backup completed successfully"
+
+            - name: Verify backup moved volume data to object storage
+              kubernetes.core.k8s_info:
+                kubeconfig: "{{ kubeconfig_path }}"
+                api_version: velero.io/v2alpha1
+                kind: DataUpload
+                namespace: velero
+                label_selectors:
+                  - "velero.io/backup-name={{ backup_name }}"
+              register: _upload_query
+              until:
+                - _upload_query.resources | length > 0
+                - _upload_query.resources
+                  | selectattr('status.phase', 'defined')
+                  | map(attribute='status.phase') | list
+                  | reject('in', ['Completed', 'Failed', 'Canceled']) | list | length == 0
+              retries: 30
+              delay: 10
+
+            - name: Assert backup DataUpload completed successfully
+              ansible.builtin.assert:
+                that:
+                  - _upload_query.resources | length > 0
+                  - _upload_query.resources
+                    | selectattr('status.phase', 'equalto', 'Completed')
+                    | list | length > 0
+                fail_msg: No DataUpload completed for backup {{ backup_name }}
 
         - name: Destroy kafka cluster and PVCs
           block:
