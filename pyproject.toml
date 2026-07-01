@@ -10,6 +10,7 @@ dependencies = []
 dev = [
   "pokerops-ansible-utils@git+https://github.com/pokerops/ansible-utils@master",
   "jmespath>=1.1.0",
+  "pymysql>=1.2.0",
 ]
 
 [project.scripts]
