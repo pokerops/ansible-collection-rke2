@@ -72,7 +72,6 @@ provisioner:
           rke2_retry_num: 30
           rke2_skip_deploy: false
           rke2_longhorn_snapshot_retention: Delete
-          rke2_mariadb_controller_deploy: true
 verifier:
   name: ansible
 scenario:
