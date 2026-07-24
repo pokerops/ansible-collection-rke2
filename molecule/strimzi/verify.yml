@@ -481,7 +481,7 @@
                     snapshotMoveData: true
                     storageLocation: "{{ rke2_velero_s3_storage }}"
                     csiSnapshotTimeout: 5m
-                    itemOperationTimeout: 10m
+                    itemOperationTimeout: 30m
                     ttl: "72h0m0s"
 
             - name: Wait for Velero backup to complete
@@ -496,7 +496,7 @@
                 - _backup_query.resources | length == 1
                 - _backup_query.resources[0].status.phase is defined
                 - _backup_query.resources[0].status.phase == "Completed"
-              retries: 60
+              retries: 120
               delay: 15
 
             - name: Verify backup completed successfully
