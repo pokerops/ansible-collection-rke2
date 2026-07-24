@@ -79,7 +79,7 @@
                 kubeconfig: "{{ kubeconfig_path }}"
                 api_version: v1
                 kind: PersistentVolumeClaim
-                namespace: "{{ postgres_namespace }}"
+                namespace: "{{ kafka_namespace }}"
               register: _pvc_query
 
             - name: Force delete existing PVCs
@@ -88,7 +88,7 @@
                 api_version: v1
                 kind: PersistentVolumeClaim
                 name: "{{ item }}"
-                namespace: "{{ postgres_namespace }}"
+                namespace: "{{ kafka_namespace }}"
                 state: absent
               loop: "{{ _pvc_query.resources | map(attribute='metadata.name') }}"
 
@@ -597,7 +597,7 @@
                 kubeconfig: "{{ kubeconfig_path }}"
                 api_version: v1
                 kind: PersistentVolumeClaim
-                namespace: "{{ postgres_namespace }}"
+                namespace: "{{ kafka_namespace }}"
               register: _pvc_query
 
             - name: Force delete existing PVCs
@@ -606,7 +606,7 @@
                 api_version: v1
                 kind: PersistentVolumeClaim
                 name: "{{ item }}"
-                namespace: "{{ postgres_namespace }}"
+                namespace: "{{ kafka_namespace }}"
                 state: absent
               loop: "{{ _pvc_query.resources | map(attribute='metadata.name') }}"
 
