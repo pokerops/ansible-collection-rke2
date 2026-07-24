@@ -74,6 +74,24 @@
               retries: 30
               delay: 10
 
+            - name: Query existing PVCs
+              kubernetes.core.k8s_info:
+                kubeconfig: "{{ kubeconfig_path }}"
+                api_version: v1
+                kind: PersistentVolumeClaim
+                namespace: "{{ kafka_namespace }}"
+              register: _pvc_query
+
+            - name: Force delete existing PVCs
+              kubernetes.core.k8s:
+                kubeconfig: "{{ kubeconfig_path }}"
+                api_version: v1
+                kind: PersistentVolumeClaim
+                name: "{{ item }}"
+                namespace: "{{ kafka_namespace }}"
+                state: absent
+              loop: "{{ _pvc_query.resources | map(attribute='metadata.name') }}"
+
             - name: Wait for PVC deletion to complete
               kubernetes.core.k8s_info:
                 kubeconfig: "{{ kubeconfig_path }}"
@@ -463,7 +481,7 @@
                     snapshotMoveData: true
                     storageLocation: "{{ rke2_velero_s3_storage }}"
                     csiSnapshotTimeout: 5m
-                    itemOperationTimeout: 10m
+                    itemOperationTimeout: 30m
                     ttl: "72h0m0s"
 
             - name: Wait for Velero backup to complete
@@ -478,7 +496,7 @@
                 - _backup_query.resources | length == 1
                 - _backup_query.resources[0].status.phase is defined
                 - _backup_query.resources[0].status.phase == "Completed"
-              retries: 60
+              retries: 120
               delay: 15
 
             - name: Verify backup completed successfully
@@ -573,6 +591,24 @@
               until: existing_pods.resources | length == 0
               retries: 30
               delay: 10
+
+            - name: Query existing PVCs
+              kubernetes.core.k8s_info:
+                kubeconfig: "{{ kubeconfig_path }}"
+                api_version: v1
+                kind: PersistentVolumeClaim
+                namespace: "{{ kafka_namespace }}"
+              register: _pvc_query
+
+            - name: Force delete existing PVCs
+              kubernetes.core.k8s:
+                kubeconfig: "{{ kubeconfig_path }}"
+                api_version: v1
+                kind: PersistentVolumeClaim
+                name: "{{ item }}"
+                namespace: "{{ kafka_namespace }}"
+                state: absent
+              loop: "{{ _pvc_query.resources | map(attribute='metadata.name') }}"
 
             - name: Wait for PVC deletion to complete
               kubernetes.core.k8s_info:

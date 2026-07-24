@@ -1,2 +1,2 @@
 ---
-rke2_mariadb_controller_deploy: false
+rke2_mariadb_controller_deploy: true
