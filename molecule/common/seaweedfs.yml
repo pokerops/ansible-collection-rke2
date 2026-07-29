@@ -71,6 +71,19 @@
       retries: 30
       delay: 20
 
+    - name: Wait for SeaweedFS webhook caBundle to be populated
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        api_version: admissionregistration.k8s.io/v1
+        kind: MutatingWebhookConfiguration
+        name: seaweedfs-operator-mutating-webhook-configuration
+      register: _webhook_query
+      until:
+        - _webhook_query.resources | length > 0
+        - _webhook_query.resources[0].webhooks[0].clientConfig.caBundle | default('') | length > 0
+      retries: 30
+      delay: 10
+
     - name: Destroy SeaweedFS cluster
       when: seaweedfs_cluster_rebuild | bool
       block:
