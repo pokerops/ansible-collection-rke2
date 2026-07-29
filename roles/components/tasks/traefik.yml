@@ -17,7 +17,7 @@
           helm:
             valuesObject:
               ingressClass:
-                isDefaultClass: false
+                isDefaultClass: "{{ rke2_traefik_controller_deploy | bool }}"
                 name: "traefik-private"
               providers:
                 kubernetesCRD:

@@ -26,7 +26,7 @@
                 allowSnippetAnnotations: true
                 ingressClass: nginx-private
                 ingressClassResource:
-                  default: true
+                  default: "{{ not (rke2_traefik_controller_deploy | bool) }}"
                   name: "nginx-private"
                   controllerValue: "k8s.io/nginx-private"
                   annotations:
@@ -58,6 +58,7 @@
                 allowSnippetAnnotations: true
                 ingressClass: nginx-public
                 ingressClassResource:
+                  default: false
                   name: "nginx-public"
                   controllerValue: "k8s.io/nginx-public"
                   annotations:
