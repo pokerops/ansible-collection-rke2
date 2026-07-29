@@ -1,7 +1,7 @@
 ---
 - name: Deploy nginx private controller
   kubernetes.core.k8s:
-    state: present
+    state: "{{ rke2_nginx_controller_deploy | bool | ternary('present', 'absent') }}"
     kubeconfig: "{{ rke2_config_path }}"
     resource_definition: "{{ _nginx_chart_application }}"
   vars:
@@ -37,7 +37,7 @@
 
 - name: Deploy nginx public controller
   kubernetes.core.k8s:
-    state: present
+    state: "{{ rke2_nginx_controller_deploy | bool | ternary('present', 'absent') }}"
     kubeconfig: "{{ rke2_config_path }}"
     resource_definition: "{{ _nginx_chart_application }}"
   vars:

@@ -1,7 +1,7 @@
 ---
 - name: Deploy traefik private controller
   kubernetes.core.k8s:
-    state: present
+    state: "{{ rke2_traefik_controller_deploy | bool | ternary('present', 'absent') }}"
     kubeconfig: "{{ rke2_config_path }}"
     resource_definition: "{{ _traefik_chart_application }}"
   vars:
@@ -33,7 +33,7 @@
 
 - name: Deploy traefik public controller
   kubernetes.core.k8s:
-    state: present
+    state: "{{ rke2_traefik_controller_deploy | bool | ternary('present', 'absent') }}"
     kubeconfig: "{{ rke2_config_path }}"
     resource_definition: "{{ _traefik_chart_application }}"
   vars:
