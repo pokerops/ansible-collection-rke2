@@ -115,7 +115,7 @@
                   storageClass: longhorn-static
                 numberOfInstances: 1
                 postgresql:
-                  version: "17"
+                  version: "18"
                   parameters:
                     max_connections: "200"
                     shared_buffers: "256MB"
