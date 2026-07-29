@@ -115,7 +115,7 @@
                   storageClass: longhorn-static
                 numberOfInstances: 1
                 postgresql:
-                  version: "18"
+                  version: "17"
                   parameters:
                     max_connections: "200"
                     shared_buffers: "256MB"
@@ -214,7 +214,7 @@
               ansible.builtin.git:
                 repo: "https://github.com/devrimgunduz/pagila.git"
                 dest: "{{ pagila_temp_dir.path }}/pagila"
-                version: master
+                version: pagila-v3.1.0
               changed_when: false
 
             - name: Wait for PostgreSQL connection to be ready
