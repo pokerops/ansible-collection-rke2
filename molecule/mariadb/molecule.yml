@@ -71,7 +71,6 @@ provisioner:
           # Test rke2 params
           rke2_retry_num: 30
           rke2_skip_deploy: false
-          rke2_longhorn_snapshot_retention: Delete
 verifier:
   name: ansible
 scenario:

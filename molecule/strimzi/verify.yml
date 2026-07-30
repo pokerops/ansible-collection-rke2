@@ -480,7 +480,7 @@
                     excludedResources: []
                     snapshotMoveData: true
                     storageLocation: "{{ rke2_velero_s3_storage }}"
-                    csiSnapshotTimeout: 30m
+                    csiSnapshotTimeout: 5m
                     itemOperationTimeout: 30m
                     ttl: "72h0m0s"
 
