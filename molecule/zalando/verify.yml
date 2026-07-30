@@ -214,7 +214,7 @@
               ansible.builtin.git:
                 repo: "https://github.com/devrimgunduz/pagila.git"
                 dest: "{{ pagila_temp_dir.path }}/pagila"
-                version: master
+                version: pagila-v3.1.0
               changed_when: false
 
             - name: Wait for PostgreSQL connection to be ready
@@ -238,24 +238,32 @@
                 login_password: "{{ postgres_password }}"
 
             - name: Import Pagila schema
-              community.postgresql.postgresql_db:
-                name: "{{ postgres_database_name }}"
-                state: restore
-                target: "{{ pagila_temp_dir.path }}/pagila/pagila-schema.sql"
-                login_host: "{{ postgres_external_ip }}"
-                login_port: "{{ postgres_service_port }}"
-                login_user: "{{ postgres_user }}"
-                login_password: "{{ postgres_password }}"
+              ansible.builtin.command:
+                cmd: >-
+                  psql
+                  --host={{ postgres_external_ip }}
+                  --port={{ postgres_service_port }}
+                  --username={{ postgres_user }}
+                  --dbname={{ postgres_database_name }}
+                  --set=ON_ERROR_STOP=on
+                  --file={{ pagila_temp_dir.path }}/pagila/pagila-schema.sql
+              environment:
+                PGPASSWORD: "{{ postgres_password }}"
+              changed_when: true
 
             - name: Import Pagila data
-              community.postgresql.postgresql_db:
-                name: "{{ postgres_database_name }}"
-                state: restore
-                target: "{{ pagila_temp_dir.path }}/pagila/pagila-data.sql"
-                login_host: "{{ postgres_external_ip }}"
-                login_port: "{{ postgres_service_port }}"
-                login_user: "{{ postgres_user }}"
-                login_password: "{{ postgres_password }}"
+              ansible.builtin.command:
+                cmd: >-
+                  psql
+                  --host={{ postgres_external_ip }}
+                  --port={{ postgres_service_port }}
+                  --username={{ postgres_user }}
+                  --dbname={{ postgres_database_name }}
+                  --set=ON_ERROR_STOP=on
+                  --file={{ pagila_temp_dir.path }}/pagila/pagila-data.sql
+              environment:
+                PGPASSWORD: "{{ postgres_password }}"
+              changed_when: true
 
           always:
             - name: Cleanup Pagila temporary files

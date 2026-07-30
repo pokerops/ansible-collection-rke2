@@ -1,7 +1,7 @@
 ---
 - name: Deploy nginx private controller
   kubernetes.core.k8s:
-    state: present
+    state: "{{ rke2_nginx_controller_deploy | bool | ternary('present', 'absent') }}"
     kubeconfig: "{{ rke2_config_path }}"
     resource_definition: "{{ _nginx_chart_application }}"
   vars:
@@ -26,7 +26,7 @@
                 allowSnippetAnnotations: true
                 ingressClass: nginx-private
                 ingressClassResource:
-                  default: true
+                  default: "{{ not (rke2_traefik_controller_deploy | bool) }}"
                   name: "nginx-private"
                   controllerValue: "k8s.io/nginx-private"
                   annotations:
@@ -37,7 +37,7 @@
 
 - name: Deploy nginx public controller
   kubernetes.core.k8s:
-    state: present
+    state: "{{ rke2_nginx_controller_deploy | bool | ternary('present', 'absent') }}"
     kubeconfig: "{{ rke2_config_path }}"
     resource_definition: "{{ _nginx_chart_application }}"
   vars:
@@ -58,6 +58,7 @@
                 allowSnippetAnnotations: true
                 ingressClass: nginx-public
                 ingressClassResource:
+                  default: false
                   name: "nginx-public"
                   controllerValue: "k8s.io/nginx-public"
                   annotations:
