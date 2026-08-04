@@ -1,0 +1,39 @@
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: traefik-instance-label-required
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["traefik.io"]
+        apiVersions: ["*"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["*"]
+  variables:
+    - name: instance
+      expression: >-
+        has(object.metadata.labels) && '{{ _traefik_label_selector }}' in object.metadata.labels
+          ? object.metadata.labels['{{ _traefik_label_selector }}']
+          : ''
+  validations:
+    - expression: "variables.instance != ''"
+      messageExpression: >-
+        "{{ _traefik_label_selector }} label is required on " + object.kind
+      reason: Invalid
+    - expression: >-
+        variables.instance in ['{{ _traefik_label_values | join("', '") }}']
+      messageExpression: >-
+        "{{ _traefik_label_selector }} must be one of ['{{ _traefik_label_values | join("', '") }}'], got: " +
+        variables.instance
+      reason: Invalid
+
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: traefik-instance-label-required
+spec:
+  policyName: traefik-instance-label-required
+  validationActions: [Deny]

@@ -1,4 +1,17 @@
 ---
+- name: Set global nginx facts
+  ansible.builtin.set_fact:
+    _nginx_class_private: "{{ _class_private }}"
+    _nginx_class_public: "{{ _class_public }}"
+    _nginx_classes: "{{ _class_list }}"
+    _nginx_deploy_private: true
+    _nginx_deploy_public: "{{ _deploy_public | bool }}"
+  vars:
+    _deploy_public: "{{ rke2_ippool_public is defined and [rke2_ippool_public | default([])] | flatten | length > 0 }}"
+    _class_private: nginx-private
+    _class_public: nginx-public
+    _class_list: "{{ [_class_private] + (_deploy_public | bool | ternary([_class_public], [])) }}"
+
 - name: Deploy nginx private controller
   kubernetes.core.k8s:
     state: "{{ rke2_nginx_controller_deploy | bool | ternary('present', 'absent') }}"
@@ -6,10 +19,11 @@
     resource_definition: "{{ _nginx_chart_application }}"
   vars:
     _nginx_chart_application: "{{ _nginx_chart_manifest | combine(_nginx_chart_overrides, recursive=True) }}"
+    _nginx_chart_class: "{{ _nginx_class_private }}"
     _nginx_chart_manifest: "{{ lookup('ansible.builtin.template', 'templates/nginx.yml' ) | from_yaml }}"
     _nginx_chart_overrides:
       metadata:
-        name: "nginx-private"
+        name: "{{ _nginx_chart_class }}"
       spec:
         source:
           helm:
@@ -24,16 +38,17 @@
                 config:
                   annotations-risk-level: "Critical"
                 allowSnippetAnnotations: true
-                ingressClass: nginx-private
+                ingressClass: "{{ _nginx_chart_class }}"
                 ingressClassResource:
                   default: "{{ not (rke2_traefik_controller_deploy | bool) }}"
-                  name: "nginx-private"
-                  controllerValue: "k8s.io/nginx-private"
+                  name: "{{ _nginx_chart_class }}"
+                  controllerValue: "k8s.io/{{ _nginx_chart_class }}"
                   annotations:
                     cert-manager.io/cluster-issuer: "{{ rke2_certmanager_issuer_name }}"
                 service:
                   annotations:
                     metallb.universe.tf/address-pool: "metallb-private"
+  when: _nginx_deploy_private | bool
 
 - name: Deploy nginx public controller
   kubernetes.core.k8s:
@@ -42,10 +57,11 @@
     resource_definition: "{{ _nginx_chart_application }}"
   vars:
     _nginx_chart_application: "{{ _nginx_chart_manifest | combine(_nginx_chart_overrides, recursive=True) }}"
+    _nginx_chart_class: "{{ _nginx_class_public }}"
     _nginx_chart_manifest: "{{ lookup('ansible.builtin.template', 'templates/nginx.yml' ) | from_yaml }}"
     _nginx_chart_overrides:
       metadata:
-        name: "nginx-public"
+        name: "{{ _nginx_chart_class }}"
       spec:
         source:
           helm:
@@ -56,14 +72,14 @@
                 config:
                   annotations-risk-level: "Critical"
                 allowSnippetAnnotations: true
-                ingressClass: nginx-public
+                ingressClass: "{{ _nginx_chart_class }}"
                 ingressClassResource:
                   default: false
-                  name: "nginx-public"
-                  controllerValue: "k8s.io/nginx-public"
+                  name: "{{ _nginx_chart_class }}"
+                  controllerValue: "k8s.io/{{ _nginx_chart_class }}"
                   annotations:
                     cert-manager.io/cluster-issuer: "{{ rke2_certmanager_issuer_name }}"
                 service:
                   annotations:
                     metallb.universe.tf/address-pool: "metallb-public"
-  when: rke2_ippool_public is defined and [rke2_ippool_public | default([])] | flatten | length > 0
+  when: _nginx_deploy_public | bool
