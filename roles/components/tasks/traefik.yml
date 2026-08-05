@@ -1,4 +1,19 @@
 ---
+- name: Set global traefik facts
+  ansible.builtin.set_fact:
+    _traefik_class_private: "{{ _class_private }}"
+    _traefik_class_public: "{{ _class_public }}"
+    _traefik_classes: "{{ _class_list }}"
+    _traefik_label_selector: "traefik.io/class"
+    _traefik_label_values: "{{ _class_list }}"
+    _traefik_deploy_private: true
+    _traefik_deploy_public: "{{ _deploy_public | bool }}"
+  vars:
+    _deploy_public: "{{ rke2_ippool_public is defined and [rke2_ippool_public | default([])] | flatten | length > 0 }}"
+    _class_private: traefik-private
+    _class_public: traefik-public
+    _class_list: "{{ [_class_private] + (_deploy_public | bool | ternary([_class_public], [])) }}"
+
 - name: Deploy traefik private controller
   kubernetes.core.k8s:
     state: "{{ rke2_traefik_controller_deploy | bool | ternary('present', 'absent') }}"
@@ -7,12 +22,13 @@
   vars:
     _traefik_chart_application: "{{ _traefik_chart_manifest | combine(_traefik_chart_overrides, recursive=True) }}"
     _traefik_chart_manifest: "{{ lookup('ansible.builtin.template', 'templates/traefik.yml' ) | from_yaml }}"
+    _traefik_chart_class: "{{ _traefik_class_private }}"
     _traefik_chart_overrides:
       metadata:
-        name: "traefik-private"
+        name: "{{ _traefik_chart_class }}"
       spec:
         destination:
-          namespace: "traefik-private"
+          namespace: "{{ _traefik_chart_class }}"
         source:
           helm:
             valuesObject:
@@ -21,15 +37,16 @@
                 name: "traefik-private"
               providers:
                 kubernetesCRD:
-                  ingressClass: "traefik-private"
+                  ingressClass: "{{ _traefik_chart_class }}"
                 kubernetesIngress:
-                  ingressClass: "traefik-private"
+                  ingressClass: "{{ _traefik_chart_class }}"
               gateway:
                 annotations:
                   cert-manager.io/cluster-issuer: "{{ rke2_certmanager_issuer_name }}"
               service:
                 annotations:
                   metallb.universe.tf/address-pool: "metallb-private"
+  when: _traefik_deploy_private | bool
 
 - name: Deploy traefik public controller
   kubernetes.core.k8s:
@@ -38,28 +55,35 @@
     resource_definition: "{{ _traefik_chart_application }}"
   vars:
     _traefik_chart_application: "{{ _traefik_chart_manifest | combine(_traefik_chart_overrides, recursive=True) }}"
+    _traefik_chart_class: "{{ _traefik_class_public }}"
     _traefik_chart_manifest: "{{ lookup('ansible.builtin.template', 'templates/traefik.yml' ) | from_yaml }}"
     _traefik_chart_overrides:
       metadata:
-        name: "traefik-public"
+        name: "{{ _traefik_chart_class }}"
       spec:
         destination:
-          namespace: "traefik-public"
+          namespace: "{{ _traefik_chart_class }}"
         source:
           helm:
             valuesObject:
               ingressClass:
                 isDefaultClass: false
-                name: "traefik-public"
+                name: "{{ _traefik_chart_class }}"
               providers:
                 kubernetesCRD:
-                  ingressClass: "traefik-public"
+                  ingressClass: "{{ _traefik_chart_class }}"
                 kubernetesIngress:
-                  ingressClass: "traefik-public"
+                  ingressClass: "{{ _traefik_chart_class }}"
               gateway:
                 annotations:
                   cert-manager.io/cluster-issuer: "{{ rke2_certmanager_issuer_name }}"
               service:
                 annotations:
                   metallb.universe.tf/address-pool: "metallb-public"
-  when: rke2_ippool_public is defined and [rke2_ippool_public | default([])] | flatten | length > 0
+  when: _traefik_deploy_public | bool
+
+- name: Deploy traefik admission policies
+  kubernetes.core.k8s:
+    state: "{{ rke2_traefik_controller_deploy | bool | ternary('present', 'absent') }}"
+    kubeconfig: "{{ rke2_config_path }}"
+    resource_definition: "{{ lookup('ansible.builtin.template', 'templates/traefik/vap.yml' ) | from_yaml_all | list }}"

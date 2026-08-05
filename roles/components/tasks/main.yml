@@ -20,3 +20,6 @@
 - name: Include mariadb tasks
   ansible.builtin.include_tasks: mariadb.yml
   when: rke2_mariadb_controller_deploy | bool
+
+- name: Include policy tasks
+  ansible.builtin.include_tasks: policies.yml

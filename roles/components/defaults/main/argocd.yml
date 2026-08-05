@@ -11,7 +11,7 @@ rke2_argocd_controller_replicas: 2
 rke2_argocd_server_replicas: 2
 rke2_argocd_reposerver_replicas: 2
 rke2_argocd_applicationset_replicas: 2
-rke2_argocd_ingress_class: nginx-private
+rke2_argocd_ingress_class: "{{ rke2_nginx_controller_deploy | bool | ternary('nginx-private', 'traefik-private') }}"
 rke2_argocd_values:
   redis-ha:
     enabled: "{{ rke2_argocd_redis_ha_enabled }}"

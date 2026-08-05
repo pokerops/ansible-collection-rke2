@@ -1,0 +1,10 @@
+---
+- name: Set policy facts
+  ansible.builtin.set_fact:
+    _policy_ingress_classes: "{{ _nginx_classes + _traefik_classes }}"
+
+- name: Deploy ingress admission policies
+  kubernetes.core.k8s:
+    state: "{{ rke2_traefik_controller_deploy | bool | ternary('present', 'absent') }}"
+    kubeconfig: "{{ rke2_config_path }}"
+    resource_definition: "{{ lookup('ansible.builtin.template', 'templates/policies/ingress.yml' ) | from_yaml_all | list }}"
