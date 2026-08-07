@@ -82,7 +82,7 @@
         - _webhook_query.resources | length > 0
         - _webhook_query.resources[0].webhooks[0].clientConfig.caBundle | default('') | length > 0
       retries: 30
-      delay: 10
+      delay: 20
 
     - name: Destroy SeaweedFS cluster
       when: seaweedfs_cluster_rebuild | bool
