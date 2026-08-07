@@ -1,4 +1,23 @@
 ---
+- name: Set argocd chart facts
+  ansible.builtin.set_fact:
+    _rke2_argocd_chart_values: "{{ rke2_argocd_values | combine(_override, recursive=true) | to_nice_yaml(indent=2) }}"
+  vars:
+    _nginx:
+      nginx.ingress.kubernetes.io/ssl-redirect: "true"
+      nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+      nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+    _traefik:
+      traefik.ingress.kubernetes.io/router.entrypoints: "websecure"
+      traefik.ingress.kubernetes.io/router.tls: "true"
+      traefik.ingress.kubernetes.io/service.serversscheme: "https"
+    _class: "{{ rke2_argocd_values.server.ingress.ingressClassName }}"
+    _annotations: "{{ _class.startswith('nginx') | ternary(_nginx, _traefik) }}"
+    _override:
+      server:
+        ingress:
+          annotations: "{{ _annotations }}"
+
 - name: Create argocd namespace
   kubernetes.core.k8s:
     state: present
@@ -24,8 +43,7 @@
         chart: "{{ rke2_argocd_chart.name }}"
         targetNamespace: "{{ rke2_argocd_chart.namespace }}"
         repo: "{{ rke2_argocd_chart.repo }}"
-        valuesContent: |-
-          {{ rke2_argocd_values | to_nice_yaml(indent=2) }}
+        valuesContent: "{{ _rke2_argocd_chart_values }}"
 
 - name: Wait for appproject crd
   kubernetes.core.k8s_info:

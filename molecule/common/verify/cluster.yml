@@ -632,3 +632,91 @@
                     content: "{{ _argocd_app_data.stdout | from_json | to_nice_json }}"
                     dest: "{{ molecule_logdir }}/cluster_applications.json"
                   delegate_to: localhost
+
+        - name: Verify argocd ingress
+          block:
+            - name: Query argocd ingress resources
+              kubernetes.core.k8s_info:
+                kind: Ingress
+                namespace: argocd
+                kubeconfig: "{{ _config_path }}"
+              register: _argocd_ingress_query
+              retries: "{{ _retry }}"
+              delay: "{{ _delay }}"
+              until: >-
+                _argocd_ingress_query.resources
+                | selectattr('status.loadBalancer.ingress', 'defined')
+                | map(attribute='status.loadBalancer.ingress') | flatten | length > 0
+              delegate_to: localhost
+
+            - name: Set argocd ingress ip fact
+              ansible.builtin.set_fact:
+                _argocd_ingress_ip: "{{ _lb_items | map(attribute='ip') | first }}"
+              vars:
+                _lb_items: >-
+                  {{ _argocd_ingress_query.resources
+                  | selectattr('status.loadBalancer.ingress', 'defined')
+                  | map(attribute='status.loadBalancer.ingress') | flatten
+                  | selectattr('ip', 'defined') }}
+
+            - name: Check argocd ingress response
+              ansible.builtin.uri:
+                url: "https://{{ _argocd_ingress_ip }}"
+                headers:
+                  Host: "{{ rke2_argocd_hostname }}"
+                validate_certs: false
+                status_code: 200
+              register: _argocd_ingress_response
+              retries: "{{ _retry }}"
+              delay: "{{ _delay }}"
+              until: _argocd_ingress_response is succeeded
+              delegate_to: localhost
+
+          rescue:
+            - name: Debug argocd ingress resources
+              ansible.builtin.debug:
+                var: _argocd_ingress_query
+
+        - name: Verify longhorn ingress
+          block:
+            - name: Query longhorn ingress resources
+              kubernetes.core.k8s_info:
+                kind: Ingress
+                namespace: longhorn-system
+                kubeconfig: "{{ _config_path }}"
+              register: _longhorn_ingress_query
+              retries: "{{ _retry }}"
+              delay: "{{ _delay }}"
+              until: >-
+                _longhorn_ingress_query.resources
+                | selectattr('status.loadBalancer.ingress', 'defined')
+                | map(attribute='status.loadBalancer.ingress') | flatten | length > 0
+              delegate_to: localhost
+
+            - name: Set longhorn ingress ip fact
+              ansible.builtin.set_fact:
+                _longhorn_ingress_ip: "{{ _lb_items | map(attribute='ip') | first }}"
+              vars:
+                _lb_items: >-
+                  {{ _longhorn_ingress_query.resources
+                  | selectattr('status.loadBalancer.ingress', 'defined')
+                  | map(attribute='status.loadBalancer.ingress') | flatten
+                  | selectattr('ip', 'defined') }}
+
+            - name: Check longhorn ingress response
+              ansible.builtin.uri:
+                url: "https://{{ _longhorn_ingress_ip }}"
+                headers:
+                  Host: "{{ rke2_longhorn_hostname }}"
+                validate_certs: false
+                status_code: 200
+              register: _longhorn_ingress_response
+              retries: "{{ _retry }}"
+              delay: "{{ _delay }}"
+              until: _longhorn_ingress_response is succeeded
+              delegate_to: localhost
+
+          rescue:
+            - name: Debug longhorn ingress resources
+              ansible.builtin.debug:
+                var: _longhorn_ingress_query
