@@ -285,7 +285,7 @@
               until:
                 - _backup_query.resources | length == 1
                 - _backup_query.resources[0].status.phase is defined
-                - _backup_query.resources[0].status.phase == "Completed"
+                - _backup_query.resources[0].status.phase in ["Completed", "PartiallyFailed", "Failed", "FailedValidation"]
               retries: 60
               delay: 10
 

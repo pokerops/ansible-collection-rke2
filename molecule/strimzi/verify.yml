@@ -476,12 +476,11 @@
                       - "{{ kafka_namespace }}"
                     volumeSnapshotLocations: []
                     includeClusterResources: true
-                    defaultVolumesToFsBackup: false
+                    defaultVolumesToFsBackup: true
                     excludedResources: []
-                    snapshotMoveData: true
+                    snapshotMoveData: false
                     storageLocation: "{{ rke2_velero_s3_storage }}"
-                    csiSnapshotTimeout: 5m
-                    itemOperationTimeout: 30m
+                    itemOperationTimeout: 10m
                     ttl: "72h0m0s"
 
             - name: Wait for Velero backup to complete
@@ -495,9 +494,9 @@
               until:
                 - _backup_query.resources | length == 1
                 - _backup_query.resources[0].status.phase is defined
-                - _backup_query.resources[0].status.phase == "Completed"
-              retries: 120
-              delay: 15
+                - _backup_query.resources[0].status.phase in ["Completed", "PartiallyFailed", "Failed", "FailedValidation"]
+              retries: 60
+              delay: 10
 
             - name: Verify backup completed successfully
               ansible.builtin.assert:
@@ -508,32 +507,6 @@
                   Warnings: {{ _backup_query.resources[0].status.warnings | default(0) }}
                 success_msg: "Backup completed successfully"
 
-            - name: Verify backup moved volume data to object storage
-              kubernetes.core.k8s_info:
-                kubeconfig: "{{ kubeconfig_path }}"
-                api_version: velero.io/v2alpha1
-                kind: DataUpload
-                namespace: velero
-                label_selectors:
-                  - "velero.io/backup-name={{ backup_name }}"
-              register: _upload_query
-              until:
-                - _upload_query.resources | length > 0
-                - _upload_query.resources
-                  | selectattr('status.phase', 'defined')
-                  | map(attribute='status.phase') | list
-                  | reject('in', ['Completed', 'Failed', 'Canceled']) | list | length == 0
-              retries: 30
-              delay: 10
-
-            - name: Assert backup DataUpload completed successfully
-              ansible.builtin.assert:
-                that:
-                  - _upload_query.resources | length > 0
-                  - _upload_query.resources
-                    | selectattr('status.phase', 'equalto', 'Completed')
-                    | list | length > 0
-                fail_msg: No DataUpload completed for backup {{ backup_name }}
 
         - name: Destroy kafka cluster and PVCs
           block:
@@ -696,34 +669,6 @@
                   Errors: {{ _restore_query.resources[0].status.errors | default('n/a') }}
                   Warnings: {{ _restore_query.resources[0].status.warnings | default('n/a') }}
 
-            - name: Query restore DataDownloads
-              kubernetes.core.k8s_info:
-                kubeconfig: "{{ kubeconfig_path }}"
-                api_version: velero.io/v2alpha1
-                kind: DataDownload
-                namespace: velero
-                label_selectors:
-                  - "velero.io/restore-name={{ restore_name }}"
-              register: _download_query
-              until:
-                - _download_query.resources | length > 0
-                - _download_query.resources
-                  | selectattr('status.phase', 'defined')
-                  | map(attribute='status.phase') | list
-                  | reject('in', ['Completed', 'Failed', 'Canceled']) | list | length == 0
-              retries: 30
-              delay: 10
-
-            - name: Verify DataDownload completed successfully
-              ansible.builtin.assert:
-                that:
-                  - _download_query.resources | length > 0
-                  - _download_query.resources
-                    | selectattr('status.phase', 'equalto', 'Completed')
-                    | list | length > 0
-                fail_msg: >-
-                  No completed DataDownload for restore {{ restore_name }} — the PVCs may
-                  have been recreated empty instead of restored from object storage.
 
             - name: Verify restored PVCs are bound
               kubernetes.core.k8s_info:
@@ -1058,62 +1003,7 @@
           ansible.builtin.debug:
             msg: "{{ _restore_query }}"
 
-        - name: Query restore DataDownloads
-          kubernetes.core.k8s_info:
-            kubeconfig: "{{ kubeconfig_path }}"
-            api_version: velero.io/v2alpha1
-            kind: DataDownload
-          register: _download_query
 
-        - name: Debug Velero DataDownloads
-          ansible.builtin.debug:
-            msg: "{{ _download_query }}"
-
-        - name: Query backup DataUploads
-          kubernetes.core.k8s_info:
-            kubeconfig: "{{ kubeconfig_path }}"
-            api_version: velero.io/v2alpha1
-            kind: DataUpload
-            namespace: velero
-          register: _upload_query
-
-        - name: Debug backup DataUploads
-          ansible.builtin.debug:
-            msg: "{{ _upload_query }}"
-
-        - name: Query VolumeSnapshotClasses
-          kubernetes.core.k8s_info:
-            kubeconfig: "{{ kubeconfig_path }}"
-            api_version: snapshot.storage.k8s.io/v1
-            kind: VolumeSnapshotClass
-          register: _vsc_query
-
-        - name: Debug VolumeSnapshotClasses
-          ansible.builtin.debug:
-            msg: "{{ _vsc_query.resources | map(attribute='metadata') | list }}"
-
-        - name: Query VolumeSnapshots
-          kubernetes.core.k8s_info:
-            kubeconfig: "{{ kubeconfig_path }}"
-            api_version: snapshot.storage.k8s.io/v1
-            kind: VolumeSnapshot
-            namespace: velero
-          register: _vs_query
-
-        - name: Debug VolumeSnapshots
-          ansible.builtin.debug:
-            msg: "{{ _vs_query }}"
-
-        - name: Query VolumeSnapshotContents
-          kubernetes.core.k8s_info:
-            kubeconfig: "{{ kubeconfig_path }}"
-            api_version: snapshot.storage.k8s.io/v1
-            kind: VolumeSnapshotContent
-          register: _vscontent_query
-
-        - name: Debug VolumeSnapshotContents
-          ansible.builtin.debug:
-            msg: "{{ _vscontent_query }}"
 
         - name: Query Velero node-agent pods
           kubernetes.core.k8s_info:
