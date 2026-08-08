@@ -82,7 +82,7 @@
         - _webhook_query.resources | length > 0
         - _webhook_query.resources[0].webhooks[0].clientConfig.caBundle | default('') | length > 0
       retries: 30
-      delay: 10
+      delay: 20
 
     - name: Destroy SeaweedFS cluster
       when: seaweedfs_cluster_rebuild | bool
@@ -291,19 +291,16 @@
         _service: "{{ _svc_query.resources | first }}"
         _svcaddr: "{{ _service.spec.clusterIP }}"
 
-    - name: Wait for SeaweedFS S3 bucket to be ready
-      kubernetes.core.k8s_info:
-        kubeconfig: "{{ molecule_local_kubeconfig }}"
-        api_version: seaweed.seaweedfs.com/v1
-        kind: Bucket
-        name: "{{ seaweedfs_service_bucket }}"
-        namespace: "{{ seaweedfs_cluster_namespace }}"
-      register: _bucket_query
-      until:
-        - _bucket_query.resources | length > 0
-        - _bucket_query.resources[0].status.phase == "Ready"
+    - name: Wait for SeaweedFS S3 endpoint to be ready
+      ansible.builtin.uri:
+        url: "{{ rke2_velero_s3_endpoint }}"
+        method: GET
+        validate_certs: false
+        status_code: [200, 400, 403]
+      register: _s3_probe
       retries: 30
       delay: 20
+      until: _s3_probe is succeeded
 
     - name: Create Velero credentials secret
       kubernetes.core.k8s:
@@ -351,7 +348,7 @@
           spec:
             provider: "{{ rke2_velero_s3_provider | default('aws') }}"
             default: true
-            validationFrequency: "{{ rke2_velero_s3_validation_frequency | default('24h') }}"
+            validationFrequency: "{{ rke2_velero_s3_validation_frequency | default('1m') }}"
             objectStorage:
               bucket: "{{ rke2_velero_s3_bucket }}"
             config:
