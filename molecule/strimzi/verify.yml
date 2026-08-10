@@ -476,11 +476,12 @@
                       - "{{ kafka_namespace }}"
                     volumeSnapshotLocations: []
                     includeClusterResources: true
-                    defaultVolumesToFsBackup: true
+                    defaultVolumesToFsBackup: false
                     excludedResources: []
-                    snapshotMoveData: false
+                    snapshotMoveData: true
                     storageLocation: "{{ rke2_velero_s3_storage }}"
-                    itemOperationTimeout: 10m
+                    csiSnapshotTimeout: 5m
+                    itemOperationTimeout: 15m
                     ttl: "72h0m0s"
 
             - name: Wait for Velero backup to complete
@@ -495,7 +496,7 @@
                 - _backup_query.resources | length == 1
                 - _backup_query.resources[0].status.phase is defined
                 - _backup_query.resources[0].status.phase in ["Completed", "PartiallyFailed", "Failed", "FailedValidation"]
-              retries: 60
+              retries: 90
               delay: 10
 
             - name: Verify backup completed successfully
@@ -646,6 +647,7 @@
                       includedResources:
                         - "*"
                     existingResourcePolicy: update
+                    itemOperationTimeout: 15m
 
             - name: Wait for Kafka restore to complete
               kubernetes.core.k8s_info:
