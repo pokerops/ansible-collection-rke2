@@ -1003,7 +1003,63 @@
           ansible.builtin.debug:
             msg: "{{ _restore_query }}"
 
+        - name: Query PodVolumeRestores
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ kubeconfig_path }}"
+            api_version: velero.io/v1
+            kind: PodVolumeRestore
+          register: _pvr_query
 
+        - name: Debug PodVolumeRestore status
+          ansible.builtin.debug:
+            msg: >-
+              {{ _pvr_query.resources | default([]) | map('combine', {}) | map(attribute='status') | list }}
+
+        - name: Debug PodVolumeRestore summary
+          ansible.builtin.debug:
+            msg: >-
+              {{ _pvr_query.resources | default([])
+                 | map('json_query', "{name: metadata.name, pod: spec.pod.name, volume: spec.volume, phase: status.phase, progress: status.progress, message: status.message}")
+                 | list }}
+
+        - name: Query DataDownloads
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ kubeconfig_path }}"
+            api_version: velero.io/v2alpha1
+            kind: DataDownload
+            namespace: velero
+          register: _datadownload_query
+          failed_when: false
+
+        - name: Debug DataDownload status
+          ansible.builtin.debug:
+            msg: >-
+              {{ _datadownload_query.resources | default([])
+                 | map('json_query', "{name: metadata.name, phase: status.phase, progress: status.progress, node: status.node, message: status.message}")
+                 | list }}
+
+        - name: Debug restored pod phases and container states
+          ansible.builtin.debug:
+            msg: >-
+              {{ kafka_pods.resources | default([])
+                 | map('json_query', "{name: metadata.name, phase: status.phase, node: spec.nodeName, initContainerStatuses: status.initContainerStatuses[].{name: name, ready: ready, state: state}, containerStatuses: status.containerStatuses[].{name: name, ready: ready, state: state}}")
+                 | list }}
+
+        - name: Query events in {{ kafka_namespace }}
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ kubeconfig_path }}"
+            api_version: v1
+            kind: Event
+            namespace: "{{ kafka_namespace }}"
+          register: _kafka_events
+
+        - name: Debug recent warning events in {{ kafka_namespace }}
+          ansible.builtin.debug:
+            msg: >-
+              {{ _kafka_events.resources | default([])
+                 | selectattr('type', 'equalto', 'Warning')
+                 | map('json_query', "{object: involvedObject.kind, name: involvedObject.name, reason: reason, message: message, last: lastTimestamp}")
+                 | list }}
 
         - name: Query Velero node-agent pods
           kubernetes.core.k8s_info:
@@ -1020,6 +1076,23 @@
             msg: >-
               {{ _nodeagent_query.resources
                  | map(attribute='status.phase') | list }}
+
+        - name: Get Velero node-agent logs
+          kubernetes.core.k8s_log:
+            kubeconfig: "{{ kubeconfig_path }}"
+            namespace: velero
+            name: "{{ item }}"
+            container: node-agent
+          register: _nodeagent_logs
+          failed_when: false
+          loop: "{{ _nodeagent_query.resources | default([]) | map(attribute='metadata.name') | list }}"
+
+        - name: Debug node-agent error/restore log lines
+          ansible.builtin.debug:
+            msg: >-
+              {{ _nodeagent_logs.results | default([])
+                 | map(attribute='log_lines') | select('defined') | flatten
+                 | select('search', 'level=error|level=warning|PodVolumeRestore|restore') | list }}
 
         - name: Query Velero server deployment
           kubernetes.core.k8s_info:
