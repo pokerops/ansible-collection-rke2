@@ -12,6 +12,10 @@
     backup_name: "molecule-backup-{{ ansible_date_time.epoch }}"
     restore_name: "molecule-restore-{{ ansible_date_time.epoch }}"
     kubeconfig_path: "{{ molecule_local_kubeconfig }}"
+    # Single-replica Longhorn class. Velero's CSI data mover provisions its backup
+    # PVC from the source PVC's storage class, so a 3-replica class makes every
+    # DataUpload clone 3x the volume before the backup pod can start.
+    postgres_storage_class: "longhorn-single"
   tasks:
     - name: Test Zalando Velero backup and restore
       block:
@@ -91,6 +95,25 @@
             kind: Namespace
             state: present
 
+        - name: Deploy single-replica Longhorn storage class
+          kubernetes.core.k8s:
+            kubeconfig: "{{ kubeconfig_path }}"
+            state: present
+            apply: true
+            definition:
+              apiVersion: storage.k8s.io/v1
+              kind: StorageClass
+              metadata:
+                name: "{{ postgres_storage_class }}"
+              provisioner: driver.longhorn.io
+              allowVolumeExpansion: true
+              reclaimPolicy: Delete
+              volumeBindingMode: Immediate
+              parameters:
+                numberOfReplicas: "1"
+                staleReplicaTimeout: "30"
+                fsType: ext4
+
         - name: Deploy PostgreSQL cluster with Zalando operator
           kubernetes.core.k8s:
             kubeconfig: "{{ kubeconfig_path }}"
@@ -112,7 +135,7 @@
                 teamId: "molecule"
                 volume:
                   size: 2Gi
-                  storageClass: longhorn-static
+                  storageClass: "{{ postgres_storage_class }}"
                 numberOfInstances: 1
                 postgresql:
                   version: "17"
