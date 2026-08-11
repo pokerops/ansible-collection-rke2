@@ -16,6 +16,10 @@
     mariadb_operator_deployment: "mariadb-operator"
     mariadb_chart_version: "26.6.0"
     mariadb_chart_repo: "ghcr.io/mariadb-operator/charts"
+    # Single-replica Longhorn class. Velero's CSI data mover provisions its backup
+    # PVC from the source PVC's storage class, so a 3-replica class makes every
+    # DataUpload clone 3x the volume before the backup pod can start.
+    mariadb_storage_class: "longhorn-single"
   tasks:
     - name: Test MariaDB Velero backup and restore
       block:
@@ -95,6 +99,25 @@
             kind: Namespace
             state: present
 
+        - name: Deploy single-replica Longhorn storage class
+          kubernetes.core.k8s:
+            kubeconfig: "{{ kubeconfig_path }}"
+            state: present
+            apply: true
+            definition:
+              apiVersion: storage.k8s.io/v1
+              kind: StorageClass
+              metadata:
+                name: "{{ mariadb_storage_class }}"
+              provisioner: driver.longhorn.io
+              allowVolumeExpansion: true
+              reclaimPolicy: Delete
+              volumeBindingMode: Immediate
+              parameters:
+                numberOfReplicas: "1"
+                staleReplicaTimeout: "30"
+                fsType: ext4
+
         - name: Create MariaDB root password secret
           kubernetes.core.k8s:
             kubeconfig: "{{ kubeconfig_path }}"
@@ -126,7 +149,7 @@
                   key: password
                 storage:
                   size: 2Gi
-                  storageClassName: longhorn-static
+                  storageClassName: "{{ mariadb_storage_class }}"
                 service:
                   type: LoadBalancer
                   annotations:
