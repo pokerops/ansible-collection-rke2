@@ -14,6 +14,10 @@
     kafka_operator_namespace: "strimzi"
     kafka_image: "quay.io/strimzi/kafka:0.45.0-kafka-3.9.0"
     strimzi_deployment_name: "strimzi-cluster-operator"
+    # Single-replica Longhorn class. Velero's CSI data mover provisions its backup
+    # PVC from the source PVC's storage class, so a 3-replica class makes every
+    # DataUpload clone 3x the volume before the backup pod can start.
+    kafka_storage_class: "longhorn-single"
   tasks:
     - name: Test Strimzi Velero backup and restore
       block:
@@ -111,6 +115,25 @@
             api_version: v1
             kind: Namespace
 
+        - name: Deploy single-replica Longhorn storage class
+          kubernetes.core.k8s:
+            kubeconfig: "{{ kubeconfig_path }}"
+            state: present
+            apply: true
+            definition:
+              apiVersion: storage.k8s.io/v1
+              kind: StorageClass
+              metadata:
+                name: "{{ kafka_storage_class }}"
+              provisioner: driver.longhorn.io
+              allowVolumeExpansion: true
+              reclaimPolicy: Delete
+              volumeBindingMode: Immediate
+              parameters:
+                numberOfReplicas: "1"
+                staleReplicaTimeout: "30"
+                fsType: ext4
+
         - name: Deploy Kafka cluster
           block:
             - name: Wait until Strimzi operator pods ready
@@ -148,7 +171,7 @@
                       type: persistent-claim
                       size: 2Gi
                       deleteClaim: true
-                      class: longhorn-static
+                      class: "{{ kafka_storage_class }}"
 
             - name: Deploy brokers KafkaNodePool
               kubernetes.core.k8s:
@@ -172,7 +195,7 @@
                       type: persistent-claim
                       size: 2Gi
                       deleteClaim: true
-                      class: longhorn-static
+                      class: "{{ kafka_storage_class }}"
 
             - name: Deploy Kafka cluster in KRaft mode
               kubernetes.core.k8s:
@@ -993,6 +1016,113 @@
           ansible.builtin.debug:
             msg: "{{ _backup_query }}"
 
+        - name: Query DataUploads
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ kubeconfig_path }}"
+            api_version: velero.io/v2alpha1
+            kind: DataUpload
+            namespace: velero
+          register: _dataupload_query
+          failed_when: false
+
+        - name: Debug DataUpload status
+          ansible.builtin.debug:
+            msg: >-
+              {{ _dataupload_query.resources | default([])
+                 | map('json_query', "{name: metadata.name, sourcePVC: spec.sourcePVC,
+                                       snapshotType: spec.snapshotType, phase: status.phase, node: status.node,
+                                       accepted: status.acceptedTimestamp, started: status.startTimestamp,
+                                       progress: status.progress, message: status.message}")
+                 | list }}
+
+        - name: Query VolumeSnapshots
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ kubeconfig_path }}"
+            api_version: snapshot.storage.k8s.io/v1
+            kind: VolumeSnapshot
+          register: _vs_query
+          failed_when: false
+
+        - name: Debug VolumeSnapshot status
+          ansible.builtin.debug:
+            msg: >-
+              {{ _vs_query.resources | default([])
+                 | map('json_query', "{namespace: metadata.namespace, name: metadata.name,
+                                       sourcePVC: spec.source.persistentVolumeClaimName,
+                                       boundContent: status.boundVolumeSnapshotContentName,
+                                       readyToUse: status.readyToUse, restoreSize: status.restoreSize,
+                                       error: status.error}")
+                 | list }}
+
+        - name: Query VolumeSnapshotContents
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ kubeconfig_path }}"
+            api_version: snapshot.storage.k8s.io/v1
+            kind: VolumeSnapshotContent
+          register: _vsc_query
+          failed_when: false
+
+        - name: Debug VolumeSnapshotContent status
+          ansible.builtin.debug:
+            msg: >-
+              {{ _vsc_query.resources | default([])
+                 | map('json_query', "{name: metadata.name, driver: spec.driver,
+                                       class: spec.volumeSnapshotClassName, handle: status.snapshotHandle,
+                                       readyToUse: status.readyToUse, restoreSize: status.restoreSize,
+                                       error: status.error}")
+                 | list }}
+
+        - name: Query pods in velero namespace
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ kubeconfig_path }}"
+            api_version: v1
+            kind: Pod
+            namespace: velero
+          register: _velero_pods
+
+        - name: Debug velero namespace pod status
+          ansible.builtin.debug:
+            msg: >-
+              {{ _velero_pods.resources | default([])
+                 | map('json_query', "{name: metadata.name, phase: status.phase, node: spec.nodeName,
+                                       conditions: status.conditions[].{type: type, status: status,
+                                                                        reason: reason, message: message}}")
+                 | list }}
+
+        - name: Query PVCs in velero namespace
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ kubeconfig_path }}"
+            api_version: v1
+            kind: PersistentVolumeClaim
+            namespace: velero
+          register: _velero_pvcs
+
+        - name: Debug velero namespace PVC status
+          ansible.builtin.debug:
+            msg: >-
+              {{ _velero_pvcs.resources | default([])
+                 | map('json_query', "{name: metadata.name, phase: status.phase,
+                                       storageClass: spec.storageClassName,
+                                       requested: spec.resources.requests.storage,
+                                       dataSource: spec.dataSource, volume: spec.volumeName}")
+                 | list }}
+
+        - name: Query events in velero namespace
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ kubeconfig_path }}"
+            api_version: v1
+            kind: Event
+            namespace: velero
+          register: _velero_events
+
+        - name: Debug recent warning events in velero namespace
+          ansible.builtin.debug:
+            msg: >-
+              {{ _velero_events.resources | default([])
+                 | selectattr('type', 'equalto', 'Warning')
+                 | map('json_query', "{object: involvedObject.kind, name: involvedObject.name, reason: reason, message: message, last: lastTimestamp}")
+                 | list }}
+
         - name: Query Velero restores
           kubernetes.core.k8s_info:
             kubeconfig: "{{ kubeconfig_path }}"
@@ -1089,12 +1219,12 @@
           failed_when: false
           loop: "{{ _nodeagent_query.resources | default([]) | map(attribute='metadata.name') | list }}"
 
-        - name: Debug node-agent error/restore log lines
+        - name: Debug node-agent data mover log lines
           ansible.builtin.debug:
             msg: >-
               {{ _nodeagent_logs.results | default([])
                  | map(attribute='log_lines') | select('defined') | flatten
-                 | select('search', 'level=error|level=warning|PodVolumeRestore|restore') | list }}
+                 | select('search', 'level=error|level=warning|DataUpload|DataDownload|dataupload|datadownload|xpose|PodVolumeRestore') | list }}
 
         - name: Query Velero server deployment
           kubernetes.core.k8s_info:
@@ -1136,7 +1266,7 @@
           ansible.builtin.debug:
             msg: >-
               {{ _velero_log.log_lines | default([])
-                 | select('search', 'level=warning|skip|snapshot|VolumeSnapshot') | list }}
+                 | select('search', 'level=error|level=warning|skip|snapshot|VolumeSnapshot|DataUpload|operation') | list }}
 
         - name: Terminate playbook
           ansible.builtin.fail:
