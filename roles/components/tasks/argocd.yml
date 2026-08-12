@@ -3,7 +3,7 @@
   ansible.builtin.set_fact:
     _rke2_argocd_chart_values: "{{ rke2_argocd_values | combine(_override, recursive=true) | to_nice_yaml(indent=2) }}"
     _rke2_argocd_traefik_enabled: "{{ _traefik }}"
-    _rke2_argocd_traefik_transport: insecure
+    _rke2_argocd_traefik_transport: "{{ _transport }}"
   vars:
     _annotations_nginx:
       nginx.ingress.kubernetes.io/ssl-redirect: "true"
@@ -16,6 +16,7 @@
       traefik.ingress.kubernetes.io/service.serverstransport: "{{ rke2_argocd_chart.namespace }}-{{ _transport }}@kubernetescrd"
     _class: "{{ rke2_argocd_values.server.ingress.ingressClassName }}"
     _traefik: "{{ _class.startswith('traefik') }}"
+    _transport: insecure
     _override:
       server:
         ingress:
