@@ -2,8 +2,9 @@
 - name: Set argocd chart facts
   ansible.builtin.set_fact:
     _rke2_argocd_chart_values: "{{ rke2_argocd_values | combine(_override, recursive=true) | to_nice_yaml(indent=2) }}"
-    _rke2_argocd_traefik_enabled: "{{ _traefik }}"
+    _rke2_argocd_traefik_enabled: "{{ _traefik | bool }}"
     _rke2_argocd_traefik_transport: "{{ _transport }}"
+    _rke2_argocd_traefik_configure: "{{ rke2_argocd_traefik_configure | default('false')}}"
   vars:
     _annotations_nginx:
       nginx.ingress.kubernetes.io/ssl-redirect: "true"
@@ -46,7 +47,9 @@
       spec:
         serverName: "argocd-server.{{ rke2_argocd_chart.namespace }}.svc"
         insecureSkipVerify: true
-  when: _rke2_argocd_traefik_enabled | bool
+  when:
+    - _rke2_argocd_traefik_configure | bool
+    - _rke2_argocd_traefik_enabled | bool
 
 - name: Deploy argocd chart
   kubernetes.core.k8s:

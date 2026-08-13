@@ -4,6 +4,8 @@
 
 - name: Include argocd tasks
   ansible.builtin.include_tasks: argocd.yml
+  vars:
+    rke2_argocd_traefik_configure: false
 
 - name: Include metallb tasks
   ansible.builtin.include_tasks: metallb.yml
@@ -23,3 +25,8 @@
 
 - name: Include policy tasks
   ansible.builtin.include_tasks: policies.yml
+
+- name: Include argocd tasks
+  ansible.builtin.include_tasks: argocd.yml
+  vars:
+    rke2_argocd_traefik_configure: true
