@@ -22,6 +22,8 @@ spec:
         providers:
           kubernetesCRD:
             labelSelector: "{{ _traefik_label_selector }}={{ _traefik_chart_class }}"
+        additionalArguments:
+          - "--serversTransport.insecureSkipVerify=true"
   destination:
     server: https://kubernetes.default.svc
     namespace: traefik

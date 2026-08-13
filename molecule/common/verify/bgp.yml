@@ -406,7 +406,7 @@
             label: "{{ _address }}"
           loop: "{{ _local_routes | dict2items }}"
 
-      rescue:
+      always:
         - name: Query local routes
           ansible.builtin.shell:
             cmd: "ip -j -d route show"
@@ -438,6 +438,7 @@
           until: (_ingresses | length > 0) and (_ips | length == _ingresses | length)
           retries: "{{ _retries }}"
           delay: "{{ _delay }}"
+
       always:
         - name: Query Ingress IPs
           kubernetes.core.k8s_info:
@@ -469,7 +470,7 @@
             namespace: argocd
             kubeconfig: "{{ molecule_local_kubeconfig }}"
           register: _argocd_ingress_query
-          retries: "{{ _retry }}"
+          retries: "{{ _retries }}"
           delay: "{{ _delay }}"
           until: >-
             _argocd_ingress_query.resources
@@ -479,6 +480,7 @@
 
         - name: Set argocd ingress ip fact
           ansible.builtin.set_fact:
+            _argocd_ingress_hostname: "{{ todo }}"
             _argocd_ingress_ip: "{{ _lb_items | map(attribute='ip') | first }}"
           vars:
             _lb_items: >-
@@ -491,11 +493,11 @@
           ansible.builtin.uri:
             url: "https://{{ _argocd_ingress_ip }}"
             headers:
-              Host: "{{ rke2_argocd_hostname }}"
+              Host: "{{ _argocd_ingress_hostname }}"
             validate_certs: false
             status_code: 200
           register: _argocd_ingress_response
-          retries: "{{ _retry }}"
+          retries: "{{ _retries }}"
           delay: "{{ _delay }}"
           until: _argocd_ingress_response is succeeded
           delegate_to: localhost
@@ -505,6 +507,9 @@
           ansible.builtin.debug:
             var: _argocd_ingress_query
 
+        - name: Fail argocd ingress check
+          ansible.builtin.fail:
+
     - name: Verify longhorn ingress
       block:
         - name: Query longhorn ingress resources
@@ -513,7 +518,7 @@
             namespace: longhorn-system
             kubeconfig: "{{ molecule_local_kubeconfig }}"
           register: _longhorn_ingress_query
-          retries: "{{ _retry }}"
+          retries: "{{ _retries }}"
           delay: "{{ _delay }}"
           until: >-
             _longhorn_ingress_query.resources
@@ -523,6 +528,7 @@
 
         - name: Set longhorn ingress ip fact
           ansible.builtin.set_fact:
+            _longhorn_ingress_hostname: "{{ todo }}"
             _longhorn_ingress_ip: "{{ _lb_items | map(attribute='ip') | first }}"
           vars:
             _lb_items: >-
@@ -535,11 +541,11 @@
           ansible.builtin.uri:
             url: "https://{{ _longhorn_ingress_ip }}"
             headers:
-              Host: "{{ rke2_longhorn_hostname }}"
+              Host: "{{ _longhorn_ingress_hostname }}"
             validate_certs: false
             status_code: 200
           register: _longhorn_ingress_response
-          retries: "{{ _retry }}"
+          retries: "{{ _retries }}"
           delay: "{{ _delay }}"
           until: _longhorn_ingress_response is succeeded
           delegate_to: localhost
@@ -548,3 +554,6 @@
         - name: Debug longhorn ingress resources
           ansible.builtin.debug:
             var: _longhorn_ingress_query
+
+        - name: Fail longhorn ingress check
+          ansible.builtin.fail:

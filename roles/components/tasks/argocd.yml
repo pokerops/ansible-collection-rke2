@@ -2,9 +2,6 @@
 - name: Set argocd chart facts
   ansible.builtin.set_fact:
     _rke2_argocd_chart_values: "{{ rke2_argocd_values | combine(_override, recursive=true) | to_nice_yaml(indent=2) }}"
-    _rke2_argocd_traefik_enabled: "{{ _traefik | bool }}"
-    _rke2_argocd_traefik_transport: "{{ _transport }}"
-    _rke2_argocd_traefik_configure: "{{ rke2_argocd_traefik_configure | default('false')}}"
   vars:
     _annotations_nginx:
       nginx.ingress.kubernetes.io/ssl-redirect: "true"
@@ -14,10 +11,8 @@
       traefik.ingress.kubernetes.io/router.entrypoints: "websecure"
       traefik.ingress.kubernetes.io/router.tls: "true"
       traefik.ingress.kubernetes.io/service.serversscheme: "https"
-      traefik.ingress.kubernetes.io/service.serverstransport: "{{ rke2_argocd_chart.namespace }}-{{ _transport }}@kubernetescrd"
     _class: "{{ rke2_argocd_values.server.ingress.ingressClassName }}"
     _traefik: "{{ _class.startswith('traefik') }}"
-    _transport: insecure
     _override:
       server:
         ingress:
@@ -32,24 +27,6 @@
       kind: Namespace
       metadata:
         name: "{{ rke2_argocd_chart.namespace }}"
-
-- name: Deploy argocd server transport
-  kubernetes.core.k8s:
-    state: present
-    apply: true
-    kubeconfig: "{{ rke2_config_path }}"
-    resource_definition:
-      apiVersion: "traefik.io/v1alpha1"
-      kind: ServersTransport
-      metadata:
-        name: "{{ _rke2_argocd_traefik_transport }}"
-        namespace: "{{ rke2_argocd_chart.namespace }}"
-      spec:
-        serverName: "argocd-server.{{ rke2_argocd_chart.namespace }}.svc"
-        insecureSkipVerify: true
-  when:
-    - _rke2_argocd_traefik_configure | bool
-    - _rke2_argocd_traefik_enabled | bool
 
 - name: Deploy argocd chart
   kubernetes.core.k8s:

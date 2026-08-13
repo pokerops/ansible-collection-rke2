@@ -165,6 +165,8 @@
           ansible.builtin.command:
             cmd: "{{ _rke2_bin_path }}/kubectl get ingresses -A -o json --kubeconfig {{ _rke2_config_path }}/rke2.yaml"
           register: _ingress_query
+          changed_when: false
+          become: true
           ignore_errors: true
 
         - name: Skip on ingress query failure
