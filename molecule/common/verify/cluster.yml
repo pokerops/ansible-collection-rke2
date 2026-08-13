@@ -660,9 +660,13 @@
 
             - name: Set argocd ingress ip fact
               ansible.builtin.set_fact:
-                _argocd_ingress_hostname: "{{ todo }}"
+                _argocd_ingress_hostname: "{{ _host_items | first }}"
                 _argocd_ingress_ip: "{{ _lb_items | map(attribute='ip') | first }}"
               vars:
+                _host_items: >-
+                  {{ _argocd_ingress_query.resources
+                  | map(attribute='spec.rules') | flatten
+                  | selectattr('host', 'defined') | map(attribute='host') }}
                 _lb_items: >-
                   {{ _argocd_ingress_query.resources
                   | selectattr('status.loadBalancer.ingress', 'defined')
@@ -708,9 +712,13 @@
 
             - name: Set longhorn ingress ip fact
               ansible.builtin.set_fact:
-                _longhorn_ingress_hostname: "{{ todo }}"
+                _longhorn_ingress_hostname: "{{ _host_items | first }}"
                 _longhorn_ingress_ip: "{{ _lb_items | map(attribute='ip') | first }}"
               vars:
+                _host_items: >-
+                  {{ _longhorn_ingress_query.resources
+                  | map(attribute='spec.rules') | flatten
+                  | selectattr('host', 'defined') | map(attribute='host') }}
                 _lb_items: >-
                   {{ _longhorn_ingress_query.resources
                   | selectattr('status.loadBalancer.ingress', 'defined')
