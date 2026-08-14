@@ -127,7 +127,7 @@
     _servers: "{{ groups['rke2_server'] }}"
     _agents: "{{ groups['rke2_agent'] }}"
     _members: "{{ _servers + _agents }}"
-    _retry: 20
+    _retries: 20
     _delay: 30
   tasks:
     - name: Install jq
@@ -281,6 +281,9 @@
           ansible.builtin.debug:
             var: _kubectl_pod_names
 
+        - name: Fail cluster status check
+          ansible.builtin.fail:
+
     - name: Validate cluster components
       when: rke2_component_check | default(True) | bool
       run_once: true
@@ -303,7 +306,7 @@
             _pods_hubble_failed:
               - _pods_hubble_ok_names | length > 0
               - _pods_hubble_ko_names | length == 0
-          retries: "{{ _retry }}"
+          retries: "{{ _retries }}"
           delay: "{{ _delay }}"
           until: not _pods_hubble_failed | bool
           when: _pods_hubble_failed | bool
@@ -348,7 +351,7 @@
                 issuers_ready: "{{ issuers_conditions | selectattr('type', 'equalto', 'Ready') }}"
                 issuers_failed: "{{ issuers_ready | rejectattr('status', 'equalto', 'True') }}"
                 issuers_query: "{{ query('kubernetes.core.k8s', kind='ClusterIssuer', kubeconfig=_config_path) }}"
-              retries: "{{ _retry }}"
+              retries: "{{ _retries }}"
               delay: "{{ _delay }}"
               until: issuers_failed | length == 0
               failed_when: issuers_failed | length > 0
@@ -360,13 +363,16 @@
               vars:
                 issuers_query: "{{ query('kubernetes.core.k8s', kind='ClusterIssuer', kubeconfig=_config_path) }}"
 
+            - name: Fail cluster issuer check
+              ansible.builtin.fail:
+
         - name: Verify cluster pod status
           block:
             - name: Verify cluster pod status
               ansible.builtin.shell:
                 cmd: "/var/lib/rancher/rke2/bin/kubectl get pod -A -o json | jq '.items'"
               register: _argocd_pod_data
-              retries: "{{ _retry }}"
+              retries: "{{ _retries }}"
               delay: "{{ _delay }}"
               vars:
                 _pod_data: "{{ _argocd_pod_data.stdout | from_json }}"
@@ -398,7 +404,7 @@
               ansible.builtin.shell:
                 cmd: "/var/lib/rancher/rke2/bin/kubectl get job -o json | jq '.items'"
               register: _argocd_job_data
-              retries: "{{ _retry }}"
+              retries: "{{ _retries }}"
               delay: "{{ _delay }}"
               vars:
                 _job_data: "{{ _argocd_job_data.stdout | from_json }}"
@@ -491,7 +497,7 @@
               ansible.builtin.shell:
                 cmd: "/var/lib/rancher/rke2/bin/kubectl get pvc -o json | jq '.items'"
               register: _argocd_pvc_data
-              retries: "{{ _retry }}"
+              retries: "{{ _retries }}"
               delay: "{{ _delay }}"
               vars:
                 _pvc_data: "{{ _argocd_pvc_data.stdout | from_json }}"
@@ -506,7 +512,7 @@
               changed_when: false
 
           rescue:
-            - name: Debug failed cluster persistent claims
+            - name: Debug failed cluster pvc claims
               ansible.builtin.fail:
                 msg: "The following persistent claims are in failed status [{{ _job_names | join(', ') }}]"
               vars:
@@ -525,7 +531,7 @@
                 pvc_names: "{{ pvc_failed | map(attribute='metadata.name') }}"
                 pvc_failed: "{{ pvc_query | rejectattr('status.phase', 'equalto', 'Bound') }}"
                 pvc_query: "{{ query('kubernetes.core.k8s', kind='PersistentVolumeClaim', kubeconfig=_config_path) }}"
-              retries: "{{ _retry }}"
+              retries: "{{ _retries }}"
               delay: "{{ _delay }}"
               until: pvc_failed | length == 0
               failed_when: pvc_failed | length > 0
@@ -537,6 +543,9 @@
               vars:
                 pvc_query: "{{ query('kubernetes.core.k8s', kind='PersistentVolumeClaim', kubeconfig=_config_path) }}"
 
+            - name: Fail cluster pvc check
+              ansible.builtin.fail:
+
         - name: Query argocd reposerver deployment
           kubernetes.core.k8s_info:
             kind: Deployment
@@ -544,7 +553,7 @@
             namespace: argocd
             kubeconfig: "{{ _config_path }}"
           register: _deployment_query
-          retries: "{{ _retry }}"
+          retries: "{{ _retries }}"
           delay: "{{ _delay }}"
           until: _deployment_query.resources | length > 0
           delegate_to: localhost
@@ -575,7 +584,7 @@
               ansible.builtin.shell:
                 cmd: "/var/lib/rancher/rke2/bin/kubectl get applications -n argocd -o json | jq '.items'"
               register: _argocd_app_data
-              retries: "{{ _retry }}"
+              retries: "{{ _retries }}"
               delay: "{{ _delay }}"
               vars:
                 _app_data: "{{ _argocd_app_data.stdout | from_json }}"
@@ -639,9 +648,9 @@
               kubernetes.core.k8s_info:
                 kind: Ingress
                 namespace: argocd
-                kubeconfig: "{{ _config_path }}"
+                kubeconfig: "{{ molecule_local_kubeconfig }}"
               register: _argocd_ingress_query
-              retries: "{{ _retry }}"
+              retries: "{{ _retries }}"
               delay: "{{ _delay }}"
               until: >-
                 _argocd_ingress_query.resources
@@ -651,8 +660,13 @@
 
             - name: Set argocd ingress ip fact
               ansible.builtin.set_fact:
+                _argocd_ingress_hostname: "{{ _host_items | first }}"
                 _argocd_ingress_ip: "{{ _lb_items | map(attribute='ip') | first }}"
               vars:
+                _host_items: >-
+                  {{ _argocd_ingress_query.resources
+                  | map(attribute='spec.rules') | flatten
+                  | selectattr('host', 'defined') | map(attribute='host') }}
                 _lb_items: >-
                   {{ _argocd_ingress_query.resources
                   | selectattr('status.loadBalancer.ingress', 'defined')
@@ -663,11 +677,11 @@
               ansible.builtin.uri:
                 url: "https://{{ _argocd_ingress_ip }}"
                 headers:
-                  Host: "{{ rke2_argocd_hostname }}"
+                  Host: "{{ _argocd_ingress_hostname }}"
                 validate_certs: false
                 status_code: 200
               register: _argocd_ingress_response
-              retries: "{{ _retry }}"
+              retries: "{{ _retries }}"
               delay: "{{ _delay }}"
               until: _argocd_ingress_response is succeeded
               delegate_to: localhost
@@ -677,15 +691,18 @@
               ansible.builtin.debug:
                 var: _argocd_ingress_query
 
+            - name: Fail argocd ingress check
+              ansible.builtin.fail:
+
         - name: Verify longhorn ingress
           block:
             - name: Query longhorn ingress resources
               kubernetes.core.k8s_info:
                 kind: Ingress
                 namespace: longhorn-system
-                kubeconfig: "{{ _config_path }}"
+                kubeconfig: "{{ molecule_local_kubeconfig }}"
               register: _longhorn_ingress_query
-              retries: "{{ _retry }}"
+              retries: "{{ _retries }}"
               delay: "{{ _delay }}"
               until: >-
                 _longhorn_ingress_query.resources
@@ -695,8 +712,13 @@
 
             - name: Set longhorn ingress ip fact
               ansible.builtin.set_fact:
+                _longhorn_ingress_hostname: "{{ _host_items | first }}"
                 _longhorn_ingress_ip: "{{ _lb_items | map(attribute='ip') | first }}"
               vars:
+                _host_items: >-
+                  {{ _longhorn_ingress_query.resources
+                  | map(attribute='spec.rules') | flatten
+                  | selectattr('host', 'defined') | map(attribute='host') }}
                 _lb_items: >-
                   {{ _longhorn_ingress_query.resources
                   | selectattr('status.loadBalancer.ingress', 'defined')
@@ -707,11 +729,11 @@
               ansible.builtin.uri:
                 url: "https://{{ _longhorn_ingress_ip }}"
                 headers:
-                  Host: "{{ rke2_longhorn_hostname }}"
+                  Host: "{{ _longhorn_ingress_hostname }}"
                 validate_certs: false
                 status_code: 200
               register: _longhorn_ingress_response
-              retries: "{{ _retry }}"
+              retries: "{{ _retries }}"
               delay: "{{ _delay }}"
               until: _longhorn_ingress_response is succeeded
               delegate_to: localhost
@@ -720,3 +742,6 @@
             - name: Debug longhorn ingress resources
               ansible.builtin.debug:
                 var: _longhorn_ingress_query
+
+            - name: Fail longhorn ingress check
+              ansible.builtin.fail:

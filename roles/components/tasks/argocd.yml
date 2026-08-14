@@ -3,20 +3,20 @@
   ansible.builtin.set_fact:
     _rke2_argocd_chart_values: "{{ rke2_argocd_values | combine(_override, recursive=true) | to_nice_yaml(indent=2) }}"
   vars:
-    _nginx:
+    _annotations_nginx:
       nginx.ingress.kubernetes.io/ssl-redirect: "true"
       nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
       nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
-    _traefik:
+    _annotations_traefik:
       traefik.ingress.kubernetes.io/router.entrypoints: "websecure"
       traefik.ingress.kubernetes.io/router.tls: "true"
       traefik.ingress.kubernetes.io/service.serversscheme: "https"
     _class: "{{ rke2_argocd_values.server.ingress.ingressClassName }}"
-    _annotations: "{{ _class.startswith('nginx') | ternary(_nginx, _traefik) }}"
+    _traefik: "{{ _class.startswith('traefik') }}"
     _override:
       server:
         ingress:
-          annotations: "{{ _annotations }}"
+          annotations: "{{ _traefik | ternary(_annotations_traefik, _annotations_nginx) }}"
 
 - name: Create argocd namespace
   kubernetes.core.k8s:

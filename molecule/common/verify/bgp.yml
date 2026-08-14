@@ -12,6 +12,8 @@
     bgp_peer_names: "{{ groups['all'] }}"
     bgp_hop_names: "{{ groups[molecule_bgp_group] }}"
     bgp_hop_addrs: "{{ bgp_hop_names | map('extract', hostvars, ['ansible_default_ipv4', 'address']) }}"
+    _retries: 15
+    _delay: 20
   tasks:
     - name: Verify ArgoCD Ingress Applications
       block:
@@ -22,8 +24,8 @@
             namespace: argocd
             kubeconfig: "{{ molecule_local_kubeconfig }}"
           register: _argocd_apps_query
-          retries: 30
-          delay: 20
+          retries: "{{ 2 * _retries | int }}"
+          delay: "{{ _delay }}"
           vars:
             _apps_count: "{{ molecule_rke2_ingress_services | int }}"
             _apps_all: "{{ _argocd_apps_query.resources }}"
@@ -124,8 +126,8 @@
             _lbs: "{{ _svc_info.resources | selectattr('spec.type', 'equalto', 'LoadBalancer') }}"
             _ics: "{{ _lbs | selectattr('metadata.namespace', 'in', ingress_namespaces) }}"
           until: _ics | length == molecule_rke2_ingress_services | int
-          retries: 15
-          delay: 20
+          retries: "{{ _retries }}"
+          delay: "{{ _delay }}"
 
       always:
         - name: Query Ingress controller services
@@ -165,8 +167,8 @@
             _igs: "{{ _ics | selectattr('status.loadBalancer.ingress', 'defined') | map(attribute='status.loadBalancer.ingress') }}"
             _ips: "{{ _igs | map('first') | map(attribute='ip') | list }}"
           until: _ips | length == molecule_rke2_ingress_services | int
-          retries: 15
-          delay: 20
+          retries: "{{ _retries }}"
+          delay: "{{ _delay }}"
 
       always:
         - name: Query Ingress controller IPs
@@ -215,8 +217,8 @@
           until:
             - _neighbors | symmetric_difference(bgp_peer_names) | length == 0
             - _bgp_summary.ipv4Unicast.failedPeers == 0
-          retries: 15
-          delay: 20
+          retries: "{{ _retries }}"
+          delay: "{{ _delay }}"
           register: _bgp_summary_query
           changed_when: false
 
@@ -258,8 +260,8 @@
             _bgp_routes: "{{ _bgp_route_query.stdout | from_json }}"
             _ingress_routes: "{{ _ingress_ips | product(['32']) | map('join', '/') }}"
           register: _bgp_route_query
-          retries: 30
-          delay: 20
+          retries: "{{ 2 * _retries | int }}"
+          delay: "{{ _delay }}"
           until:
             - _bgp_routes.totalRoutes | int > 0
             - _bgp_routes.routes.keys() | symmetric_difference(_ingress_routes) | length == 0
@@ -309,8 +311,8 @@
             _routes_wnexthops: "{{ _routes_ingress | selectattr('nexthops', 'defined') }}"
             _routes_hopcount: "{{ _routes_wnexthops | map(attribute='nexthops') | map('length') }}"
           register: _frr_route_query
-          retries: 30
-          delay: 20
+          retries: "{{ 2 * _retries | int }}"
+          delay: "{{ _delay }}"
           until:
             - _routes_wnexthops | length == _ingress_ips | length
             - _routes_hopcount | reject('equalto', bgp_hop_addrs | length) | length == 0
@@ -374,8 +376,8 @@
             _routes_ingress: "{{ _routes_bgp | selectattr('dst', 'in', _ingress_ips) }}"
             _routes_nexthops: "{{ _routes_ingress | selectattr('nexthops', 'defined') }}"
             _routes_hopcount: "{{ _routes_nexthops | map(attribute='nexthops') | map('length') }}"
-          retries: 15
-          delay: 20
+          retries: "{{ _retries }}"
+          delay: "{{ _delay }}"
           until:
             - _routes_nexthops | length == _ingress_ips | length
             - _routes_hopcount | reject('equalto', bgp_hop_addrs | length) | length == 0
@@ -404,7 +406,7 @@
             label: "{{ _address }}"
           loop: "{{ _local_routes | dict2items }}"
 
-      rescue:
+      always:
         - name: Query local routes
           ansible.builtin.shell:
             cmd: "ip -j -d route show"
@@ -434,8 +436,9 @@
             _ingresses: "{{ _ingress_info.resources | selectattr('status.loadBalancer.ingress', 'defined') | map(attribute='status.loadBalancer.ingress') }}"
             _ips: "{{ _ingresses | map('first') | map(attribute='ip') | list }}"
           until: (_ingresses | length > 0) and (_ips | length == _ingresses | length)
-          retries: 15
-          delay: 20
+          retries: "{{ _retries }}"
+          delay: "{{ _delay }}"
+
       always:
         - name: Query Ingress IPs
           kubernetes.core.k8s_info:
@@ -458,3 +461,109 @@
           loop_control:
             label: "{{ item.key }}"
           loop: "{{ _ingress_data }}"
+
+    - name: Verify argocd ingress
+      block:
+        - name: Query argocd ingress resources
+          kubernetes.core.k8s_info:
+            kind: Ingress
+            namespace: argocd
+            kubeconfig: "{{ molecule_local_kubeconfig }}"
+          register: _argocd_ingress_query
+          retries: "{{ _retries }}"
+          delay: "{{ _delay }}"
+          until: >-
+            _argocd_ingress_query.resources
+            | selectattr('status.loadBalancer.ingress', 'defined')
+            | map(attribute='status.loadBalancer.ingress') | flatten | length > 0
+          delegate_to: localhost
+
+        - name: Set argocd ingress ip fact
+          ansible.builtin.set_fact:
+            _argocd_ingress_hostname: "{{ _host_items | first }}"
+            _argocd_ingress_ip: "{{ _lb_items | map(attribute='ip') | first }}"
+          vars:
+            _host_items: >-
+              {{ _argocd_ingress_query.resources
+              | selectattr('spec.rules', 'defined')
+              | map(attribute='spec.rules') | flatten
+              | selectattr('host', 'defined') | map(attribute='host') }}
+            _lb_items: >-
+              {{ _argocd_ingress_query.resources
+              | selectattr('status.loadBalancer.ingress', 'defined')
+              | map(attribute='status.loadBalancer.ingress') | flatten
+              | selectattr('ip', 'defined') }}
+
+        - name: Check argocd ingress response
+          ansible.builtin.uri:
+            url: "https://{{ _argocd_ingress_ip }}"
+            headers:
+              Host: "{{ _argocd_ingress_hostname }}"
+            validate_certs: false
+            status_code: 200
+          register: _argocd_ingress_response
+          retries: "{{ _retries }}"
+          delay: "{{ _delay }}"
+          until: _argocd_ingress_response is succeeded
+          delegate_to: localhost
+
+      rescue:
+        - name: Debug argocd ingress resources
+          ansible.builtin.debug:
+            var: _argocd_ingress_query
+
+        - name: Fail argocd ingress check
+          ansible.builtin.fail:
+
+    - name: Verify longhorn ingress
+      block:
+        - name: Query longhorn ingress resources
+          kubernetes.core.k8s_info:
+            kind: Ingress
+            namespace: longhorn-system
+            kubeconfig: "{{ molecule_local_kubeconfig }}"
+          register: _longhorn_ingress_query
+          retries: "{{ _retries }}"
+          delay: "{{ _delay }}"
+          until: >-
+            _longhorn_ingress_query.resources
+            | selectattr('status.loadBalancer.ingress', 'defined')
+            | map(attribute='status.loadBalancer.ingress') | flatten | length > 0
+          delegate_to: localhost
+
+        - name: Set longhorn ingress ip fact
+          ansible.builtin.set_fact:
+            _longhorn_ingress_hostname: "{{ _host_items | first }}"
+            _longhorn_ingress_ip: "{{ _lb_items | map(attribute='ip') | first }}"
+          vars:
+            _host_items: >-
+              {{ _longhorn_ingress_query.resources
+              | selectattr('spec.rules', 'defined')
+              | map(attribute='spec.rules') | flatten
+              | selectattr('host', 'defined') | map(attribute='host') }}
+            _lb_items: >-
+              {{ _longhorn_ingress_query.resources
+              | selectattr('status.loadBalancer.ingress', 'defined')
+              | map(attribute='status.loadBalancer.ingress') | flatten
+              | selectattr('ip', 'defined') }}
+
+        - name: Check longhorn ingress response
+          ansible.builtin.uri:
+            url: "https://{{ _longhorn_ingress_ip }}"
+            headers:
+              Host: "{{ _longhorn_ingress_hostname }}"
+            validate_certs: false
+            status_code: 200
+          register: _longhorn_ingress_response
+          retries: "{{ _retries }}"
+          delay: "{{ _delay }}"
+          until: _longhorn_ingress_response is succeeded
+          delegate_to: localhost
+
+      rescue:
+        - name: Debug longhorn ingress resources
+          ansible.builtin.debug:
+            var: _longhorn_ingress_query
+
+        - name: Fail longhorn ingress check
+          ansible.builtin.fail:

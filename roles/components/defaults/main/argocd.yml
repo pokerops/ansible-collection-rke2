@@ -21,7 +21,6 @@ rke2_argocd_values:
     replicas: "{{ rke2_argocd_server_replicas }}"
     ingress:
       enabled: true
-      https: true
       ingressClassName: "{{ rke2_argocd_ingress_class }}"
       hostname: "{{ rke2_argocd_hostname }}"
       annotations:
