@@ -47,42 +47,86 @@
         seaweedfs_operator_namespace: "{{ seaweedfs_operator_chart_manifest.spec.destination.namespace }}"
 
     - name: Deploy SeaweedFS operator
-      kubernetes.core.k8s:
-        kubeconfig: "{{ molecule_local_kubeconfig }}"
-        state: present
-        definition: "{{ seaweedfs_operator_chart_manifest }}"
+      block:
+        - name: Deploy SeaweedFS operator application
+          kubernetes.core.k8s:
+            kubeconfig: "{{ molecule_local_kubeconfig }}"
+            state: present
+            definition: "{{ _manifest | combine(_override, recursive=True) }}"
+          vars:
+            _manifest: "{{ seaweedfs_operator_chart_manifest }}"
+            _override:
+              spec:
+                source:
+                  helm:
+                    valuesObject:
+                      webhook:
+                        enabled: false
 
-    - name: Wait for SeaweedFS operator controller to be ready
-      kubernetes.core.k8s_info:
-        kubeconfig: "{{ molecule_local_kubeconfig }}"
-        api_version: apps/v1
-        kind: Deployment
-        namespace: "{{ seaweedfs_operator_namespace }}"
-        label_selectors:
-          - app.kubernetes.io/name=seaweedfs-operator
-      register: _deployment_query
-      vars:
-        _deployment_count: "{{ _deployment_query.resources | length }}"
-        _deployment: "{{ _deployment_query.resources | first }}"
-        _deployment_ready: "{{ _deployment['status']['readyReplicas'] | default(0) }}"
-      until:
-        - _deployment_count | int > 0
-        - _deployment_ready | int > 0
-      retries: 30
-      delay: 20
+        - name: Wait for SeaweedFS operator controller to be ready
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ molecule_local_kubeconfig }}"
+            api_version: apps/v1
+            kind: Deployment
+            namespace: "{{ seaweedfs_operator_namespace }}"
+            label_selectors:
+              - app.kubernetes.io/name=seaweedfs-operator
+          register: _deployment_query
+          vars:
+            _deployment_count: "{{ _deployment_query.resources | length }}"
+            _deployment: "{{ _deployment_query.resources | first }}"
+            _deployment_ready: "{{ _deployment['status']['readyReplicas'] | default(0) }}"
+          until:
+            - _deployment_count | int > 0
+            - _deployment_ready | int > 0
+          retries: 30
+          delay: 20
 
-    - name: Wait for SeaweedFS webhook caBundle to be populated
-      kubernetes.core.k8s_info:
-        kubeconfig: "{{ molecule_local_kubeconfig }}"
-        api_version: admissionregistration.k8s.io/v1
-        kind: MutatingWebhookConfiguration
-        name: seaweedfs-operator-mutating-webhook-configuration
-      register: _webhook_query
-      until:
-        - _webhook_query.resources | length > 0
-        - _webhook_query.resources[0].webhooks[0].clientConfig.caBundle | default('') | length > 0
-      retries: 30
-      delay: 20
+      rescue:
+        - name: Query SeaweedFS operator application
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ molecule_local_kubeconfig }}"
+            api_version: argoproj.io/v1alpha1
+            kind: Application
+            name: "{{ seaweedfs_operator_chart_manifest.metadata.name }}"
+            namespace: "{{ seaweedfs_operator_chart_manifest.metadata.namespace }}"
+          register: _operator_app_query
+
+        - name: Debug SeaweedFS operator application status
+          ansible.builtin.debug:
+            msg: "{{ _app.status | default({}) }}"
+          vars:
+            _app: "{{ _operator_app_query.resources | first | default({}) }}"
+
+        - name: Query SeaweedFS operator pods
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ molecule_local_kubeconfig }}"
+            api_version: v1
+            kind: Pod
+            namespace: "{{ seaweedfs_operator_namespace }}"
+          register: _operator_pod_query
+
+        - name: Debug SeaweedFS operator pod status
+          ansible.builtin.debug:
+            msg: "{{ _names | zip(_phases) }}"
+          vars:
+            _names: "{{ _operator_pod_query.resources | map(attribute='metadata.name') }}"
+            _phases: "{{ _operator_pod_query.resources | map(attribute='status.phase') }}"
+
+        - name: Debug SeaweedFS operator pod containers
+          ansible.builtin.debug:
+            msg: "{{ _pod.metadata.name }}: {{ _statuses }}"
+          vars:
+            _pod: "{{ item }}"
+            _init: "{{ _pod.status.initContainerStatuses | default([]) }}"
+            _main: "{{ _pod.status.containerStatuses | default([]) }}"
+            _statuses: "{{ (_init + _main) | map(attribute='state') }}"
+          loop_control:
+            label: "{{ item.metadata.name }}"
+          loop: "{{ _operator_pod_query.resources }}"
+
+        - name: Fail SeaweedFS operator check
+          ansible.builtin.fail:
 
     - name: Destroy SeaweedFS cluster
       when: seaweedfs_cluster_rebuild | bool
