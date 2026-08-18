@@ -1,2 +1,3 @@
 ---
 rke2_traefik_controller_deploy: true
+rke2_traefik_public_trusted_ips: "{{ rke2_cloudflare_ip_ranges }}"

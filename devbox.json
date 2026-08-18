@@ -8,6 +8,8 @@
     "velero@latest",
     "postgresql@latest",
     "kubernetes-helm@latest",
-    "kubectl@latest"
+    "kubectl@latest",
+    "curl@latest",
+    "jq@latest"
   ]
 }
