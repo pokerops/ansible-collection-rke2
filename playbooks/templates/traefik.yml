@@ -19,6 +19,8 @@ spec:
             enabled: false
           healthcheck:
             enabled: true
+            labels:
+              "{{ _traefik_label_selector }}": "{{ _traefik_chart_class }}"
         providers:
           kubernetesCRD:
             labelSelector: "{{ _traefik_label_selector }}={{ _traefik_chart_class }}"
