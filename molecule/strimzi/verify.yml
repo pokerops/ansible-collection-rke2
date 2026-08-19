@@ -17,7 +17,7 @@
     # Single-replica Longhorn class. Velero's CSI data mover provisions its backup
     # PVC from the source PVC's storage class, so a 3-replica class makes every
     # DataUpload clone 3x the volume before the backup pod can start.
-    kafka_storage_class: "longhorn-single"
+    kafka_storage_class: "{{ molecule_storage_class | default('strimzi') }}"
   tasks:
     - name: Test Strimzi Velero backup and restore
       block:
@@ -531,7 +531,6 @@
                   Warnings: {{ _backup_query.resources[0].status.warnings | default(0) }}
                 success_msg: "Backup completed successfully"
 
-
         - name: Destroy kafka cluster and PVCs
           block:
             - name: Delete Kafka topic
@@ -693,7 +692,6 @@
                   Restore phase is {{ _restore_query.resources[0].status.phase }}.
                   Errors: {{ _restore_query.resources[0].status.errors | default('n/a') }}
                   Warnings: {{ _restore_query.resources[0].status.warnings | default('n/a') }}
-
 
             - name: Verify restored PVCs are bound
               kubernetes.core.k8s_info:
@@ -1151,8 +1149,12 @@
           ansible.builtin.debug:
             msg: >-
               {{ _pvr_query.resources | default([])
-                 | map('json_query', "{name: metadata.name, pod: spec.pod.name, volume: spec.volume, phase: status.phase, progress: status.progress, message: status.message}")
+                 | map('json_query', _pvr_summary_query)
                  | list }}
+          vars:
+            _pvr_summary_query: >-
+              {name: metadata.name, pod: spec.pod.name, volume: spec.volume,
+              phase: status.phase, progress: status.progress, message: status.message}
 
         - name: Query DataDownloads
           kubernetes.core.k8s_info:
@@ -1174,8 +1176,13 @@
           ansible.builtin.debug:
             msg: >-
               {{ kafka_pods.resources | default([])
-                 | map('json_query', "{name: metadata.name, phase: status.phase, node: spec.nodeName, initContainerStatuses: status.initContainerStatuses[].{name: name, ready: ready, state: state}, containerStatuses: status.containerStatuses[].{name: name, ready: ready, state: state}}")
+                 | map('json_query', _pod_state_query)
                  | list }}
+          vars:
+            _pod_state_query: >-
+              {name: metadata.name, phase: status.phase, node: spec.nodeName,
+              initContainerStatuses: status.initContainerStatuses[].{name: name, ready: ready, state: state},
+              containerStatuses: status.containerStatuses[].{name: name, ready: ready, state: state}}
 
         - name: Query events in {{ kafka_namespace }}
           kubernetes.core.k8s_info:
