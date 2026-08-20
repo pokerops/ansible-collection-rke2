@@ -19,7 +19,7 @@
     # Single-replica Longhorn class. Velero's CSI data mover provisions its backup
     # PVC from the source PVC's storage class, so a 3-replica class makes every
     # DataUpload clone 3x the volume before the backup pod can start.
-    mariadb_storage_class: "longhorn-single"
+    mariadb_storage_class: "{{ molecule_storage_class | default('mariadb') }}"
   tasks:
     - name: Test MariaDB Velero backup and restore
       block:

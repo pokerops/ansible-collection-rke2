@@ -18,6 +18,7 @@
     seaweedfs_velero_secret: velero-auth
     seaweedfs_operator_chart_template: "../../playbooks/templates/seaweedfs.yml"
     seaweedfs_operator_chart_manifest: "{{ lookup('ansible.builtin.template', seaweedfs_operator_chart_template) | from_yaml }}"
+    seaweedfs_storage_class: "{{ molecule_storage_class | default('seaweedfs') }}"
   tasks:
     - name: Query cluster members
       kubernetes.core.k8s_info:
@@ -33,6 +34,25 @@
         _rke2_cluster_master: "{{ _node.metadata.labels['kubernetes.io/hostname'] }}"
       vars:
         _node: "{{ _node_query.resources | first }}"
+
+    - name: Deploy single-replica Longhorn storage class
+      kubernetes.core.k8s:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        state: present
+        apply: true
+        definition:
+          apiVersion: storage.k8s.io/v1
+          kind: StorageClass
+          metadata:
+            name: "{{ seaweedfs_storage_class }}"
+          provisioner: driver.longhorn.io
+          allowVolumeExpansion: true
+          reclaimPolicy: Delete
+          volumeBindingMode: Immediate
+          parameters:
+            numberOfReplicas: "1"
+            staleReplicaTimeout: "30"
+            fsType: ext4
 
     - name: Create SeaweedFS namespace
       kubernetes.core.k8s:
@@ -180,6 +200,7 @@
               replicas: 1
               maxVolumeCounts: 7
               fileSizeLimitMB: 1000
+              storageClassName: "{{ seaweedfs_storage_class }}"
               requests:
                 storage: "{{ seaweedfs_cluster_size | default('4Gi') }}"
             filer:

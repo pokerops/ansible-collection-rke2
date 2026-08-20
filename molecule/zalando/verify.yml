@@ -15,7 +15,7 @@
     # Single-replica Longhorn class. Velero's CSI data mover provisions its backup
     # PVC from the source PVC's storage class, so a 3-replica class makes every
     # DataUpload clone 3x the volume before the backup pod can start.
-    postgres_storage_class: "longhorn-single"
+    postgres_storage_class: "{{ molecule_storage_class | default('postgres') }}"
   tasks:
     - name: Test Zalando Velero backup and restore
       block:

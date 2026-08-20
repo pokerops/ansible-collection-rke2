@@ -1,0 +1,32 @@
+---
+name: cloudflare
+permissions:
+  contents: write
+  pull-requests: write
+on:
+  schedule:
+    - cron: "0 5 * * 1"
+  workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+jobs:
+  cloudflare-acl:
+    name: cloudflare-acl
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run devbox tasks
+        uses: pokerops/ansible-utils@master
+        with:
+          run: just cloudflare-acl
+
+      - name: Open pull request
+        uses: peter-evans/create-pull-request@v8
+        with:
+          branch: cloudflare/ip-ranges
+          delete-branch: true
+          commit-message: Update cloudflare ip ranges
+          title: Update cloudflare ip ranges
+          body: >
+            Automated refresh of `roles/components/defaults/main/cloudflare.yml`
+            from https://api.cloudflare.com/client/v4/ips

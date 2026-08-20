@@ -32,6 +32,8 @@
         source:
           helm:
             valuesObject:
+              deployment:
+                kind: DaemonSet
               ingressClass:
                 isDefaultClass: "{{ rke2_traefik_controller_deploy | bool }}"
                 name: "traefik-private"
@@ -46,6 +48,8 @@
               service:
                 annotations:
                   metallb.universe.tf/address-pool: "metallb-private"
+                spec:
+                  externalTrafficPolicy: Local
   when: _traefik_deploy_private | bool
 
 - name: Deploy traefik public controller
@@ -66,6 +70,8 @@
         source:
           helm:
             valuesObject:
+              deployment:
+                kind: DaemonSet
               ingressClass:
                 isDefaultClass: false
                 name: "{{ _traefik_chart_class }}"
@@ -77,9 +83,18 @@
               gateway:
                 annotations:
                   cert-manager.io/cluster-issuer: "{{ rke2_certmanager_issuer_name }}"
+              ports:
+                web:
+                  forwardedHeaders:
+                    trustedIPs: "{{ rke2_traefik_public_trusted_ips }}"
+                websecure:
+                  forwardedHeaders:
+                    trustedIPs: "{{ rke2_traefik_public_trusted_ips }}"
               service:
                 annotations:
                   metallb.universe.tf/address-pool: "metallb-public"
+                spec:
+                  externalTrafficPolicy: Local
   when: _traefik_deploy_public | bool
 
 - name: Deploy traefik admission policies
