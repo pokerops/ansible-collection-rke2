@@ -269,6 +269,49 @@
           ansible.builtin.debug:
             msg: "Pre-backup row count: {{ mariadb_row_count_before }}"
 
+        - name: Report Longhorn capacity before backup
+          block:
+            - name: Query Longhorn scheduling floor
+              kubernetes.core.k8s_info:
+                kubeconfig: "{{ kubeconfig_path }}"
+                api_version: longhorn.io/v1beta2
+                kind: Setting
+                name: storage-minimal-available-percentage
+                namespace: longhorn-system
+              register: _lh_floor_query
+              failed_when: false
+
+            - name: Query Longhorn node capacity
+              kubernetes.core.k8s_info:
+                kubeconfig: "{{ kubeconfig_path }}"
+                api_version: longhorn.io/v1beta2
+                kind: Node
+                namespace: longhorn-system
+              register: _lh_capacity_query
+              failed_when: false
+
+            - name: Debug Longhorn capacity headroom
+              ansible.builtin.debug:
+                msg: >-
+                  {{ item.metadata.name }}
+                  max={{ (_max | int / _gib) | round(1) }}GiB
+                  avail={{ (_avail | int / _gib) | round(1) }}GiB
+                  scheduled={{ (_sched | int / _gib) | round(1) }}GiB
+                  avail_pct={{ (_avail | int / (_max | int) * 100) | round(1) }}
+                  floor_pct={{ _floor }}
+                  headroom={{ ((_avail | int - (_max | int * (_floor | int) / 100)) / _gib) | round(1) }}GiB
+              vars:
+                _gib: 1073741824
+                _floor: "{{ _lh_floor_query.resources | default([]) | map(attribute='value') | list | first | default(25) }}"
+                _disks: "{{ item.status.diskStatus | default({}) | dict2items | map(attribute='value') | list }}"
+                _max: "{{ _disks | map(attribute='storageMaximum') | list | first | default(0) }}"
+                _avail: "{{ _disks | map(attribute='storageAvailable') | list | first | default(0) }}"
+                _sched: "{{ _disks | map(attribute='storageScheduled') | list | first | default(0) }}"
+              when: (_max | int) > 0
+              loop: "{{ _lh_capacity_query.resources | default([]) }}"
+              loop_control:
+                label: "{{ item.metadata.name }}"
+
         - name: Create Velero backup
           block:
             - name: Create Velero backup of MariaDB namespace

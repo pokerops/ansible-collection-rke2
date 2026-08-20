@@ -588,9 +588,11 @@
               delay: "{{ _delay }}"
               vars:
                 _app_data: "{{ _argocd_app_data.stdout | from_json }}"
-                _app_unhealthy: "{{ _app_data | rejectattr('status.health.status', 'equalto', 'Healthy') }}"
-                _app_outofsync: "{{ _app_unhealthy | rejectattr('status.sync.status', 'equalto', 'Synced') }}"
-                _app_failed: "{{ _app_unhealthy + _app_outofsync }}"
+                _app_ok: >-
+                  {{ _app_data | selectattr('status.health.status', 'equalto', 'Healthy')
+                     | selectattr('status.sync.status', 'equalto', 'Synced')
+                     | map(attribute='metadata.name') | list }}
+                _app_failed: "{{ _app_data | rejectattr('metadata.name', 'in', _app_ok) | list }}"
               until:
                 - _app_data | length > 0
                 - _app_failed | length == 0
@@ -607,13 +609,19 @@
           rescue:
             - name: Debug failed applications
               ansible.builtin.fail:
-                msg: "The following argocd applications are in failed status [{{ _app_names | join(', ') }}]"
+                msg: "The following argocd applications are in failed status: {{ _app_report }}"
               vars:
                 _app_data: "{{ _argocd_app_data.stdout | from_json }}"
-                _app_unhealthy: "{{ _app_data | rejectattr('status.health.status', 'equalto', 'Healthy') }}"
-                _app_outofsync: "{{ _app_data | rejectattr('status.sync.status', 'equalto', 'Synced') }}"
-                _app_failed: "{{ _app_unhealthy + _app_outofsync }}"
-                _app_names: "{{ _app_failed | map(attribute='metadata.name') | unique }}"
+                _app_ok: >-
+                  {{ _app_data | selectattr('status.health.status', 'equalto', 'Healthy')
+                     | selectattr('status.sync.status', 'equalto', 'Synced')
+                     | map(attribute='metadata.name') | list }}
+                _app_failed: "{{ _app_data | rejectattr('metadata.name', 'in', _app_ok) | list }}"
+                _app_report: >-
+                  {{ _app_failed | map('json_query', "{name: metadata.name, health: status.health.status,
+                                                       sync: status.sync.status,
+                                                       conditions: status.conditions[].{type: type, message: message}}")
+                     | list }}
 
           always:
             - name: Debug cluster status location
