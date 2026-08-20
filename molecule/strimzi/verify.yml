@@ -1070,6 +1070,95 @@
                                        error: status.error}")
                  | list }}
 
+        - name: Query Longhorn volumes
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ kubeconfig_path }}"
+            api_version: longhorn.io/v1beta2
+            kind: Volume
+            namespace: longhorn-system
+          register: _lh_volume_query
+          failed_when: false
+
+        - name: Debug Longhorn volume status
+          ansible.builtin.debug:
+            msg: >-
+              {{ _lh_volume_query.resources | default([])
+                 | map('json_query', "{name: metadata.name, state: status.state,
+                                       robustness: status.robustness, node: status.currentNodeID,
+                                       restoreRequired: status.restoreRequired,
+                                       cloneStatus: status.cloneStatus,
+                                       conditions: status.conditions[].{type: type, status: status, reason: reason},
+                                       actualSize: status.actualSize}")
+                 | list }}
+
+        - name: Query Longhorn replicas
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ kubeconfig_path }}"
+            api_version: longhorn.io/v1beta2
+            kind: Replica
+            namespace: longhorn-system
+          register: _lh_replica_query
+          failed_when: false
+
+        - name: Debug Longhorn replica placement
+          ansible.builtin.debug:
+            msg: >-
+              {{ _lh_replica_query.resources | default([])
+                 | map('json_query', "{name: metadata.name, volume: spec.volumeName,
+                                       node: spec.nodeID, disk: spec.diskID,
+                                       currentState: status.currentState, started: status.started,
+                                       instanceManager: status.instanceManagerName}")
+                 | list }}
+
+        - name: Query Longhorn nodes
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ kubeconfig_path }}"
+            api_version: longhorn.io/v1beta2
+            kind: Node
+            namespace: longhorn-system
+          register: _lh_node_query
+          failed_when: false
+
+        - name: Debug Longhorn node disk scheduling
+          ansible.builtin.debug:
+            msg: >-
+              {{ _lh_node_query.resources | default([])
+                 | map('json_query', "{name: metadata.name,
+                                       disks: values(status.diskStatus)[].{avail: storageAvailable,
+                                       sched: storageScheduled, max: storageMaximum},
+                                       conditions: status.conditions[].{type: type, status: status, reason: reason},
+                                       allowScheduling: spec.allowScheduling}")
+                 | list }}
+
+        - name: Query Longhorn manager pods
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ kubeconfig_path }}"
+            api_version: v1
+            kind: Pod
+            namespace: longhorn-system
+            label_selectors:
+              - "app=longhorn-manager"
+          register: _lh_manager_query
+          failed_when: false
+
+        - name: Get Longhorn manager logs
+          kubernetes.core.k8s_log:
+            kubeconfig: "{{ kubeconfig_path }}"
+            namespace: longhorn-system
+            name: "{{ item }}"
+            container: longhorn-manager
+          register: _lh_manager_logs
+          failed_when: false
+          loop: "{{ _lh_manager_query.resources | default([]) | map(attribute='metadata.name') | list }}"
+
+        - name: Debug Longhorn manager error lines
+          ansible.builtin.debug:
+            msg: >-
+              {{ _lh_manager_logs.results | default([])
+                 | map(attribute='log_lines') | select('defined') | flatten
+                 | select('search', 'level=error|level=warning|not ready for workloads|clone|restore|scheduling failure')
+                 | list }}
+
         - name: Query pods in velero namespace
           kubernetes.core.k8s_info:
             kubeconfig: "{{ kubeconfig_path }}"
