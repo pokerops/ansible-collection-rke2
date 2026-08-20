@@ -46,6 +46,7 @@ provisioner:
           libvirt_user: molecule
           libvirt_network: molecule
           libvirt_address: "172.31.252.1/24"
+          libvirt_guest_size: "40G"
           libvirt_platforms: "{{ molecule_yml.platforms }}"
           molecule_logdir: "{{ lookup('ansible.builtin.env', 'MOLECULE_LOGDIR', default='/tmp/logs') }}"
           molecule_install_log: "{{ molecule_logdir }}/${MOLECULE_SCENARIO_NAME}"
