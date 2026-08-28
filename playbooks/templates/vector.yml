@@ -1,0 +1,41 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: vector-operator
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-5"
+spec:
+  project: default
+  source:
+    chart: vector-operator
+    repoURL: https://kaasops.github.io/vector-operator/helm
+    targetRevision: "0.10.0"
+    helm:
+      valuesObject:
+        preUpgradeChecker:
+          jobEnabled: false
+        persistence:
+          defaultClass: true
+          reclaimPolicy: Retain
+        ingress:
+          enabled: true
+          tls: true
+          secureBackends: true
+        enablePSP: false
+        concurrentAutomaticEngineUpgradePerNodeLimit: 1
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+  ignoreDifferences:
+    - group: apiextensions.k8s.io
+      kind: CustomResourceDefinition
+      jsonPointers:
+        - /spec/preserveUnknownFields

@@ -9,6 +9,7 @@ An opinionated [ansible collection](https://galaxy.ansible.com/ui/repo/published
 - [Longhorn](https://longhorn.io/)
 - [CertManager](https://cert-manager.io/docs/)
 - [Ingress Nginx](https://kubernetes.github.io/ingress-nginx/)
+- [Traefik Ingress](https://doc.traefik.io/traefik/reference/install-configuration/providers/kubernetes/kubernetes-ingress/)
 - [ArgoCD](https://argo-cd.readthedocs.io/en/stable/)
 
 Default installation uses [ArgoCD Applications](https://argo-cd.readthedocs.io/en/stable/user-guide/auto_sync/) to deploy and manage the following components:
@@ -19,13 +20,12 @@ Default installation uses [ArgoCD Applications](https://argo-cd.readthedocs.io/e
 - [Strimzi Operator](https://strimzi.io/)
 - [Velero](https://velero.io/)
 - [Zalando Operator](https://github.com/zalando/postgres-operator)
+- [Kube State Metrics](https://github.com/kubernetes/kube-state-metrics)
+- [Grafana Alloy Operator](https://github.com/grafana/alloy-operator)
 
 ## To Do
 
 - Add Molecule test scenario for Sealed Secrets backup and restore
-- Add Grafana operator to base cluster deployment
-- Add Grafana deployment to base cluster components
-- Add Molecule test scenario for Grafana backup and restore
 
 ## Collection Variables
 
