@@ -11,11 +11,21 @@ spec:
   source:
     chart: keel
     repoURL: https://charts.keel.sh
-    targetRevision: "1.2.0"
+    targetRevision: "1.2.2"
     helm:
       valuesObject:
         helmProvider:
           version: "v3"
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi
+        polling:
+          enabled: true
+          defaultSchedule: "@every 5m"
   destination:
     server: https://kubernetes.default.svc
     namespace: keel-system
