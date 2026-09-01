@@ -11,7 +11,7 @@ spec:
   source:
     repoURL: https://seaweedfs.github.io/seaweedfs-operator/
     chart: seaweedfs-operator
-    targetRevision: "0.1.38"
+    targetRevision: "0.1.40"
     helm:
       valuesObject: {}
   destination:
