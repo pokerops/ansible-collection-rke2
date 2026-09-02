@@ -19,6 +19,7 @@ DEFAULT_DIRECTORIES = [Path("argocd/applications"), Path("playbooks/templates")]
 DEFAULT_GALAXY_PATH = Path("galaxy.yml")
 DEFAULT_ARGOCD_PATH = Path("roles/components/defaults/main/argocd.yml")
 VERSION_REGEX = r"v?[0-9]+\.[0-9]+\.[0-9]+$"
+YAML_LINE_LENGTH = 160  # keep dumped yaml within the .yamllint line-length budget
 
 type Version = str
 type Versions = list[Version]
@@ -216,6 +217,7 @@ def yaml_attribute_update(file: Path, attribute: dict) -> None:  # pyright: igno
     ruamel = YAML(typ="rt")
     ruamel.preserve_quotes = True  # type: ignore
     ruamel.explicit_start = True  # type: ignore
+    ruamel.width = YAML_LINE_LENGTH  # type: ignore
     ruamel.indent(mapping=2, sequence=4, offset=2)  # pyright: ignore[reportUnknownMemberType]
     try:
         with file.open("r") as f:
@@ -264,13 +266,24 @@ def update(
 
 
 @app.command()
-def build(galaxy_path: Path = DEFAULT_GALAXY_PATH, argocd_path: Path = DEFAULT_ARGOCD_PATH) -> None:
+def build(
+    galaxy_path: Path = DEFAULT_GALAXY_PATH,
+    argocd_path: Path = DEFAULT_ARGOCD_PATH,
+    check: Annotated[bool, typer.Option(help="Fail on version drift instead of updating")] = False,
+) -> None:
     """Build the application."""
     _collection_version = collection_version(galaxy_path)
     assert _collection_version, f"Collection version not found in {galaxy_path}"
     _argocd_version = argocd_version(argocd_path)
-    assert _argocd_version, f"ArgoCD version not found in {galaxy_path}"
+    assert _argocd_version, f"ArgoCD version not found in {argocd_path}"
     if _argocd_version != _collection_version:
+        if check:
+            typer.echo(
+                f"ArgoCD version {_argocd_version} does not match collection version {_collection_version}, "
+                "please run 'just build-fix' and commit changes",
+                err=True,
+            )
+            exit(1)
         typer.echo(f"Updating ArgoCD version from {_argocd_version} to {_collection_version}.")
         yaml_attribute_update(argocd_path, {"rke2_argocd_apps_pokerops_revision": _collection_version})
     else:
