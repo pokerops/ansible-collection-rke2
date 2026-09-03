@@ -9,6 +9,10 @@ CLOUDFLARE_IPS_URL := 'https://api.cloudflare.com/client/v4/ips'
 CLOUDFLARE_IPS_FILE := 'roles/components/defaults/main/cloudflare.yml'
 
 build-check: requirements && version-check
+  ${UV} --directory . run rke2 build --check
+
+# Sync argocd app revision with the galaxy.yml collection version
+build-fix:
   ${UV} --directory . run rke2 build
 
 update:
