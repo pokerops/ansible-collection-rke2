@@ -35,6 +35,8 @@
               controller:
                 metrics:
                   enabled: true
+                  serviceMonitor:
+                    enabled: true
                 config:
                   annotations-risk-level: "Critical"
                 allowSnippetAnnotations: true
@@ -69,6 +71,8 @@
               controller:
                 metrics:
                   enabled: true
+                  serviceMonitor:
+                    enabled: true
                 config:
                   annotations-risk-level: "Critical"
                 allowSnippetAnnotations: true
