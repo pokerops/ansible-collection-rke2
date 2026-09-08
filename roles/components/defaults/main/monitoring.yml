@@ -1,0 +1,10 @@
+---
+# Identity the metrics collector runs as.
+#
+# Some charts protect their metrics endpoints with RBAC and bind the scraping
+# ServiceAccount to a Role at deploy time (metallb does this, and fails to
+# render without it). Those bindings are created before the collector exists,
+# so the identity is declared here once and must match the ServiceAccount the
+# Alloy collector is later deployed with.
+rke2_monitoring_scraper_name: alloy
+rke2_monitoring_scraper_namespace: monitoring

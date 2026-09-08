@@ -12,6 +12,14 @@ spec:
     chart: metallb
     repoURL: "https://metallb.github.io/metallb"
     targetRevision: "0.16.1"
+    helm:
+      valuesObject:
+        prometheus:
+          # serviceMonitor and podMonitor are mutually exclusive in this chart.
+          serviceMonitor:
+            enabled: true
+          serviceAccount: "{{ rke2_monitoring_scraper_name }}"
+          namespace: "{{ rke2_monitoring_scraper_namespace }}"
   destination:
     server: https://kubernetes.default.svc
     namespace: metallb-system
