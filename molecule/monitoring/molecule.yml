@@ -9,38 +9,20 @@ driver:
 platforms:
   - name: rke2-${MOLECULE_SCENARIO_NAME}-server-01
     image: "${MOLECULE_KVM_IMAGE}"
-    cpu: 2
-    mem: 4
-    groups:
-      - rke2_server
-  - name: rke2-${MOLECULE_SCENARIO_NAME}-server-02
-    image: "${MOLECULE_KVM_IMAGE}"
-    cpu: 2
-    mem: 4
-    groups:
-      - rke2_server
-  - name: rke2-${MOLECULE_SCENARIO_NAME}-server-03
-    image: "${MOLECULE_KVM_IMAGE}"
-    cpu: 2
-    mem: 4
+    cpu: 4
+    mem: 8
     groups:
       - rke2_server
   - name: rke2-${MOLECULE_SCENARIO_NAME}-agent-01
     image: "${MOLECULE_KVM_IMAGE}"
-    cpu: 1
-    mem: 4
+    cpu: 2
+    mem: 8
     groups:
       - rke2_agent
   - name: rke2-${MOLECULE_SCENARIO_NAME}-agent-02
     image: "${MOLECULE_KVM_IMAGE}"
-    cpu: 1
-    mem: 4
-    groups:
-      - rke2_agent
-  - name: rke2-${MOLECULE_SCENARIO_NAME}-agent-03
-    image: "${MOLECULE_KVM_IMAGE}"
-    cpu: 1
-    mem: 4
+    cpu: 2
+    mem: 8
     groups:
       - rke2_agent
 provisioner:
@@ -84,6 +66,13 @@ provisioner:
           # Test rke2 params
           rke2_retry_num: 20
           rke2_skip_deploy: true
+          rke2_argocd_redis_ha_enabled: false
+          rke2_argocd_controller_replicas: 1
+          rke2_argocd_server_replicas: 1
+          rke2_argocd_reposerver_replicas: 1
+          rke2_argocd_applicationset_replicas: 1
+          # Two worker nodes hold Longhorn replicas in this scenario.
+          rke2_longhorn_replica_count: 2
 verifier:
   name: ansible
 scenario:
