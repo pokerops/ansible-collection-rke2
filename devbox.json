@@ -10,6 +10,7 @@
     "kubernetes-helm@latest",
     "kubectl@latest",
     "curl@latest",
-    "jq@latest"
+    "jq@latest",
+    "virt-viewer@latest"
   ]
 }
