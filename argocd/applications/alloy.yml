@@ -12,6 +12,10 @@ spec:
     chart: alloy-operator
     repoURL: https://grafana.github.io/helm-charts
     targetRevision: "0.7.1"
+    helm:
+      valuesObject:
+        serviceMonitor:
+          enabled: true
   destination:
     server: https://kubernetes.default.svc
     namespace: monitoring
