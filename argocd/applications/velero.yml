@@ -16,6 +16,11 @@ spec:
       valuesObject:
         deployNodeAgent: true
         snapshotsEnabled: true
+        metrics:
+          serviceMonitor:
+            enabled: true
+          nodeAgentPodMonitor:
+            enabled: true
         configuration:
           defaultVolumesToFsBackup: false
           backupStorageLocation: []
