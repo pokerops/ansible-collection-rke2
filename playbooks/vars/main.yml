@@ -6,7 +6,20 @@ rke2_defaults_registry_mirrors:
   - name: "*"
 rke2_defaults_server_options:
   - "embedded-registry: true"
+  # etcd serves metrics on 2381 but does not expose them unless asked.
+  - "etcd-expose-metrics: true"
 rke2_defaults_agent_options: []
+
+# Control plane components bind their metrics endpoints to 127.0.0.1 by default,
+# which leaves them reachable only from the node itself and unscrapable by a
+# collector running elsewhere in the cluster. These are not Services, so no
+# ServiceMonitor can reach them either way.
+rke2_defaults_kube_controller_manager_arg:
+  - "bind-address=0.0.0.0"
+rke2_defaults_kube_scheduler_arg:
+  - "bind-address=0.0.0.0"
+rke2_defaults_kube_proxy_arg:
+  - "metrics-bind-address=0.0.0.0"
 
 rke2_defaults_drain_pod_selectors:
   - "longhorn.io/component!=instance-manager"
