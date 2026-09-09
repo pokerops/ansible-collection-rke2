@@ -42,6 +42,25 @@
         rke2_registry_mirrors: "{{ rke2_defaults_registry_mirrors }}"
       when: rke2_registry_mirrors is not defined
 
+    - name: Set default RKE2 controller manager options
+      ansible.builtin.set_fact:
+        rke2_kube_controller_manager_arg: "{{ rke2_defaults_kube_controller_manager_arg }}"
+      when:
+        - rke2_kube_controller_manager_arg is not defined
+        - inventory_hostname in groups[rke2_server_group]
+
+    - name: Set default RKE2 scheduler options
+      ansible.builtin.set_fact:
+        rke2_kube_scheduler_arg: "{{ rke2_defaults_kube_scheduler_arg }}"
+      when:
+        - rke2_kube_scheduler_arg is not defined
+        - inventory_hostname in groups[rke2_server_group]
+
+    - name: Set default RKE2 kube-proxy options
+      ansible.builtin.set_fact:
+        rke2_kube_proxy_arg: "{{ rke2_defaults_kube_proxy_arg }}"
+      when: rke2_kube_proxy_arg is not defined
+
     - name: Set RKE2 role defaults
       ansible.builtin.set_fact:
         rke2_etcd_snapshot_file: ""
