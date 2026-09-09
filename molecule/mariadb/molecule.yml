@@ -46,20 +46,7 @@ provisioner:
   inventory:
     links:
       group_vars: ../common/group_vars
-    hosts:
-      all:
-        vars:
-          # Required rke2 params
-          rke2_cluster_name: rke2.pokerops.net
-          rke2_ippool_private: "{{ molecule_pool_private }}"
-          rke2_ippool_public: "{{ molecule_pool_public }}"
-          rke2_api_url: "https://api.{{ rke2_cluster_name }}:6443"
-          rke2_token: "secret"
-          # Velero params
-          rke2_velero_s3_storage: "default"
-          # Test rke2 params
-          rke2_skip_deploy: false
-          rke2_longhorn_replica_count: 2
+      hosts: ./hosts.yml
 verifier:
   name: ansible
 scenario:
