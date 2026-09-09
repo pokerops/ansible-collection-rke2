@@ -1,6 +1,9 @@
 ---
 - name: Restore KVM host
-  hosts: localhost
+  hosts: rke2_server
+  gather_facts: false
+  connection: local
+  run_once: true
   vars_files:
     - ../../playbooks/vars/main.yml
   become: true
@@ -11,22 +14,18 @@
         state: absent
       failed_when: false
 
-    - name: Set FRR configuration directory
-      ansible.builtin.set_fact:
-        _frr_config_dir: "{{ lookup('ansible.builtin.env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/frr"
-
     - name: Destroy FRR configuration directory
       ansible.builtin.file:
         path: "{{ _frr_config_dir }}"
         state: absent
+      vars:
+        _frr_config_dir: "{{ lookup('ansible.builtin.env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/frr"
 
     - name: Destroy api host file entry
       ansible.builtin.lineinfile:
         path: /etc/hosts
-        regexp: ".*{{ _api_hostname }}.*"
+        regexp: ".*{{ _rke2_api_url | urlsplit('hostname') }}.*"
         state: absent
-      vars:
-        _api_hostname: "{{ rke2_api_url | urlsplit('hostname') }}"
 
 - name: Archive RKE2 install logs
   hosts: rke2_server
