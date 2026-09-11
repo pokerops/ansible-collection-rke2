@@ -5,7 +5,7 @@ rke2_defaults_api_url: "https://api.{{ rke2_cluster_name }}"
 rke2_defaults_registry_mirrors:
   - name: "*"
 rke2_defaults_server_options:
-  - "embedded-registry: true"
+  - "embedded-registry: {{ rke2_registry_enable | default('true') }}"
   # etcd serves metrics on 2381 but does not expose them unless asked.
   - "etcd-expose-metrics: true"
 rke2_defaults_agent_options: []
