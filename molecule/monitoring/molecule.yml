@@ -31,7 +31,7 @@ provisioner:
     create: ../common/libvirt.yml
     prepare: ../common/prepare.yml
     converge: ../common/install.yml
-    side_effect: ../common/deploy.yml
+    side_effect: ../common/ingestor.yml
     destroy: ../common/destroy.yml
     verify: ../common/verify/cluster.yml
   config_options:

@@ -1,0 +1,155 @@
+---
+- name: Deploy cluster components
+  ansible.builtin.import_playbook: deploy.yml
+
+# Stands in for the remote monitoring infrastructure so the cluster agents have
+# somewhere to ship to. Test scaffolding only: never part of a deployed cluster.
+- name: Deploy Vector test ingestor
+  hosts: localhost
+  connection: local
+  vars:
+    ingestor_name: vector-ingestor
+    ingestor_namespace: monitoring
+    ingestor_image: "timberio/vector:0.58.0-debian"
+    ingestor_metrics_port: 9090
+    ingestor_logs_port: 8989
+    ingestor_api_port: 8686
+    # File sinks rather than a real backend: the verify playbook asserts on them.
+    ingestor_config:
+      data_dir: /vector-data-dir
+      api:
+        enabled: true
+        address: "0.0.0.0:{{ ingestor_api_port }}"
+      sources:
+        metrics_in:
+          type: prometheus_remote_write
+          address: "0.0.0.0:{{ ingestor_metrics_port }}"
+        logs_in:
+          type: vector
+          address: "0.0.0.0:{{ ingestor_logs_port }}"
+          version: "2"
+      sinks:
+        metrics_file:
+          type: file
+          inputs: [metrics_in]
+          path: /data/metrics.log
+          encoding:
+            codec: json
+        logs_file:
+          type: file
+          inputs: [logs_in]
+          path: /data/logs.log
+          encoding:
+            codec: json
+  tasks:
+    - name: Create ingestor namespace
+      kubernetes.core.k8s:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        state: present
+        apply: true
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ ingestor_namespace }}"
+
+    - name: Create ingestor configuration
+      kubernetes.core.k8s:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        state: present
+        apply: true
+        definition:
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: "{{ ingestor_name }}"
+            namespace: "{{ ingestor_namespace }}"
+          data:
+            vector.yaml: "{{ ingestor_config | to_nice_yaml(indent=2) }}"
+      register: _ingestor_config
+
+    - name: Deploy ingestor
+      kubernetes.core.k8s:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        state: present
+        apply: true
+        definition:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: "{{ ingestor_name }}"
+            namespace: "{{ ingestor_namespace }}"
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: "{{ ingestor_name }}"
+            template:
+              metadata:
+                labels:
+                  app: "{{ ingestor_name }}"
+                annotations:
+                  # Restart on config change, which apply alone does not trigger.
+                  checksum/config: "{{ ingestor_config | to_json | hash('sha256') }}"
+              spec:
+                containers:
+                  - name: vector
+                    image: "{{ ingestor_image }}"
+                    args: ["--config", "/etc/vector/vector.yaml"]
+                    ports:
+                      - {containerPort: "{{ ingestor_metrics_port }}", name: metrics}
+                      - {containerPort: "{{ ingestor_logs_port }}", name: logs}
+                      - {containerPort: "{{ ingestor_api_port }}", name: api}
+                    readinessProbe:
+                      httpGet:
+                        path: /health
+                        port: "{{ ingestor_api_port }}"
+                      initialDelaySeconds: 5
+                    volumeMounts:
+                      - {name: config, mountPath: /etc/vector}
+                      - {name: data, mountPath: /data}
+                      - {name: state, mountPath: /vector-data-dir}
+                volumes:
+                  - name: config
+                    configMap:
+                      name: "{{ ingestor_name }}"
+                  - name: data
+                    emptyDir: {}
+                  - name: state
+                    emptyDir: {}
+
+    - name: Expose ingestor
+      kubernetes.core.k8s:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        state: present
+        apply: true
+        definition:
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: "{{ ingestor_name }}"
+            namespace: "{{ ingestor_namespace }}"
+          spec:
+            selector:
+              app: "{{ ingestor_name }}"
+            ports:
+              - {name: metrics, port: "{{ ingestor_metrics_port }}", targetPort: metrics}
+              - {name: logs, port: "{{ ingestor_logs_port }}", targetPort: logs}
+              - {name: api, port: "{{ ingestor_api_port }}", targetPort: api}
+
+    - name: Wait for ingestor to become ready
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        kind: Pod
+        namespace: "{{ ingestor_namespace }}"
+        label_selectors:
+          - "app={{ ingestor_name }}"
+        wait: true
+        wait_condition:
+          type: Ready
+          status: "True"
+        wait_timeout: 180
+      register: _ingestor_pods
+      retries: "{{ _rke2_retry_num | default(30) }}"
+      delay: 10
+      until: _ingestor_pods.resources | length > 0

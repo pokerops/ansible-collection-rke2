@@ -31,17 +31,14 @@ molecule_install_log: "{{ molecule_logdir }}/{{ lookup('ansible.builtin.env', 'M
 molecule_local_kubeconfig: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}/.kubeconfig"
 
 # RKE2
-# Highest value previously set by any scenario; the slowest scenario sets the
-# bar since a generous retry budget costs nothing when things succeed.
+rke2_registry_enable: false
 rke2_retry_num: 30
 
 # ArgoCD
 # Git revision the argocd-apps chart tracks. Defaults to the checked out branch
-# so a scenario deploys whatever is under test.
 rke2_argocd_apps_pokerops_revision: "{{ lookup('ansible.builtin.env', 'MOLECULE_REVISION', default='HEAD') }}"
 
 # ArgoCD ships an HA topology by default. It is redundant on a throwaway test
-# cluster and was a measurable share of control-plane CPU contention.
 rke2_argocd_redis_ha_enabled: false
 rke2_argocd_controller_replicas: 1
 rke2_argocd_server_replicas: 1
