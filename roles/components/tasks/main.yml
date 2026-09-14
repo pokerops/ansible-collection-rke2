@@ -21,5 +21,8 @@
   ansible.builtin.include_tasks: mariadb.yml
   when: rke2_mariadb_controller_deploy | bool
 
+- name: Include monitoring tasks
+  ansible.builtin.include_tasks: monitoring.yml
+
 - name: Include policy tasks
   ansible.builtin.include_tasks: policies.yml
