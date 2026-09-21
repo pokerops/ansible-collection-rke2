@@ -14,7 +14,7 @@ rke2_monitoring_tls_secret: ""
 rke2_monitoring_tls_ca_secret: ""
 
 # Remote ingestor. Molecule points this at the in-cluster test ingestor.
-rke2_monitoring_endpoint: "http://vector-ingestor.monitoring.svc:9090/api/v1/write"
+rke2_monitoring_endpoint: "http://vector-ingestor.monitoring.svc:9090/"
 
 # Agent buffers. Metrics are time-bound by Alloy's WAL; logs 2Gi is ~6h at 100 KiB/s.
 rke2_monitoring_metrics_volume_size: 2Gi
