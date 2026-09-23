@@ -20,7 +20,7 @@ jobs:
         scenario:
           - update
         image:
-          - distro: noble
+          - name: noble
             url: https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
