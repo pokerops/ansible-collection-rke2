@@ -1,0 +1,115 @@
+---
+- name: Verify monitoring pipeline
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    monitoring_namespace: monitoring
+    monitoring_ingestor_selector: app=vector-ingestor
+    monitoring_ingestor_file: /data/metrics.log
+    monitoring_alloy_pod: alloy-0
+    monitoring_cluster_id: "{{ rke2_cluster_name }}"
+    monitoring_dropped_metric: container_tasks_state
+    monitoring_settle_retries: 30
+    monitoring_settle_delay: 10
+  tasks:
+    - name: Query ingestor pod
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        kind: Pod
+        namespace: "{{ monitoring_namespace }}"
+        label_selectors:
+          - "{{ monitoring_ingestor_selector }}"
+        field_selectors:
+          - status.phase=Running
+      register: _ingestor_query
+      retries: "{{ monitoring_settle_retries }}"
+      delay: "{{ monitoring_settle_delay }}"
+      until: _ingestor_query.resources | length > 0
+
+    - name: Set ingestor facts
+      ansible.builtin.set_fact:
+        _ingestor_pod: "{{ _ingestor_query.resources | first | json_query('metadata.name') }}"
+
+    - name: Wait for metrics to reach the ingestor
+      ansible.builtin.command:
+        cmd: >-
+          kubectl --kubeconfig {{ molecule_local_kubeconfig }}
+          exec -n {{ monitoring_namespace }} {{ _ingestor_pod }}
+          -- wc -l {{ monitoring_ingestor_file }}
+      register: _received
+      changed_when: false
+      failed_when: false
+      retries: "{{ monitoring_settle_retries }}"
+      delay: "{{ monitoring_settle_delay }}"
+      until:
+        - _received.rc == 0
+        - (_received.stdout.split() | first | int) > 0
+
+    - name: Verify metrics are being delivered
+      ansible.builtin.assert:
+        that: (_received.stdout.split() | first | int) > 0
+        fail_msg: >-
+          No metrics reached the ingestor. Alloy is scraping but not delivering;
+          check the remote_write endpoint path and Alloy logs for HTTP errors.
+        success_msg: "Ingestor received {{ _received.stdout.split() | first }} events"
+
+    - name: Query received events
+      ansible.builtin.command:
+        cmd: >-
+          kubectl --kubeconfig {{ molecule_local_kubeconfig }}
+          exec -n {{ monitoring_namespace }} {{ _ingestor_pod }}
+          -- sh -c "grep -c '{{ item.pattern }}' {{ monitoring_ingestor_file }} || true"
+      register: _event_query
+      changed_when: false
+      loop:
+        - { name: cluster_label, pattern: "{{ monitoring_cluster_id }}" }
+        - { name: dropped_metric, pattern: "{{ monitoring_dropped_metric }}" }
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Set event count facts
+      ansible.builtin.set_fact:
+        _count_total: "{{ _received.stdout.split() | first | int }}"
+        _count_labelled: "{{ _event_query.results[0].stdout | trim | int }}"
+        _count_dropped: "{{ _event_query.results[1].stdout | trim | int }}"
+
+    - name: Verify every event carries the cluster label
+      ansible.builtin.assert:
+        that: _count_labelled | int == _count_total | int
+        fail_msg: >-
+          {{ _count_labelled }} of {{ _count_total }} events carry
+          cluster={{ monitoring_cluster_id }}. Unlabelled series collide with
+          other clusters in the shared tenant and read as plausible data.
+        success_msg: "All {{ _count_total }} events carry the cluster label"
+
+    - name: Verify the cardinality drop list is applied
+      ansible.builtin.assert:
+        that: _count_dropped | int == 0
+        fail_msg: >-
+          {{ monitoring_dropped_metric }} reached the ingestor
+          {{ _count_dropped }} times but is on the drop list; the
+          metric_relabel rules are not being applied.
+        success_msg: "{{ monitoring_dropped_metric }} correctly dropped"
+
+    - name: Query Alloy for skipped ServiceMonitors
+      ansible.builtin.command:
+        cmd: >-
+          kubectl --kubeconfig {{ molecule_local_kubeconfig }}
+          logs -n {{ monitoring_namespace }} {{ monitoring_alloy_pod }}
+          -c alloy --tail=2000
+      register: _alloy_logs
+      changed_when: false
+
+    - name: Verify no ServiceMonitor was silently skipped
+      ansible.builtin.assert:
+        that: _skipped | length == 0
+        fail_msg: >-
+          Alloy skipped {{ _skipped | length }} ServiceMonitor(s), which
+          produces no metrics and no failure: {{ _skipped | join(' | ') }}
+        success_msg: "All ServiceMonitors accepted by Alloy"
+      vars:
+        _skipped: >-
+          {{ _alloy_logs.stdout_lines
+             | select('search', 'error generating scrapeconfig')
+             | list }}

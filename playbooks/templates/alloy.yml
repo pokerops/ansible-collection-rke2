@@ -30,8 +30,11 @@ spec:
       varlog: false
     configMap:
       content: |
-        // Targets declared by charts as ServiceMonitors.
+        // Targets declared by charts as ServiceMonitors. metallb authenticates
+        // with a ServiceAccount token from disk, which Alloy refuses by default
+        // and skips with only a log line; these charts are ours, so allow it.
         prometheus.operator.servicemonitors "discovered" {
+          allow_arbitrary_file_access = true
           forward_to = [prometheus.relabel.ksm.receiver]
         }
 

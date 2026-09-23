@@ -33,7 +33,7 @@ provisioner:
     converge: ../common/install.yml
     side_effect: ../common/ingestor.yml
     destroy: ../common/destroy.yml
-    verify: ../common/verify/cluster.yml
+    verify: ../common/verify/monitoring.yml
   config_options:
     defaults:
       callbacks_enabled: ansible.posix.profile_tasks
