@@ -15,9 +15,8 @@ spec:
     helm:
       valuesObject:
         prometheus:
-          # serviceMonitor and podMonitor are mutually exclusive in this chart.
           serviceMonitor:
-            enabled: true
+            enabled: "{{ rke2_monitoring_deploy | bool }}"
           serviceAccount: "{{ rke2_monitoring_scraper_name }}"
           namespace: "{{ rke2_monitoring_scraper_namespace }}"
   destination:
