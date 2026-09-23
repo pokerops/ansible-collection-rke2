@@ -1,4 +1,7 @@
 ---
+# Off by default: the collector needs a remote ingestor to ship to.
+rke2_monitoring_deploy: false
+
 # Identity the metrics collector runs as.
 rke2_monitoring_scraper_name: alloy
 rke2_monitoring_scraper_namespace: monitoring
@@ -47,6 +50,3 @@ rke2_monitoring_drop_labels_cadvisor:
   - id # cgroup path
   - name # duplicates the container label
   - image # available from kube_pod_container_info
-
-# Deliberately kept: container_blkio_device_usage_total, 148 series and the first
-# thing to check when disk IO is suspect. KSM labels measure 0% reduction.

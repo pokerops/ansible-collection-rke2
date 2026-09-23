@@ -253,7 +253,8 @@
                   - metallb-system
                   - longhorn-system
                 _kubectl_pod_list: "{{ _kubectl_pod_data }}"
-                _kubectl_node_pods: "{{ _kubectl_pod_list | selectattr('spec.nodeName', 'in', _servers) }}"
+                _kubectl_pods_scheduled: "{{ _kubectl_pod_list | selectattr('spec.nodeName', 'defined') }}"
+                _kubectl_node_pods: "{{ _kubectl_pods_scheduled | selectattr('spec.nodeName', 'in', _servers) }}"
 
             - name: Verify no workload pods are scheduled
               ansible.builtin.assert:

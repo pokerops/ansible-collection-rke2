@@ -23,6 +23,7 @@
 
 - name: Include monitoring tasks
   ansible.builtin.include_tasks: monitoring.yml
+  when: rke2_monitoring_deploy | bool
 
 - name: Include policy tasks
   ansible.builtin.include_tasks: policies.yml
