@@ -38,6 +38,13 @@ spec:
           forward_to = [prometheus.relabel.ksm.receiver]
         }
 
+        // PodMonitors are a separate discovery component; without this, velero's
+        // node-agent monitor and the strimzi operator monitor are never scraped.
+        prometheus.operator.podmonitors "discovered" {
+          allow_arbitrary_file_access = true
+          forward_to = [prometheus.relabel.ksm.receiver]
+        }
+
         // cAdvisor is served by the kubelet, not by any Service, so it needs
         // its own discovery and carries its own drop list.
         discovery.kubernetes "nodes" {

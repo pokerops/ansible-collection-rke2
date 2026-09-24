@@ -1,0 +1,34 @@
+---
+# Strimzi and Zalando ship no monitor templates in their charts, so declare them
+# here rather than hand-writing scrape config in Alloy: everything else is
+# discovered through the operator CRDs and these should be too.
+
+# The Strimzi chart creates no Service for its operator, so select pods. The
+# container does declare a named port, so address it by name.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: strimzi-cluster-operator
+  namespace: strimzi
+spec:
+  selector:
+    matchLabels:
+      strimzi.io/kind: cluster-operator
+  podMetricsEndpoints:
+    - port: http
+      path: /metrics
+---
+# Zalando does create a Service, but its port is unnamed, so address it by
+# number. Metrics share port 8080 with the operator REST API.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: postgres-operator
+  namespace: postgres-operator
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: postgres-operator
+  endpoints:
+    - targetPort: 8080
+      path: /metrics

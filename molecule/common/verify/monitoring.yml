@@ -1,4 +1,7 @@
 ---
+- name: Verify cluster
+  ansible.builtin.import_playbook: cluster.yml
+
 - name: Verify monitoring pipeline
   hosts: localhost
   connection: local
