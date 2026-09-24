@@ -41,7 +41,6 @@ spec:
         // PodMonitors are a separate discovery component; without this, velero's
         // node-agent monitor and the strimzi operator monitor are never scraped.
         prometheus.operator.podmonitors "discovered" {
-          allow_arbitrary_file_access = true
           forward_to = [prometheus.relabel.ksm.receiver]
         }
 

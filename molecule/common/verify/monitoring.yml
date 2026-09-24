@@ -95,7 +95,7 @@
           metric_relabel rules are not being applied.
         success_msg: "{{ monitoring_dropped_metric }} correctly dropped"
 
-    - name: Query Alloy for skipped ServiceMonitors
+    - name: Query Alloy for skipped monitors
       ansible.builtin.command:
         cmd: >-
           kubectl --kubeconfig {{ molecule_local_kubeconfig }}
@@ -104,15 +104,53 @@
       register: _alloy_logs
       changed_when: false
 
-    - name: Verify no ServiceMonitor was silently skipped
+    - name: Verify no monitor was silently skipped
       ansible.builtin.assert:
         that: _skipped | length == 0
         fail_msg: >-
-          Alloy skipped {{ _skipped | length }} ServiceMonitor(s), which
-          produces no metrics and no failure: {{ _skipped | join(' | ') }}
-        success_msg: "All ServiceMonitors accepted by Alloy"
+          Alloy skipped {{ _skipped | length }} monitor(s), which produce no
+          metrics and no failure: {{ _skipped | join(' | ') }}
+        success_msg: "All ServiceMonitors and PodMonitors accepted by Alloy"
       vars:
         _skipped: >-
           {{ _alloy_logs.stdout_lines
              | select('search', 'error generating scrapeconfig')
              | list }}
+
+    # A monitor whose selector matches nothing is accepted by Alloy and simply
+    # produces no metrics, so the skipped-monitor check above cannot see it.
+    # Namespace coverage catches the case a monitor scrapes nothing at all.
+    - name: Query declared monitors
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        api_version: monitoring.coreos.com/v1
+        kind: "{{ item }}"
+      register: _monitor_query
+      loop:
+        - ServiceMonitor
+        - PodMonitor
+
+    - name: Query namespaces present in received metrics
+      ansible.builtin.command:
+        cmd: >-
+          kubectl --kubeconfig {{ molecule_local_kubeconfig }}
+          exec -n {{ monitoring_namespace }} {{ _ingestor_pod }}
+          -- sh -c "grep -o '\"namespace\":\"[^\"]*\"' {{ monitoring_ingestor_file }} | sort -u"
+      register: _received_namespaces
+      changed_when: false
+
+    - name: Verify every monitor namespace is represented in received metrics
+      ansible.builtin.assert:
+        that: _unscraped | length == 0
+        fail_msg: >-
+          No metrics arrived from {{ _unscraped | join(', ') }}, which declare
+          monitors. Their selectors match nothing, which Alloy reports as success.
+        success_msg: "All {{ _declared | length }} monitor namespace(s) delivered metrics"
+      vars:
+        _declared: >-
+          {{ _monitor_query.results | map(attribute='resources') | flatten
+             | map(attribute='metadata.namespace') | unique | sort | list }}
+        _scraped: >-
+          {{ _received_namespaces.stdout_lines
+             | map('regex_replace', '^.*:"(.*)"$', '\\1') | unique | list }}
+        _unscraped: "{{ _declared | difference(_scraped) }}"
