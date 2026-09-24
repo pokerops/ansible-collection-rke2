@@ -16,7 +16,7 @@ spec:
       valuesObject:
         prometheus:
           serviceMonitor:
-            enabled: "{{ rke2_monitoring_deploy | bool }}"
+            enabled: {{ rke2_monitoring_deploy | bool | to_json }}
           serviceAccount: "{{ rke2_monitoring_scraper_name }}"
           namespace: "{{ rke2_monitoring_scraper_namespace }}"
   destination:
