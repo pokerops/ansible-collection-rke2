@@ -1,0 +1,56 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: prometheus-crds
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-5"
+spec:
+  project: default
+  source:
+    chart: prometheus-operator-crds
+    repoURL: https://prometheus-community.github.io/helm-charts
+    targetRevision: "31.0.1"
+    helm:
+      valuesObject:
+        # Only the CRDs that something in this cluster actually reads.
+        # Alloy consumes ServiceMonitor and PodMonitor directly; no
+        # prometheus-operator controller is deployed, so the CRDs
+        # describing operator-managed workloads are left out.
+        crds:
+          servicemonitors:
+            enabled: true
+          podmonitors:
+            enabled: true
+          prometheusrules:
+            enabled: true
+          alertmanagerconfigs:
+            enabled: false
+          alertmanagers:
+            enabled: false
+          probes:
+            enabled: false
+          prometheusagents:
+            enabled: false
+          prometheuses:
+            enabled: false
+          scrapeconfigs:
+            enabled: false
+          thanosrulers:
+            enabled: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+  ignoreDifferences:
+    - group: apiextensions.k8s.io
+      kind: CustomResourceDefinition
+      jsonPointers:
+        - /spec/preserveUnknownFields

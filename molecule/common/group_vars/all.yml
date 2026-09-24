@@ -1,0 +1,46 @@
+---
+# Shared test tuning, linked into every scenario.
+#
+# group_vars defined here outrank the vars a scenario declares
+# in its own molecule.yml
+#
+# No scenario deploys ArgoCD with its shipped HA topology. Verifying that chart
+# is upstream's responsibility; these settings exist so a throwaway test cluster
+# is not paying for replicas nothing asserts against.
+
+# Ansible
+ansible_ssh_extra_args: "-o ControlPersist=no -o ControlPath=none"
+
+# Libvirt
+libvirt_user: molecule
+libvirt_address: "172.31.252.1/24"
+libvirt_guest_size: "40G"
+libvirt_platforms: "{{ molecule_yml.platforms }}"
+
+# Address pools carved out of the libvirt network. Intermediates only - each
+# scenario decides what to do with them via rke2_ippool_*, and the scenarios
+# that pool off-subnet (converged, full) simply ignore these.
+molecule_net_prefix: "{{ libvirt_address | ansible.utils.ipaddr('prefix') }}"
+molecule_pool_prefix: "{{ (molecule_net_prefix | int) + 2 }}"
+molecule_pool_private: "{{ libvirt_address | ansible.utils.ipsubnet(molecule_pool_prefix, 2) }}"
+molecule_pool_public: "{{ libvirt_address | ansible.utils.ipsubnet(molecule_pool_prefix, 3) }}"
+
+# Molecule paths
+molecule_logdir: "{{ lookup('ansible.builtin.env', 'MOLECULE_LOGDIR', default='/tmp/logs') }}"
+molecule_install_log: "{{ molecule_logdir }}/{{ lookup('ansible.builtin.env', 'MOLECULE_SCENARIO_NAME') }}"
+molecule_local_kubeconfig: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}/.kubeconfig"
+
+# RKE2
+rke2_registry_enable: false
+rke2_retry_num: 30
+
+# ArgoCD
+# Git revision the argocd-apps chart tracks. Defaults to the checked out branch
+rke2_argocd_apps_pokerops_revision: "{{ lookup('ansible.builtin.env', 'MOLECULE_REVISION', default='HEAD') }}"
+
+# ArgoCD ships an HA topology by default. It is redundant on a throwaway test
+rke2_argocd_redis_ha_enabled: false
+rke2_argocd_controller_replicas: 1
+rke2_argocd_server_replicas: 1
+rke2_argocd_reposerver_replicas: 1
+rke2_argocd_applicationset_replicas: 1

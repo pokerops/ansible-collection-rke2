@@ -2,8 +2,10 @@ set allow-duplicate-variables := true
 
 import '.devbox/virtenv/pokerops.ansible-utils.molecule/justfile'
 
-MOLECULE_REVISION := `command git rev-parse --abbrev-ref HEAD`
-MOLECULE_SCENARIO := 'components'
+MOLECULE_REVISION_DEFAULT := `command git rev-parse --abbrev-ref HEAD`
+MOLECULE_SCENARIO_DEFAULT := 'components'
+MOLECULE_REVISION := env('MOLECULE_REVISION', MOLECULE_REVISION_DEFAULT)
+MOLECULE_SCENARIO := env('MOLECULE_SCENARIO', MOLECULE_SCENARIO_DEFAULT)
 
 CLOUDFLARE_IPS_URL := 'https://api.cloudflare.com/client/v4/ips'
 CLOUDFLARE_IPS_FILE := 'roles/components/defaults/main/cloudflare.yml'

@@ -1,0 +1,17 @@
+---
+- name: Deploy alloy collector
+  kubernetes.core.k8s:
+    state: present
+    apply: true
+    kubeconfig: "{{ rke2_config_path }}"
+    resource_definition: "{{ lookup('ansible.builtin.template', 'templates/alloy.yml') | from_yaml }}"
+
+- name: Deploy monitors for charts without their own
+  kubernetes.core.k8s:
+    state: present
+    apply: true
+    kubeconfig: "{{ rke2_config_path }}"
+    resource_definition: "{{ item }}"
+  loop: "{{ lookup('ansible.builtin.template', 'templates/monitors.yml') | from_yaml_all | list }}"
+  loop_control:
+    label: "{{ item.kind }}/{{ item.metadata.name }}"

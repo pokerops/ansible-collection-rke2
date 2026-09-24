@@ -9,38 +9,20 @@ driver:
 platforms:
   - name: rke2-${MOLECULE_SCENARIO_NAME}-server-01
     image: "${MOLECULE_KVM_IMAGE}"
-    cpu: 2
-    mem: 4
-    groups:
-      - rke2_server
-  - name: rke2-${MOLECULE_SCENARIO_NAME}-server-02
-    image: "${MOLECULE_KVM_IMAGE}"
-    cpu: 2
-    mem: 4
-    groups:
-      - rke2_server
-  - name: rke2-${MOLECULE_SCENARIO_NAME}-server-03
-    image: "${MOLECULE_KVM_IMAGE}"
-    cpu: 2
-    mem: 4
+    cpu: 4
+    mem: 8
     groups:
       - rke2_server
   - name: rke2-${MOLECULE_SCENARIO_NAME}-agent-01
     image: "${MOLECULE_KVM_IMAGE}"
-    cpu: 1
-    mem: 4
+    cpu: 2
+    mem: 8
     groups:
       - rke2_agent
   - name: rke2-${MOLECULE_SCENARIO_NAME}-agent-02
     image: "${MOLECULE_KVM_IMAGE}"
-    cpu: 1
-    mem: 4
-    groups:
-      - rke2_agent
-  - name: rke2-${MOLECULE_SCENARIO_NAME}-agent-03
-    image: "${MOLECULE_KVM_IMAGE}"
-    cpu: 1
-    mem: 4
+    cpu: 2
+    mem: 8
     groups:
       - rke2_agent
 provisioner:
@@ -49,8 +31,9 @@ provisioner:
     create: ../common/libvirt.yml
     prepare: ../common/prepare.yml
     converge: ../common/install.yml
+    side_effect: ../common/ingestor.yml
     destroy: ../common/destroy.yml
-    side_effect: ../common/configure.yml
+    verify: ../common/verify/monitoring.yml
   config_options:
     defaults:
       callbacks_enabled: ansible.posix.profile_tasks

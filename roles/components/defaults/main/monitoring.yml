@@ -1,0 +1,52 @@
+---
+# Off by default: the collector needs a remote ingestor to ship to.
+rke2_monitoring_deploy: false
+
+# Identity the metrics collector runs as.
+rke2_monitoring_scraper_name: alloy
+rke2_monitoring_scraper_namespace: monitoring
+
+# Cluster identity carried by every metric and log record leaving this cluster.
+rke2_monitoring_cluster_id: "{{ rke2_cluster_name }}"
+
+# Transport to the remote ingestor. Vector terminates mTLS natively, no gateway.
+# Off until the ingestor exists. Vector cannot restrict cert subjects or revoke,
+# so the CA is the authorization boundary: dedicate it, keep lifetimes short.
+rke2_monitoring_tls_enabled: false
+rke2_monitoring_tls_secret: ""
+rke2_monitoring_tls_ca_secret: ""
+
+# Remote ingestor. Molecule points this at the in-cluster test ingestor.
+rke2_monitoring_endpoint: "http://vector-ingestor.monitoring.svc:9090/"
+
+# Agent buffers. Metrics are time-bound by Alloy's WAL; logs 2Gi is ~6h at 100 KiB/s.
+rke2_monitoring_metrics_volume_size: 2Gi
+rke2_monitoring_logs_volume_size: 2Gi
+
+# Cardinality control, applied by Alloy as metric_relabel_configs. Measured
+# against real scrapes, not inherited: together these cut ~45% of active series.
+# Drops are unrecoverable and a PrometheusRule on a dropped metric fails
+# silently, so confirm nothing reads a metric before adding it here.
+
+# Cilium gives every pod an lxc* veth counting the same traffic as its eth0.
+rke2_monitoring_cadvisor_keep_interfaces: "^eth[0-9]+$"
+
+# Emitted but never populated under cgroup v2, which these nodes run.
+rke2_monitoring_drop_metrics_cadvisor:
+  - container_tasks_state # 570 series/node, all zero
+  - container_cpu_load_average_10s # 114 series/node, all zero
+  - container_cpu_load_d_average_10s # 114 series/node, all zero
+
+# pgfault is ordinary memory activity; pgmajfault is the thrashing signal.
+# The container and hierarchy scopes duplicate each other on leaf cgroups.
+rke2_monitoring_keep_memory_failure_type: "^pgmajfault$"
+rke2_monitoring_keep_memory_failure_scope: "^container$"
+
+rke2_monitoring_drop_metrics_ksm:
+  - kube_pod_tolerations # 336 series, not queried
+
+# Redundant once kube-state-metrics is scraped, and correlated: all three or none.
+rke2_monitoring_drop_labels_cadvisor:
+  - id # cgroup path
+  - name # duplicates the container label
+  - image # available from kube_pod_container_info

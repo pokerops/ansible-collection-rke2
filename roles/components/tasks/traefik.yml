@@ -34,6 +34,12 @@
             valuesObject:
               deployment:
                 kind: DaemonSet
+              metrics:
+                prometheus:
+                  service:
+                    enabled: true
+                  serviceMonitor:
+                    enabled: "{{ rke2_monitoring_deploy | bool }}"
               ingressClass:
                 isDefaultClass: "{{ rke2_traefik_controller_deploy | bool }}"
                 name: "traefik-private"
@@ -72,6 +78,12 @@
             valuesObject:
               deployment:
                 kind: DaemonSet
+              metrics:
+                prometheus:
+                  service:
+                    enabled: true
+                  serviceMonitor:
+                    enabled: "{{ rke2_monitoring_deploy | bool }}"
               ingressClass:
                 isDefaultClass: false
                 name: "{{ _traefik_chart_class }}"

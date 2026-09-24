@@ -5,6 +5,19 @@
 - name: Include argocd tasks
   ansible.builtin.include_tasks: argocd.yml
 
+# Charts below render ServiceMonitors when monitoring is enabled, but the CRD
+# arrives via the argocd git sync rather than this role, so wait for it first.
+- name: Wait for servicemonitor crd
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ rke2_config_path }}"
+    kind: CustomResourceDefinition
+    name: servicemonitors.monitoring.coreos.com
+  register: _servicemonitor_crd
+  retries: "{{ _rke2_retry_num }}"
+  delay: "{{ _rke2_retry_delay }}"
+  until: _servicemonitor_crd.resources | length > 0
+  when: rke2_monitoring_deploy | bool
+
 - name: Include metallb tasks
   ansible.builtin.include_tasks: metallb.yml
 
@@ -20,6 +33,10 @@
 - name: Include mariadb tasks
   ansible.builtin.include_tasks: mariadb.yml
   when: rke2_mariadb_controller_deploy | bool
+
+- name: Include monitoring tasks
+  ansible.builtin.include_tasks: monitoring.yml
+  when: rke2_monitoring_deploy | bool
 
 - name: Include policy tasks
   ansible.builtin.include_tasks: policies.yml

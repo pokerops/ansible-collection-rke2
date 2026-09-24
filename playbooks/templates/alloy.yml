@@ -1,0 +1,131 @@
+#jinja2: lstrip_blocks: True
+---
+apiVersion: collectors.grafana.com/v1alpha1
+kind: Alloy
+metadata:
+  name: alloy
+  namespace: "{{ rke2_monitoring_scraper_namespace }}"
+spec:
+  # metallb binds this exact ServiceAccount to a Role at deploy time.
+  serviceAccount:
+    create: true
+    name: "{{ rke2_monitoring_scraper_name }}"
+  controller:
+    type: statefulset
+    replicas: 1
+    # WAL lives here; time-bound by Alloy so the volume only needs headroom.
+    volumeClaimTemplates:
+      - metadata:
+          name: storage
+        spec:
+          accessModes: [ReadWriteOnce]
+          resources:
+            requests:
+              storage: "{{ rke2_monitoring_metrics_volume_size }}"
+  alloy:
+    clustering:
+      enabled: false
+    storagePath: /var/lib/alloy
+    mounts:
+      varlog: false
+    configMap:
+      content: |
+        // Targets declared by charts as ServiceMonitors. metallb authenticates
+        // with a ServiceAccount token from disk, which Alloy refuses by default
+        // and skips with only a log line; these charts are ours, so allow it.
+        prometheus.operator.servicemonitors "discovered" {
+          allow_arbitrary_file_access = true
+          forward_to = [prometheus.relabel.ksm.receiver]
+        }
+
+        // PodMonitors are a separate discovery component; without this, velero's
+        // node-agent monitor and the strimzi operator monitor are never scraped.
+        prometheus.operator.podmonitors "discovered" {
+          forward_to = [prometheus.relabel.ksm.receiver]
+        }
+
+        // cAdvisor is served by the kubelet, not by any Service, so it needs
+        // its own discovery and carries its own drop list.
+        discovery.kubernetes "nodes" {
+          role = "node"
+        }
+
+        discovery.relabel "cadvisor" {
+          targets = discovery.kubernetes.nodes.targets
+
+          rule {
+            target_label = "__address__"
+            replacement  = "kubernetes.default.svc:443"
+          }
+          rule {
+            source_labels = ["__meta_kubernetes_node_name"]
+            regex         = "(.+)"
+            target_label  = "__metrics_path__"
+            replacement   = "/api/v1/nodes/${1}/proxy/metrics/cadvisor"
+          }
+        }
+
+        prometheus.scrape "cadvisor" {
+          targets    = discovery.relabel.cadvisor.output
+          forward_to = [prometheus.relabel.cadvisor.receiver]
+          scheme     = "https"
+          bearer_token_file = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+          tls_config {
+            ca_file = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+          }
+        }
+
+        prometheus.relabel "cadvisor" {
+          forward_to = [prometheus.remote_write.ingestor.receiver]
+          rule {
+            source_labels = ["__name__"]
+            regex         = "{{ rke2_monitoring_drop_metrics_cadvisor | join('|') }}"
+            action        = "drop"
+          }
+          // Regexes admit the empty case so series lacking the label survive.
+          rule {
+            source_labels = ["interface"]
+            regex         = "({{ rke2_monitoring_cadvisor_keep_interfaces | regex_replace('^\\^|\\$$', '') }})?"
+            action        = "keep"
+          }
+          rule {
+            source_labels = ["failure_type"]
+            regex         = "({{ rke2_monitoring_keep_memory_failure_type | regex_replace('^\\^|\\$$', '') }})?"
+            action        = "keep"
+          }
+          rule {
+            source_labels = ["scope"]
+            regex         = "({{ rke2_monitoring_keep_memory_failure_scope | regex_replace('^\\^|\\$$', '') }})?"
+            action        = "keep"
+          }
+          rule {
+            regex  = "{{ rke2_monitoring_drop_labels_cadvisor | join('|') }}"
+            action = "labeldrop"
+          }
+        }
+
+        prometheus.relabel "ksm" {
+          forward_to = [prometheus.remote_write.ingestor.receiver]
+          rule {
+            source_labels = ["__name__"]
+            regex         = "{{ rke2_monitoring_drop_metrics_ksm | join('|') }}"
+            action        = "drop"
+          }
+        }
+
+        prometheus.remote_write "ingestor" {
+          external_labels = {
+            cluster = "{{ rke2_monitoring_cluster_id }}",
+          }
+
+          endpoint {
+            url = "{{ rke2_monitoring_endpoint }}"
+            {% if rke2_monitoring_tls_enabled | bool %}
+            tls_config {
+              ca_file   = "/etc/alloy/tls/ca.crt"
+              cert_file = "/etc/alloy/tls/tls.crt"
+              key_file  = "/etc/alloy/tls/tls.key"
+            }
+            {% endif %}
+          }
+        }
