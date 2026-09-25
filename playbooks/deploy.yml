@@ -65,10 +65,9 @@
           ansible.builtin.meta: end_play
           when: _rke2_skip_deploy | bool
 
-        - name: Deploy cluster components
+        - name: Deploy cluster resources
           ansible.builtin.include_role:
-            name: pokerops.rke2.components
-            tasks_from: "{{ rke2_component | default('main') }}"
+            name: "{{ rke2_deploy_role | default('pokerops.rke2.components') }}"
             apply:
               delegate_to: localhost
           vars:

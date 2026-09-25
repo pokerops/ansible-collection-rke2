@@ -63,3 +63,4 @@ rke2_agent_options: "{{ _rke2_agent_options }}"
 
 # Test specific values
 _rke2_skip_deploy: "{{ rke2_skip_deploy | default(false) }}"
+_rke2_monitoring_deploy: "{{ rke2_monitoring_endpoint | default('') | length > 0 }}"
