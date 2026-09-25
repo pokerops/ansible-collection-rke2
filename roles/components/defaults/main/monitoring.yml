@@ -1,7 +1,4 @@
 ---
-# Off by default: the collector needs a remote ingestor to ship to.
-rke2_monitoring_deploy: false
-
 # Identity the metrics collector runs as.
 rke2_monitoring_scraper_name: alloy
 rke2_monitoring_scraper_namespace: monitoring
@@ -16,8 +13,8 @@ rke2_monitoring_tls_enabled: false
 rke2_monitoring_tls_secret: ""
 rke2_monitoring_tls_ca_secret: ""
 
-# Remote ingestor. Molecule points this at the in-cluster test ingestor.
-rke2_monitoring_endpoint: "http://vector-ingestor.monitoring.svc:9090/"
+# Remote ingestor to ship metrics to. Empty disables monitoring entirely.
+rke2_monitoring_endpoint: ""
 
 # Agent buffers. Metrics are time-bound by Alloy's WAL; logs 2Gi is ~6h at 100 KiB/s.
 rke2_monitoring_metrics_volume_size: 2Gi

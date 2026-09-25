@@ -8,7 +8,7 @@ rke2_longhorn_values:
     defaultClassReplicaCount: "{{ rke2_longhorn_replica_count }}"
   metrics:
     serviceMonitor:
-      enabled: "{{ rke2_monitoring_deploy | bool }}"
+      enabled: "{{ _rke2_monitoring_deploy | bool }}"
   ingress:
     ingressClassName: "{{ rke2_longhorn_ingress_class }}"
     host: "{{ rke2_longhorn_hostname }}"
