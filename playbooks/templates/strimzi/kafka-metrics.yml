@@ -7,6 +7,11 @@ kind: ConfigMap
 metadata:
   name: kafka-metrics
   namespace: "{{ rke2_strimzi_namespace | default('strimzi') }}"
+  # configMapKeyRef cannot cross namespaces and Kafka clusters are created
+  # wherever users want them, so reflector mirrors this everywhere.
+  annotations:
+    reflector.v1.k8s.emberstack.com/reflection-allowed: "true"
+    reflector.v1.k8s.emberstack.com/reflection-auto-enabled: "true"
 data:
   kafka-metrics-config.yml: |
     # See https://github.com/prometheus/jmx_exporter for more info about JMX Prometheus Exporter metrics

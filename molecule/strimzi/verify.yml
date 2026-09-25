@@ -234,6 +234,14 @@
                               - broker: 0
                                 annotations:
                                   metallb.io/address-pool: metallb-private
+                      # Brokers expose no metrics until this points at the JMX
+                      # exporter ConfigMap the components role deploys.
+                      metricsConfig:
+                        type: jmxPrometheusExporter
+                        valueFrom:
+                          configMapKeyRef:
+                            name: kafka-metrics
+                            key: kafka-metrics-config.yml
                       config:
                         offsets.topic.replication.factor: 1
                         transaction.state.log.replication.factor: 1
@@ -267,6 +275,110 @@
                 - kafka_status.resources[0].status.conditions[0].status == "True"
               retries: 60
               delay: 15
+
+            # Proves the JMX exporter ConfigMap is valid and reachable: brokers
+            # expose nothing without it, and a malformed rules file leaves the
+            # port open but the response empty.
+            - name: Query kafka broker pods
+              kubernetes.core.k8s_info:
+                kubeconfig: "{{ kubeconfig_path }}"
+                api_version: v1
+                kind: Pod
+                namespace: "{{ kafka_namespace }}"
+                label_selectors:
+                  - "strimzi.io/kind=Kafka"
+                field_selectors:
+                  - status.phase=Running
+              register: _broker_pods
+              retries: 30
+              delay: 10
+              until: _broker_pods.resources | length > 0
+
+            - name: Verify brokers expose the prometheus port
+              ansible.builtin.assert:
+                that: _broker_ports | select('equalto', 'tcp-prometheus') | list | length > 0
+                fail_msg: >-
+                  No tcp-prometheus port on broker pods. The Kafka CR is not
+                  referencing the kafka-metrics ConfigMap, so no metrics exist
+                  for the kafka-brokers PodMonitor to scrape.
+              vars:
+                _containers: "{{ _broker_pods.resources | map(attribute='spec.containers') | flatten }}"
+                _broker_ports: "{{ _containers | map(attribute='ports', default=[]) | flatten | map(attribute='name', default='') | list }}"
+
+            # Port and address come from the pod itself rather than a hardcoded
+            # 9404, and the probe runs in an image known to carry curl.
+            - name: Set broker scrape facts
+              ansible.builtin.set_fact:
+                _broker_target: "{{ _pod.status.podIP }}:{{ _port }}"
+              vars:
+                _pod: "{{ _broker_pods.resources | first }}"
+                _ports: "{{ _pod.spec.containers | map(attribute='ports', default=[]) | flatten }}"
+                _port: "{{ _ports | selectattr('name', 'equalto', 'tcp-prometheus') | map(attribute='containerPort') | first }}"
+
+            - name: Scrape a kafka broker
+              ansible.builtin.command:
+                cmd: >-
+                  kubectl --kubeconfig {{ kubeconfig_path }}
+                  run kafka-metrics-probe-{{ 999 | random }} -n {{ kafka_namespace }}
+                  --rm -i --restart=Never --image=curlimages/curl:8.11.1 --
+                  curl -sS --max-time 10 http://{{ _broker_target }}/metrics
+              register: _broker_metrics
+              changed_when: false
+              retries: 10
+              delay: 15
+              until:
+                - _broker_metrics.rc == 0
+                - "'kafka_server' in _broker_metrics.stdout"
+
+            - name: Verify brokers emit kafka metrics
+              ansible.builtin.assert:
+                that: _series | length > 0
+                fail_msg: >-
+                  Broker endpoint returned no kafka_server_* series; the JMX
+                  exporter rules in the kafka-metrics ConfigMap are not matching.
+                success_msg: "Brokers emit {{ _series | length }} kafka_server_* series"
+              vars:
+                _series: "{{ _broker_metrics.stdout_lines | select('match', '^kafka_server') | list }}"
+
+            # End to end: the broker endpoint above proves the JMX ConfigMap
+            # works, this proves the kafka-brokers PodMonitor selector matches
+            # and alloy delivers what it scrapes.
+            - name: Query ingestor pod
+              kubernetes.core.k8s_info:
+                kubeconfig: "{{ kubeconfig_path }}"
+                kind: Pod
+                namespace: monitoring
+                label_selectors:
+                  - "app=vector-ingestor"
+                field_selectors:
+                  - status.phase=Running
+              register: _ingestor_query
+              retries: 30
+              delay: 10
+              until: _ingestor_query.resources | length > 0
+
+            - name: Wait for broker metrics to reach the ingestor
+              ansible.builtin.command:
+                cmd: >-
+                  kubectl --kubeconfig {{ kubeconfig_path }}
+                  exec -n monitoring {{ _ingestor_query.resources | first | json_query('metadata.name') }}
+                  -- sh -c "grep -c kafka_server /data/metrics.log || true"
+              register: _ingested
+              changed_when: false
+              retries: 40
+              delay: 15
+              until:
+                - _ingested.rc == 0
+                - (_ingested.stdout | trim | int) > 0
+
+            - name: Verify broker metrics are collected end to end
+              ansible.builtin.assert:
+                that: (_ingested.stdout | trim | int) > 0
+                fail_msg: >-
+                  Brokers serve metrics but none reached the ingestor. The
+                  kafka-brokers PodMonitor selector or its tcp-prometheus port
+                  is not matching the broker pods.
+                success_msg: "Ingestor received {{ _ingested.stdout | trim }} kafka_server events"
 
             - name: Capture original Kafka clusterId
               ansible.builtin.set_fact:
