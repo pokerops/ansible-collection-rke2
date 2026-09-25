@@ -120,11 +120,17 @@
     # A monitor whose selector matches nothing is accepted by Alloy and simply
     # produces no metrics, so the skipped-monitor check above cannot see it.
     # Namespace coverage catches the case a monitor scrapes nothing at all.
+    # Monitors labelled optional select resources users create after deploy, so
+    # emptiness carries no information: no Kafka clusters is a valid state, and
+    # indistinguishable from a broken selector. Coverage for those comes from an
+    # alert on the kube-state-metrics custom-resource-state series instead.
     - name: Query declared monitors
       kubernetes.core.k8s_info:
         kubeconfig: "{{ molecule_local_kubeconfig }}"
         api_version: monitoring.coreos.com/v1
         kind: "{{ item }}"
+        label_selectors:
+          - "pokerops.net/monitor-optional notin (true)"
       register: _monitor_query
       loop:
         - ServiceMonitor
