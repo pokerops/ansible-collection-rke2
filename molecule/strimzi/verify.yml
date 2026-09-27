@@ -278,7 +278,10 @@
 
             # Proves the JMX exporter ConfigMap is valid and reachable: brokers
             # expose nothing without it, and a malformed rules file leaves the
-            # port open but the response empty.
+            # port open but the response empty. strimzi.io/kind=Kafka is too
+            # broad here: it also matches the entity-operator pod, which has no
+            # prometheus port, and the kafka-exporter pod, which serves
+            # kafka_exporter_* rather than the kafka_server_* series under test.
             - name: Query kafka broker pods
               kubernetes.core.k8s_info:
                 kubeconfig: "{{ kubeconfig_path }}"
@@ -286,7 +289,8 @@
                 kind: Pod
                 namespace: "{{ kafka_namespace }}"
                 label_selectors:
-                  - "strimzi.io/kind=Kafka"
+                  - "strimzi.io/cluster={{ kafka_cluster_name }}"
+                  - "strimzi.io/broker-role=true"
                 field_selectors:
                   - status.phase=Running
               register: _broker_pods
