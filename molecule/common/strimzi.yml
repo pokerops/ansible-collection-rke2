@@ -1,0 +1,8 @@
+---
+# Strimzi scenario side effect. Components are already deployed at converge, so
+# this adds the S3 target velero needs and the ingestor the collector ships to.
+- name: Deploy S3 storage
+  ansible.builtin.import_playbook: seaweedfs.yml
+
+- name: Deploy test ingestor
+  ansible.builtin.import_playbook: ingestor.yml

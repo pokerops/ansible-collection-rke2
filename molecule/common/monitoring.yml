@@ -1,0 +1,8 @@
+---
+# Monitoring scenario side effect: components are skipped at converge, so they
+# are deployed here before the ingestor they ship to.
+- name: Deploy cluster components
+  ansible.builtin.import_playbook: deploy.yml
+
+- name: Deploy test ingestor
+  ansible.builtin.import_playbook: ingestor.yml

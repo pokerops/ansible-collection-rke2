@@ -37,7 +37,7 @@ provisioner:
     create: ../common/libvirt.yml
     prepare: ../common/prepare.yml
     converge: ../common/install.yml
-    side_effect: ../common/seaweedfs.yml
+    side_effect: ../common/strimzi.yml
     destroy: ../common/destroy.yml
   config_options:
     defaults:

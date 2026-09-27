@@ -26,6 +26,7 @@ Default installation uses [ArgoCD Applications](https://argo-cd.readthedocs.io/e
 ## To Do
 
 - Add Molecule test scenario for Sealed Secrets backup and restore
+- Add alerting on operator-managed clusters that exist but deliver no metrics, labelled `pokerops.net/monitor-optional`
 
 ## Collection Variables
 

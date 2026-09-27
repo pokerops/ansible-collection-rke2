@@ -13,3 +13,37 @@ spec:
   podMetricsEndpoints:
     - port: http
       path: /metrics
+---
+# Broker pods for every Kafka the operator creates, in any namespace. Labelled
+# optional because zero Kafka clusters is a valid state: the verify check cannot
+# tell that apart from a broken selector, so coverage comes from alerting on the
+# kube_kafka_created series instead.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: kafka-brokers
+  namespace: strimzi
+  labels:
+    pokerops.net/monitor-optional: "true"
+spec:
+  namespaceSelector:
+    any: true
+  selector:
+    matchLabels:
+      strimzi.io/kind: Kafka
+  podMetricsEndpoints:
+    - port: tcp-prometheus
+      path: /metrics
+      # Without these every broker series looks alike: the labelmap promotes
+      # strimzi.io/cluster and /kind, which is what separates one Kafka cluster
+      # from another once several exist.
+      relabelings:
+        - action: labelmap
+          regex: __meta_kubernetes_pod_label_(strimzi_io_.+)
+          replacement: $1
+        - action: replace
+          sourceLabels: [__meta_kubernetes_namespace]
+          targetLabel: namespace
+        - action: replace
+          sourceLabels: [__meta_kubernetes_pod_name]
+          targetLabel: kubernetes_pod_name

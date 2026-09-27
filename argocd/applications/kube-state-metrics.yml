@@ -17,6 +17,69 @@ spec:
         prometheus:
           monitor:
             enabled: true
+        # Operator-managed clusters are created by users after deploy. Their pods
+        # are covered by monitors elsewhere; this reports the CRs themselves, so
+        # "clusters exist but deliver no metrics" is detectable.
+        rbac:
+          extraRules:
+            - apiGroups: ["kafka.strimzi.io"]
+              resources: ["kafkas"]
+              verbs: ["list", "watch"]
+            - apiGroups: ["acid.zalan.do"]
+              resources: ["postgresqls"]
+              verbs: ["list", "watch"]
+        customResourceState:
+          enabled: true
+          config:
+            spec:
+              resources:
+                - groupVersionKind:
+                    group: kafka.strimzi.io
+                    version: v1beta2
+                    kind: Kafka
+                  metricNamePrefix: kube_kafka
+                  labelsFromPath:
+                    name: [metadata, name]
+                    namespace: [metadata, namespace]
+                  metrics:
+                    - name: created
+                      help: Unix creation timestamp of the Kafka cluster
+                      each:
+                        type: Gauge
+                        gauge:
+                          path: [metadata, creationTimestamp]
+                    - name: status_condition
+                      help: Status conditions reported by the Strimzi operator
+                      each:
+                        type: Gauge
+                        gauge:
+                          path: [status, conditions]
+                          labelsFromPath:
+                            type: [type]
+                          valueFrom: [status]
+                - groupVersionKind:
+                    group: acid.zalan.do
+                    version: v1
+                    kind: postgresql
+                  metricNamePrefix: kube_postgresql
+                  labelsFromPath:
+                    name: [metadata, name]
+                    namespace: [metadata, namespace]
+                  metrics:
+                    - name: created
+                      help: Unix creation timestamp of the Postgres cluster
+                      each:
+                        type: Gauge
+                        gauge:
+                          path: [metadata, creationTimestamp]
+                    - name: status
+                      help: Cluster status reported by the Zalando operator
+                      each:
+                        type: Info
+                        info:
+                          path: [status]
+                          labelsFromPath:
+                            status: [PostgresClusterStatus]
   destination:
     server: https://kubernetes.default.svc
     namespace: monitoring

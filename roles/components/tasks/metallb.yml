@@ -11,7 +11,17 @@
     state: present
     apply: true
     kubeconfig: "{{ rke2_config_path }}"
-    resource_definition: "{{ lookup('ansible.builtin.template', 'templates/metallb.yml' ) | from_yaml }}"
+    resource_definition: "{{ _metallb_chart_manifest | combine(_metallb_chart_overrides, recursive=True) }}"
+  vars:
+    _metallb_chart_manifest: "{{ lookup('ansible.builtin.template', 'templates/metallb.yml') | from_yaml }}"
+    _metallb_chart_overrides:
+      spec:
+        source:
+          helm:
+            valuesObject:
+              prometheus:
+                serviceMonitor:
+                  enabled: "{{ _rke2_monitoring_deploy | bool }}"
 
 - name: Verify ippool ranges
   ansible.builtin.assert:

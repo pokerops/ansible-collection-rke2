@@ -589,8 +589,12 @@
               delay: "{{ _delay }}"
               vars:
                 _app_data: "{{ _argocd_app_data.stdout | from_json }}"
+                # Applications argocd has not reconciled yet carry no status at
+                # all, and selectattr raises rather than skipping, which aborts
+                # the retry loop instead of waiting for them.
+                _app_status: "{{ _app_data | selectattr('status', 'defined') }}"
                 _app_ok: >-
-                  {{ _app_data | selectattr('status.health.status', 'equalto', 'Healthy')
+                  {{ _app_status | selectattr('status.health.status', 'equalto', 'Healthy')
                      | selectattr('status.sync.status', 'equalto', 'Synced')
                      | map(attribute='metadata.name') | list }}
                 _app_failed: "{{ _app_data | rejectattr('metadata.name', 'in', _app_ok) | list }}"
@@ -603,7 +607,8 @@
                 msg: "The following argocd applications have been deployed successfully [{{ _app_success | join(', ') }}]"
               vars:
                 _app_data: "{{ _argocd_app_data.stdout | from_json }}"
-                _app_healthy: "{{ _app_data | selectattr('status.health.status', 'equalto', 'Healthy') }}"
+                _app_status: "{{ _app_data | selectattr('status', 'defined') }}"
+                _app_healthy: "{{ _app_status | selectattr('status.health.status', 'equalto', 'Healthy') }}"
                 _app_sync: "{{ _app_healthy | selectattr('status.sync.status', 'equalto', 'Synced') }}"
                 _app_success: "{{ _app_sync | map(attribute='metadata.name') | unique }}"
 
@@ -614,7 +619,8 @@
               vars:
                 _app_data: "{{ _argocd_app_data.stdout | from_json }}"
                 _app_ok: >-
-                  {{ _app_data | selectattr('status.health.status', 'equalto', 'Healthy')
+                  {{ _app_data | selectattr('status', 'defined')
+                     | selectattr('status.health.status', 'equalto', 'Healthy')
                      | selectattr('status.sync.status', 'equalto', 'Synced')
                      | map(attribute='metadata.name') | list }}
                 _app_failed: "{{ _app_data | rejectattr('metadata.name', 'in', _app_ok) | list }}"

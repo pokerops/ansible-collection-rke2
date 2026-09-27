@@ -1,7 +1,4 @@
 ---
-- name: Deploy cluster components
-  ansible.builtin.import_playbook: deploy.yml
-
 # Stands in for the remote monitoring infrastructure so the cluster agents have
 # somewhere to ship to. Test scaffolding only: never part of a deployed cluster.
 - name: Deploy Vector test ingestor
