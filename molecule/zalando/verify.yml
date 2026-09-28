@@ -212,27 +212,32 @@
 
             # Asserted against the same pod the scrape below uses, not across
             # the whole set: an aggregate check passes when any pod carries the
-            # port and leaves the scrape to fail on one that does not.
+            # port and leaves the scrape to fail on one that does not. Spilo
+            # declares container ports without a name, and selectattr raises on
+            # an item missing the attribute rather than skipping it, so both
+            # tasks filter to named ports through the same expression.
             - name: Verify the exporter sidecar exposes the metrics port
               ansible.builtin.assert:
-                that: "'metrics' in _port_names"
+                that: _named_ports | selectattr('name', 'equalto', 'metrics') | list | length > 0
                 fail_msg: >-
                   No metrics port on {{ _pod.metadata.name }}. The operator is
                   not injecting the postgres-exporter sidecar, so the
                   postgres-clusters PodMonitor has nothing to scrape.
               vars:
                 _pod: "{{ _spilo_pods.resources | first }}"
-                _port_names: >-
+                _named_ports: >-
                   {{ _pod.spec.containers | map(attribute='ports', default=[])
-                     | flatten | map(attribute='name', default='') | list }}
+                     | flatten | selectattr('name', 'defined') | list }}
 
             - name: Set spilo scrape facts
               ansible.builtin.set_fact:
                 _spilo_target: "{{ _pod.status.podIP }}:{{ _port }}"
               vars:
                 _pod: "{{ _spilo_pods.resources | first }}"
-                _ports: "{{ _pod.spec.containers | map(attribute='ports', default=[]) | flatten }}"
-                _port: "{{ _ports | selectattr('name', 'equalto', 'metrics') | map(attribute='containerPort') | first }}"
+                _named_ports: >-
+                  {{ _pod.spec.containers | map(attribute='ports', default=[])
+                     | flatten | selectattr('name', 'defined') | list }}
+                _port: "{{ _named_ports | selectattr('name', 'equalto', 'metrics') | map(attribute='containerPort') | first }}"
 
             - name: Scrape the postgres exporter
               ansible.builtin.command:

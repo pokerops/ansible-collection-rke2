@@ -298,16 +298,23 @@
               delay: 10
               until: _broker_pods.resources | length > 0
 
+            # Asserted against the same pod the scrape below uses, not across
+            # the whole set: an aggregate check passes when any pod carries the
+            # port and leaves the scrape to fail on one that does not. Ports
+            # without a name are filtered first because selectattr raises on an
+            # item missing the attribute rather than skipping it.
             - name: Verify brokers expose the prometheus port
               ansible.builtin.assert:
-                that: _broker_ports | select('equalto', 'tcp-prometheus') | list | length > 0
+                that: _named_ports | selectattr('name', 'equalto', 'tcp-prometheus') | list | length > 0
                 fail_msg: >-
-                  No tcp-prometheus port on broker pods. The Kafka CR is not
-                  referencing the kafka-metrics ConfigMap, so no metrics exist
-                  for the kafka-brokers PodMonitor to scrape.
+                  No tcp-prometheus port on {{ _pod.metadata.name }}. The Kafka
+                  CR is not referencing the kafka-metrics ConfigMap, so no
+                  metrics exist for the kafka-brokers PodMonitor to scrape.
               vars:
-                _containers: "{{ _broker_pods.resources | map(attribute='spec.containers') | flatten }}"
-                _broker_ports: "{{ _containers | map(attribute='ports', default=[]) | flatten | map(attribute='name', default='') | list }}"
+                _pod: "{{ _broker_pods.resources | first }}"
+                _named_ports: >-
+                  {{ _pod.spec.containers | map(attribute='ports', default=[])
+                     | flatten | selectattr('name', 'defined') | list }}
 
             # Port and address come from the pod itself rather than a hardcoded
             # 9404, and the probe runs in an image known to carry curl.
@@ -316,8 +323,10 @@
                 _broker_target: "{{ _pod.status.podIP }}:{{ _port }}"
               vars:
                 _pod: "{{ _broker_pods.resources | first }}"
-                _ports: "{{ _pod.spec.containers | map(attribute='ports', default=[]) | flatten }}"
-                _port: "{{ _ports | selectattr('name', 'equalto', 'tcp-prometheus') | map(attribute='containerPort') | first }}"
+                _named_ports: >-
+                  {{ _pod.spec.containers | map(attribute='ports', default=[])
+                     | flatten | selectattr('name', 'defined') | list }}
+                _port: "{{ _named_ports | selectattr('name', 'equalto', 'tcp-prometheus') | map(attribute='containerPort') | first }}"
 
             - name: Scrape a kafka broker
               ansible.builtin.command:
