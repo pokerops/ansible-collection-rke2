@@ -19,7 +19,22 @@
     # DataUpload clone 3x the volume before the backup pod can start.
     kafka_storage_class: "{{ molecule_storage_class | default('strimzi') }}"
   tasks:
-    - name: Test Strimzi Velero backup and restore
+    # Checked before anything is deployed: unset, converge skipped the whole
+    # monitoring stack, so the assertions below cannot pass and failing here
+    # costs seconds instead of a cluster build plus two ten minute waits.
+    - name: Verify the monitoring collector is enabled
+      ansible.builtin.assert:
+        that: rke2_monitoring_endpoint | default('') | length > 0
+        fail_msg: >-
+          rke2_monitoring_endpoint is unset, so converge skipped the monitoring
+          stack and nothing ships to the ingestor. Set it in the scenario
+          inventory.
+        success_msg: "Collector ships to {{ rke2_monitoring_endpoint }}"
+
+    # Setup rather than backup coverage, so it sits outside the Velero block: a
+    # cluster that never starts reports itself instead of surfacing as a backup
+    # failure with a page of Velero diagnostics.
+    - name: Deploy the Kafka test cluster
       block:
         - name: Delete existing Kafka deployment
           block:
@@ -134,348 +149,393 @@
                 staleReplicaTimeout: "30"
                 fsType: ext4
 
-        - name: Deploy Kafka cluster
-          block:
-            - name: Wait until Strimzi operator pods ready
-              kubernetes.core.k8s_info:
-                kubeconfig: "{{ kubeconfig_path }}"
-                api_version: v1
-                kind: Pod
-                namespace: "{{ kafka_operator_namespace }}"
-              register: operator_pods
-              until:
-                operator_pods.resources[0].status.containerStatuses[0].ready is defined and
-                operator_pods.resources[0].status.containerStatuses[0].ready == true
-              retries: 60
-              delay: 15
+        - name: Wait until Strimzi operator pods ready
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ kubeconfig_path }}"
+            api_version: v1
+            kind: Pod
+            namespace: "{{ kafka_operator_namespace }}"
+          register: operator_pods
+          until:
+            operator_pods.resources[0].status.containerStatuses[0].ready is defined and
+            operator_pods.resources[0].status.containerStatuses[0].ready == true
+          retries: 60
+          delay: 15
 
-            - name: Deploy controllers KafkaNodePool
-              kubernetes.core.k8s:
-                kubeconfig: "{{ kubeconfig_path }}"
-                state: present
-                definition:
-                  apiVersion: kafka.strimzi.io/v1beta2
-                  kind: KafkaNodePool
-                  metadata:
-                    name: "{{ kafka_cluster_name }}-controllers"
-                    namespace: "{{ kafka_namespace }}"
-                    labels:
-                      strimzi.io/cluster: "{{ kafka_cluster_name }}"
-                    annotations:
-                      strimzi.io/next-node-ids: "[1]"
-                  spec:
-                    replicas: 1
-                    roles:
-                      - controller
-                    storage:
-                      type: persistent-claim
-                      size: 2Gi
-                      deleteClaim: true
-                      class: "{{ kafka_storage_class }}"
+        - name: Deploy controllers KafkaNodePool
+          kubernetes.core.k8s:
+            kubeconfig: "{{ kubeconfig_path }}"
+            state: present
+            definition:
+              apiVersion: kafka.strimzi.io/v1beta2
+              kind: KafkaNodePool
+              metadata:
+                name: "{{ kafka_cluster_name }}-controllers"
+                namespace: "{{ kafka_namespace }}"
+                labels:
+                  strimzi.io/cluster: "{{ kafka_cluster_name }}"
+                annotations:
+                  strimzi.io/next-node-ids: "[1]"
+              spec:
+                replicas: 1
+                roles:
+                  - controller
+                storage:
+                  type: persistent-claim
+                  size: 2Gi
+                  deleteClaim: true
+                  class: "{{ kafka_storage_class }}"
 
-            - name: Deploy brokers KafkaNodePool
-              kubernetes.core.k8s:
-                kubeconfig: "{{ kubeconfig_path }}"
-                state: present
-                definition:
-                  apiVersion: kafka.strimzi.io/v1beta2
-                  kind: KafkaNodePool
-                  metadata:
-                    name: "{{ kafka_cluster_name }}-brokers"
-                    namespace: "{{ kafka_namespace }}"
-                    labels:
-                      strimzi.io/cluster: "{{ kafka_cluster_name }}"
-                    annotations:
-                      strimzi.io/next-node-ids: "[0]"
-                  spec:
-                    replicas: 1
-                    roles:
-                      - broker
-                    storage:
-                      type: persistent-claim
-                      size: 2Gi
-                      deleteClaim: true
-                      class: "{{ kafka_storage_class }}"
+        - name: Deploy brokers KafkaNodePool
+          kubernetes.core.k8s:
+            kubeconfig: "{{ kubeconfig_path }}"
+            state: present
+            definition:
+              apiVersion: kafka.strimzi.io/v1beta2
+              kind: KafkaNodePool
+              metadata:
+                name: "{{ kafka_cluster_name }}-brokers"
+                namespace: "{{ kafka_namespace }}"
+                labels:
+                  strimzi.io/cluster: "{{ kafka_cluster_name }}"
+                annotations:
+                  strimzi.io/next-node-ids: "[0]"
+              spec:
+                replicas: 1
+                roles:
+                  - broker
+                storage:
+                  type: persistent-claim
+                  size: 2Gi
+                  deleteClaim: true
+                  class: "{{ kafka_storage_class }}"
 
-            - name: Deploy Kafka cluster in KRaft mode
-              kubernetes.core.k8s:
-                kubeconfig: "{{ kubeconfig_path }}"
-                state: present
-                definition:
-                  apiVersion: kafka.strimzi.io/v1beta2
-                  kind: Kafka
-                  metadata:
-                    name: "{{ kafka_cluster_name }}"
-                    namespace: "{{ kafka_namespace }}"
-                    annotations:
-                      strimzi.io/node-pools: enabled
-                      strimzi.io/kraft: enabled
-                  spec:
-                    kafka:
-                      version: 3.9.0
-                      listeners:
-                        - name: plain
-                          port: 9092
-                          type: internal
-                          tls: false
-                        - name: tls
-                          port: 9093
-                          type: internal
-                          tls: true
-                        - name: external
-                          port: 9094
-                          type: loadbalancer
-                          tls: false
-                          configuration:
-                            bootstrap:
-                              annotations:
-                                metallb.io/address-pool: metallb-private
-                            brokers:
-                              - broker: 0
-                                annotations:
-                                  metallb.io/address-pool: metallb-private
-                      # Brokers expose no metrics until this points at the JMX
-                      # exporter ConfigMap the components role deploys.
-                      metricsConfig:
-                        type: jmxPrometheusExporter
-                        valueFrom:
-                          configMapKeyRef:
-                            name: kafka-metrics
-                            key: kafka-metrics-config.yml
-                      config:
-                        offsets.topic.replication.factor: 1
-                        transaction.state.log.replication.factor: 1
-                        transaction.state.log.min.isr: 1
-                        auto.create.topics.enable: false
-                        log.retention.ms: 3600
-                        log.segment.bytes: 1073741824
-                        delete.topic.enable: true
-                        num.partitions: 1
-                        default.replication.factor: 1
-                        min.insync.replicas: 1
-                    entityOperator:
-                      topicOperator: {}
-                      userOperator: {}
-                    kafkaExporter:
-                      topicRegex: ".*"
-                      groupRegex: ".*"
-
-            - name: Wait for Kafka cluster to be ready
-              kubernetes.core.k8s_info:
-                kubeconfig: "{{ kubeconfig_path }}"
-                api_version: kafka.strimzi.io/v1beta2
-                kind: Kafka
+        - name: Deploy Kafka cluster in KRaft mode
+          kubernetes.core.k8s:
+            kubeconfig: "{{ kubeconfig_path }}"
+            state: present
+            definition:
+              apiVersion: kafka.strimzi.io/v1beta2
+              kind: Kafka
+              metadata:
                 name: "{{ kafka_cluster_name }}"
                 namespace: "{{ kafka_namespace }}"
-              register: kafka_status
-              until:
-                - kafka_status.resources | length > 0
-                - kafka_status.resources[0].status.clusterId is defined
-                - kafka_status.resources[0].status.conditions[0].type == "Ready"
-                - kafka_status.resources[0].status.conditions[0].status == "True"
-              retries: 60
-              delay: 15
+                annotations:
+                  strimzi.io/node-pools: enabled
+                  strimzi.io/kraft: enabled
+              spec:
+                kafka:
+                  version: 3.9.0
+                  listeners:
+                    - name: plain
+                      port: 9092
+                      type: internal
+                      tls: false
+                    - name: tls
+                      port: 9093
+                      type: internal
+                      tls: true
+                    - name: external
+                      port: 9094
+                      type: loadbalancer
+                      tls: false
+                      configuration:
+                        bootstrap:
+                          annotations:
+                            metallb.io/address-pool: metallb-private
+                        brokers:
+                          - broker: 0
+                            annotations:
+                              metallb.io/address-pool: metallb-private
+                  # Brokers expose no metrics until this points at the JMX
+                  # exporter ConfigMap the components role deploys.
+                  metricsConfig:
+                    type: jmxPrometheusExporter
+                    valueFrom:
+                      configMapKeyRef:
+                        name: kafka-metrics
+                        key: kafka-metrics-config.yml
+                  config:
+                    offsets.topic.replication.factor: 1
+                    transaction.state.log.replication.factor: 1
+                    transaction.state.log.min.isr: 1
+                    auto.create.topics.enable: false
+                    log.retention.ms: 3600
+                    log.segment.bytes: 1073741824
+                    delete.topic.enable: true
+                    num.partitions: 1
+                    default.replication.factor: 1
+                    min.insync.replicas: 1
+                entityOperator:
+                  topicOperator: {}
+                  userOperator: {}
+                kafkaExporter:
+                  topicRegex: ".*"
+                  groupRegex: ".*"
 
-            # Proves the JMX exporter ConfigMap is valid and reachable: brokers
-            # expose nothing without it, and a malformed rules file leaves the
-            # port open but the response empty. strimzi.io/kind=Kafka is too
-            # broad here: it also matches the entity-operator pod, which has no
-            # prometheus port, and the kafka-exporter pod, which serves
-            # kafka_exporter_* rather than the kafka_server_* series under test.
-            - name: Query kafka broker pods
-              kubernetes.core.k8s_info:
-                kubeconfig: "{{ kubeconfig_path }}"
-                api_version: v1
-                kind: Pod
-                namespace: "{{ kafka_namespace }}"
-                label_selectors:
-                  - "strimzi.io/cluster={{ kafka_cluster_name }}"
-                  - "strimzi.io/broker-role=true"
-                field_selectors:
-                  - status.phase=Running
-              register: _broker_pods
-              retries: 30
-              delay: 10
-              until: _broker_pods.resources | length > 0
+        - name: Wait for Kafka cluster to be ready
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ kubeconfig_path }}"
+            api_version: kafka.strimzi.io/v1beta2
+            kind: Kafka
+            name: "{{ kafka_cluster_name }}"
+            namespace: "{{ kafka_namespace }}"
+          register: kafka_status
+          until:
+            - kafka_status.resources | length > 0
+            - kafka_status.resources[0].status.clusterId is defined
+            - kafka_status.resources[0].status.conditions[0].type == "Ready"
+            - kafka_status.resources[0].status.conditions[0].status == "True"
+          retries: 60
+          delay: 15
 
-            # Asserted against the same pod the scrape below uses, not across
-            # the whole set: an aggregate check passes when any pod carries the
-            # port and leaves the scrape to fail on one that does not. Ports
-            # without a name are filtered first because selectattr raises on an
-            # item missing the attribute rather than skipping it.
-            - name: Verify brokers expose the prometheus port
-              ansible.builtin.assert:
-                that: _named_ports | selectattr('name', 'equalto', 'tcp-prometheus') | list | length > 0
-                fail_msg: >-
-                  No tcp-prometheus port on {{ _pod.metadata.name }}. The Kafka
-                  CR is not referencing the kafka-metrics ConfigMap, so no
-                  metrics exist for the kafka-brokers PodMonitor to scrape.
-              vars:
-                _pod: "{{ _broker_pods.resources | first }}"
-                _named_ports: >-
-                  {{ _pod.spec.containers | map(attribute='ports', default=[])
-                     | flatten | selectattr('name', 'defined') | list }}
+        - name: Capture original Kafka clusterId
+          ansible.builtin.set_fact:
+            original_cluster_id: "{{ kafka_status.resources[0].status.clusterId }}"
 
-            # Port and address come from the pod itself rather than a hardcoded
-            # 9404, and the probe runs in an image known to carry curl.
-            - name: Set broker scrape facts
-              ansible.builtin.set_fact:
-                _broker_target: "{{ _pod.status.podIP }}:{{ _port }}"
-              vars:
-                _pod: "{{ _broker_pods.resources | first }}"
-                _named_ports: >-
-                  {{ _pod.spec.containers | map(attribute='ports', default=[])
-                     | flatten | selectattr('name', 'defined') | list }}
-                _port: "{{ _named_ports | selectattr('name', 'equalto', 'tcp-prometheus') | map(attribute='containerPort') | first }}"
+        - name: Display detected clusterId
+          ansible.builtin.debug:
+            msg: "Original Kafka clusterId: {{ original_cluster_id }}"
 
-            - name: Scrape a kafka broker
-              ansible.builtin.command:
-                cmd: >-
-                  kubectl --kubeconfig {{ kubeconfig_path }}
-                  run kafka-metrics-probe-{{ 999 | random }} -n {{ kafka_namespace }}
-                  --rm -i --restart=Never --image=curlimages/curl:8.11.1 --
-                  curl -sS --max-time 10 http://{{ _broker_target }}/metrics
-              register: _broker_metrics
-              changed_when: false
-              retries: 10
-              delay: 15
-              until:
-                - _broker_metrics.rc == 0
-                - "'kafka_server' in _broker_metrics.stdout"
+        - name: Wait for Kafka bootstrap LoadBalancer to get external IP
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ kubeconfig_path }}"
+            api_version: v1
+            kind: Service
+            namespace: "{{ kafka_namespace }}"
+            name: "{{ kafka_cluster_name }}-kafka-external-bootstrap"
+          register: kafka_bootstrap_svc
+          until:
+            kafka_bootstrap_svc.resources[0].status.loadBalancer.ingress is defined and
+            kafka_bootstrap_svc.resources[0].status.loadBalancer.ingress[0].ip is defined
+          retries: 30
+          delay: 10
 
-            - name: Verify brokers emit kafka metrics
-              ansible.builtin.assert:
-                that: _series | length > 0
-                fail_msg: >-
-                  Broker endpoint returned no kafka_server_* series; the JMX
-                  exporter rules in the kafka-metrics ConfigMap are not matching.
-                success_msg: "Brokers emit {{ _series | length }} kafka_server_* series"
-              vars:
-                _series: "{{ _broker_metrics.stdout_lines | select('match', '^kafka_server') | list }}"
+        - name: Debug bootstrap LoadBalancer IP
+          ansible.builtin.debug:
+            msg: "Kafka bootstrap external IP: {{ kafka_bootstrap_svc.resources[0].status.loadBalancer.ingress[0].ip }}"
 
-            # End to end: the broker endpoint above proves the JMX ConfigMap
-            # works, this proves the kafka-brokers PodMonitor selector matches
-            # and alloy delivers what it scrapes.
-            - name: Query ingestor pod
-              kubernetes.core.k8s_info:
-                kubeconfig: "{{ kubeconfig_path }}"
-                kind: Pod
-                namespace: monitoring
-                label_selectors:
-                  - "app=vector-ingestor"
-                field_selectors:
-                  - status.phase=Running
-              register: _ingestor_query
-              retries: 30
-              delay: 10
-              until: _ingestor_query.resources | length > 0
+        - name: Wait for each Kafka broker LoadBalancer to get external IP
+          vars:
+            broker_ids: [0]
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ kubeconfig_path }}"
+            api_version: v1
+            kind: Service
+            namespace: "{{ kafka_namespace }}"
+            name: "{{ kafka_cluster_name }}-{{ kafka_cluster_name }}-brokers-{{ item }}"
+          register: kafka_broker_svc
+          until:
+            kafka_broker_svc.resources[0].status.loadBalancer.ingress is defined and
+            kafka_broker_svc.resources[0].status.loadBalancer.ingress[0].ip is defined
+          retries: 30
+          delay: 10
+          loop: "{{ broker_ids }}"
+          loop_control:
+            label: "broker-{{ item }}"
 
-            - name: Wait for broker metrics to reach the ingestor
-              ansible.builtin.command:
-                cmd: >-
-                  kubectl --kubeconfig {{ kubeconfig_path }}
-                  exec -n monitoring {{ _ingestor_query.resources | first | json_query('metadata.name') }}
-                  -- sh -c "grep -c kafka_server /data/metrics.log || true"
-              register: _ingested
-              changed_when: false
-              retries: 40
-              delay: 15
-              until:
-                - _ingested.rc == 0
-                - (_ingested.stdout | trim | int) > 0
+        - name: Show broker external IPs
+          ansible.builtin.debug:
+            msg: "Broker {{ item.item }} external IP: {{ item.resources[0].status.loadBalancer.ingress[0].ip }}"
+          loop: "{{ kafka_broker_svc.results }}"
+          loop_control:
+            label: "broker-{{ item.item }}"
 
-            - name: Verify broker metrics are collected end to end
-              ansible.builtin.assert:
-                that: (_ingested.stdout | trim | int) > 0
-                fail_msg: >-
-                  Brokers serve metrics but none reached the ingestor. The
-                  kafka-brokers PodMonitor selector or its tcp-prometheus port
-                  is not matching the broker pods.
-                success_msg: "Ingestor received {{ _ingested.stdout | trim }} kafka_server events"
+    # Its own task with its own rescue. Nested in the Velero block this reported
+    # as "backup verification failed" and dumped Velero diagnostics for what is
+    # a metrics collection problem.
+    - name: Verify kafka metrics collection
+      block:
+        # Proves the JMX exporter ConfigMap is valid and reachable: brokers
+        # expose nothing without it, and a malformed rules file leaves the
+        # port open but the response empty. strimzi.io/kind=Kafka is too
+        # broad here: it also matches the entity-operator pod, which has no
+        # prometheus port, and the kafka-exporter pod, which serves
+        # kafka_exporter_* rather than the kafka_server_* series under test.
+        - name: Query kafka broker pods
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ kubeconfig_path }}"
+            api_version: v1
+            kind: Pod
+            namespace: "{{ kafka_namespace }}"
+            label_selectors:
+              - "strimzi.io/cluster={{ kafka_cluster_name }}"
+              - "strimzi.io/broker-role=true"
+            field_selectors:
+              - status.phase=Running
+          register: _broker_pods
+          retries: 30
+          delay: 10
+          until: _broker_pods.resources | length > 0
 
-            # Both kafka monitors are labelled monitor-optional, which exempts
-            # them from the namespace-coverage assert in the monitoring
-            # scenario: zero Kafka clusters is a valid state and reads the same
-            # as a broken selector. That exemption is only sound if the CR-state
-            # series kube-state-metrics derives from the Kafka CR actually
-            # arrive, so assert them here, where a cluster is known to exist.
-            - name: Wait for kafka CR state metrics to reach the ingestor
-              ansible.builtin.command:
-                cmd: >-
-                  kubectl --kubeconfig {{ kubeconfig_path }}
-                  exec -n monitoring {{ _ingestor_query.resources | first | json_query('metadata.name') }}
-                  -- sh -c "grep -c kube_kafka_created /data/metrics.log || true"
-              register: _ingested_crstate
-              changed_when: false
-              retries: 40
-              delay: 15
-              until:
-                - _ingested_crstate.rc == 0
-                - (_ingested_crstate.stdout | trim | int) > 0
+        # Asserted against the same pod the scrape below uses, not across
+        # the whole set: an aggregate check passes when any pod carries the
+        # port and leaves the scrape to fail on one that does not. Ports
+        # without a name are filtered first because selectattr raises on an
+        # item missing the attribute rather than skipping it.
+        - name: Verify brokers expose the prometheus port
+          ansible.builtin.assert:
+            that: _named_ports | selectattr('name', 'equalto', 'tcp-prometheus') | list | length > 0
+            fail_msg: >-
+              No tcp-prometheus port on {{ _pod.metadata.name }}. The Kafka
+              CR is not referencing the kafka-metrics ConfigMap, so no
+              metrics exist for the kafka-brokers PodMonitor to scrape.
+          vars:
+            _pod: "{{ _broker_pods.resources | first }}"
+            _named_ports: >-
+              {{ _pod.spec.containers | map(attribute='ports', default=[])
+                 | flatten | selectattr('name', 'defined') | list }}
 
-            - name: Verify kafka CR state metrics are collected end to end
-              ansible.builtin.assert:
-                that: (_ingested_crstate.stdout | trim | int) > 0
-                fail_msg: >-
-                  No kube_kafka_created series reached the ingestor although a
-                  Kafka cluster exists. Either the kube-state-metrics
-                  customResourceState config or its RBAC rule for
-                  kafka.strimzi.io is not producing the series that the
-                  monitor-optional exemption depends on.
-                success_msg: "Ingestor received {{ _ingested_crstate.stdout | trim }} kube_kafka_created events"
+        # Port and address come from the pod itself rather than a hardcoded
+        # 9404, and the probe runs in an image known to carry curl.
+        - name: Set broker scrape facts
+          ansible.builtin.set_fact:
+            _broker_target: "{{ _pod.status.podIP }}:{{ _port }}"
+          vars:
+            _pod: "{{ _broker_pods.resources | first }}"
+            _named_ports: >-
+              {{ _pod.spec.containers | map(attribute='ports', default=[])
+                 | flatten | selectattr('name', 'defined') | list }}
+            _port: "{{ _named_ports | selectattr('name', 'equalto', 'tcp-prometheus') | map(attribute='containerPort') | first }}"
 
-            - name: Capture original Kafka clusterId
-              ansible.builtin.set_fact:
-                original_cluster_id: "{{ kafka_status.resources[0].status.clusterId }}"
+        - name: Scrape a kafka broker
+          ansible.builtin.command:
+            cmd: >-
+              kubectl --kubeconfig {{ kubeconfig_path }}
+              run kafka-metrics-probe-{{ 999 | random }} -n {{ kafka_namespace }}
+              --rm -i --restart=Never --image=curlimages/curl:8.11.1 --
+              curl -sS --max-time 10 http://{{ _broker_target }}/metrics
+          register: _broker_metrics
+          changed_when: false
+          retries: 10
+          delay: 15
+          until:
+            - _broker_metrics.rc == 0
+            - "'kafka_server' in _broker_metrics.stdout"
 
-            - name: Display detected clusterId
-              ansible.builtin.debug:
-                msg: "Original Kafka clusterId: {{ original_cluster_id }}"
+        - name: Verify brokers emit kafka metrics
+          ansible.builtin.assert:
+            that: _series | length > 0
+            fail_msg: >-
+              Broker endpoint returned no kafka_server_* series; the JMX
+              exporter rules in the kafka-metrics ConfigMap are not matching.
+            success_msg: "Brokers emit {{ _series | length }} kafka_server_* series"
+          vars:
+            _series: "{{ _broker_metrics.stdout_lines | select('match', '^kafka_server') | list }}"
 
-            - name: Wait for Kafka bootstrap LoadBalancer to get external IP
-              kubernetes.core.k8s_info:
-                kubeconfig: "{{ kubeconfig_path }}"
-                api_version: v1
-                kind: Service
-                namespace: "{{ kafka_namespace }}"
-                name: "{{ kafka_cluster_name }}-kafka-external-bootstrap"
-              register: kafka_bootstrap_svc
-              until:
-                kafka_bootstrap_svc.resources[0].status.loadBalancer.ingress is defined and
-                kafka_bootstrap_svc.resources[0].status.loadBalancer.ingress[0].ip is defined
-              retries: 30
-              delay: 10
+        # End to end: the broker endpoint above proves the JMX ConfigMap
+        # works, this proves the kafka-brokers PodMonitor selector matches
+        # and alloy delivers what it scrapes.
+        - name: Query ingestor pod
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ kubeconfig_path }}"
+            kind: Pod
+            namespace: monitoring
+            label_selectors:
+              - "app=vector-ingestor"
+            field_selectors:
+              - status.phase=Running
+          register: _ingestor_query
+          retries: 30
+          delay: 10
+          until: _ingestor_query.resources | length > 0
 
-            - name: Debug bootstrap LoadBalancer IP
-              ansible.builtin.debug:
-                msg: "Kafka bootstrap external IP: {{ kafka_bootstrap_svc.resources[0].status.loadBalancer.ingress[0].ip }}"
+        - name: Wait for broker metrics to reach the ingestor
+          ansible.builtin.command:
+            cmd: >-
+              kubectl --kubeconfig {{ kubeconfig_path }}
+              exec -n monitoring {{ _ingestor_query.resources | first | json_query('metadata.name') }}
+              -- sh -c "grep -c kafka_server /data/metrics.log || true"
+          register: _ingested
+          changed_when: false
+          retries: 40
+          delay: 15
+          until:
+            - _ingested.rc == 0
+            - (_ingested.stdout | trim | int) > 0
 
-            - name: Wait for each Kafka broker LoadBalancer to get external IP
-              vars:
-                broker_ids: [0]
-              kubernetes.core.k8s_info:
-                kubeconfig: "{{ kubeconfig_path }}"
-                api_version: v1
-                kind: Service
-                namespace: "{{ kafka_namespace }}"
-                name: "{{ kafka_cluster_name }}-{{ kafka_cluster_name }}-brokers-{{ item }}"
-              register: kafka_broker_svc
-              until:
-                kafka_broker_svc.resources[0].status.loadBalancer.ingress is defined and
-                kafka_broker_svc.resources[0].status.loadBalancer.ingress[0].ip is defined
-              retries: 30
-              delay: 10
-              loop: "{{ broker_ids }}"
-              loop_control:
-                label: "broker-{{ item }}"
+        - name: Verify broker metrics are collected end to end
+          ansible.builtin.assert:
+            that: (_ingested.stdout | trim | int) > 0
+            fail_msg: >-
+              Brokers serve metrics but none reached the ingestor. The
+              kafka-brokers PodMonitor selector or its tcp-prometheus port
+              is not matching the broker pods.
+            success_msg: "Ingestor received {{ _ingested.stdout | trim }} kafka_server events"
 
-            - name: Show broker external IPs
-              ansible.builtin.debug:
-                msg: "Broker {{ item.item }} external IP: {{ item.resources[0].status.loadBalancer.ingress[0].ip }}"
-              loop: "{{ kafka_broker_svc.results }}"
-              loop_control:
-                label: "broker-{{ item.item }}"
+        # Both kafka monitors are labelled monitor-optional, which exempts
+        # them from the namespace-coverage assert in the monitoring
+        # scenario: zero Kafka clusters is a valid state and reads the same
+        # as a broken selector. That exemption is only sound if the CR-state
+        # series kube-state-metrics derives from the Kafka CR actually
+        # arrive, so assert them here, where a cluster is known to exist.
+        - name: Wait for kafka CR state metrics to reach the ingestor
+          ansible.builtin.command:
+            cmd: >-
+              kubectl --kubeconfig {{ kubeconfig_path }}
+              exec -n monitoring {{ _ingestor_query.resources | first | json_query('metadata.name') }}
+              -- sh -c "grep -c kube_kafka_created /data/metrics.log || true"
+          register: _ingested_crstate
+          changed_when: false
+          retries: 40
+          delay: 15
+          until:
+            - _ingested_crstate.rc == 0
+            - (_ingested_crstate.stdout | trim | int) > 0
 
+        - name: Verify kafka CR state metrics are collected end to end
+          ansible.builtin.assert:
+            that: (_ingested_crstate.stdout | trim | int) > 0
+            fail_msg: >-
+              No kube_kafka_created series reached the ingestor although a
+              Kafka cluster exists. Either the kube-state-metrics
+              customResourceState config or its RBAC rule for
+              kafka.strimzi.io is not producing the series that the
+              monitor-optional exemption depends on.
+            success_msg: "Ingestor received {{ _ingested_crstate.stdout | trim }} kube_kafka_created events"
+
+      rescue:
+        - name: Query the kafka-brokers PodMonitor
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ kubeconfig_path }}"
+            api_version: monitoring.coreos.com/v1
+            kind: PodMonitor
+            name: kafka-brokers
+            namespace: "{{ kafka_operator_namespace }}"
+          register: _podmonitor_query
+          failed_when: false
+
+        - name: Debug the kafka-brokers PodMonitor
+          ansible.builtin.debug:
+            msg: >-
+              {{ _podmonitor_query.resources | default([])
+                 | map(attribute='spec') | list }}
+
+        # Separates a monitor alloy refused from one whose selector matched no
+        # pods: the first logs a scrapeconfig error, the second logs nothing.
+        # Absent both, the endpoint is wrong and remote_write is the one failing.
+        - name: Capture alloy collector logs
+          ansible.builtin.command:
+            cmd: >-
+              kubectl --kubeconfig {{ kubeconfig_path }}
+              logs -n monitoring alloy-0 -c alloy --tail=200
+          register: _alloy_logs
+          changed_when: false
+          failed_when: false
+
+        - name: Debug alloy collector errors
+          ansible.builtin.debug:
+            msg: >-
+              {{ _alloy_logs.stdout_lines | default([])
+                 | select('search', 'error generating scrapeconfig|level=error|remote_write')
+                 | list }}
+
+        - name: Terminate playbook
+          ansible.builtin.fail:
+            msg: "kafka metrics verification failed"
+
+    - name: Test Strimzi Velero backup and restore
+      block:
         - name: Create KafkaTopic
           kubernetes.core.k8s:
             kubeconfig: "{{ kubeconfig_path }}"

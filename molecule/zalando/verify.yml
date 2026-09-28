@@ -17,7 +17,22 @@
     # DataUpload clone 3x the volume before the backup pod can start.
     postgres_storage_class: "{{ molecule_storage_class | default('postgres') }}"
   tasks:
-    - name: Test Zalando Velero backup and restore
+    # Checked before anything is deployed: unset, converge skipped the whole
+    # monitoring stack, so the assertions below cannot pass and failing here
+    # costs seconds instead of a cluster build plus two ten minute waits.
+    - name: Verify the monitoring collector is enabled
+      ansible.builtin.assert:
+        that: rke2_monitoring_endpoint | default('') | length > 0
+        fail_msg: >-
+          rke2_monitoring_endpoint is unset, so converge skipped the monitoring
+          stack and nothing ships to the ingestor. Set it in the scenario
+          inventory.
+        success_msg: "Collector ships to {{ rke2_monitoring_endpoint }}"
+
+    # Setup rather than backup coverage, so it sits outside the Velero block: a
+    # cluster that never starts reports itself instead of surfacing as a backup
+    # failure with a page of Velero diagnostics.
+    - name: Deploy the PostgreSQL test cluster
       block:
         - name: Destroy PostgreSQL deployment
           block:
@@ -192,196 +207,238 @@
               ansible.builtin.fail:
                 msg: "PostgreSQL cluster {{ postgres_cluster_name }} did not become ready before timeout."
 
-        - name: Verify postgres metrics collection
+    - name: Verify postgres metrics collection
+      block:
+        - name: Query spilo pods
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ kubeconfig_path }}"
+            api_version: v1
+            kind: Pod
+            namespace: "{{ postgres_namespace }}"
+            label_selectors:
+              - "application=spilo"
+              - "cluster-name={{ postgres_cluster_name }}"
+            field_selectors:
+              - status.phase=Running
+          register: _spilo_pods
+          retries: 30
+          delay: 10
+          until: _spilo_pods.resources | length > 0
+
+        # Asserted against the same pod the scrape below uses, not across
+        # the whole set: an aggregate check passes when any pod carries the
+        # port and leaves the scrape to fail on one that does not. Spilo
+        # declares container ports without a name, and selectattr raises on
+        # an item missing the attribute rather than skipping it, so both
+        # tasks filter to named ports through the same expression.
+        - name: Verify the exporter sidecar exposes the metrics port
+          ansible.builtin.assert:
+            that: _named_ports | selectattr('name', 'equalto', 'metrics') | list | length > 0
+            fail_msg: >-
+              No metrics port on {{ _pod.metadata.name }}. The operator is
+              not injecting the postgres-exporter sidecar, so the
+              postgres-clusters PodMonitor has nothing to scrape.
+          vars:
+            _pod: "{{ _spilo_pods.resources | first }}"
+            _named_ports: >-
+              {{ _pod.spec.containers | map(attribute='ports', default=[])
+                 | flatten | selectattr('name', 'defined') | list }}
+
+        - name: Set spilo scrape facts
+          ansible.builtin.set_fact:
+            _spilo_target: "{{ _pod.status.podIP }}:{{ _port }}"
+            _spilo_pod: "{{ _pod.metadata.name }}"
+          vars:
+            _pod: "{{ _spilo_pods.resources | first }}"
+            _named_ports: >-
+              {{ _pod.spec.containers | map(attribute='ports', default=[])
+                 | flatten | selectattr('name', 'defined') | list }}
+            _port: "{{ _named_ports | selectattr('name', 'equalto', 'metrics') | map(attribute='containerPort') | first }}"
+
+        # pg_up 0 means the sidecar is running but cannot reach or
+        # authenticate against postgres, and the exporter names the cause
+        # only in its own log. The wait is what fails when that happens, so
+        # the capture has to sit in a rescue: placed after the scrape it
+        # never runs, which is how the first two attempts at this came back
+        # with a bare pg_up 0 and nothing to act on.
+        - name: Verify the exporter is connected to postgres
           block:
-            - name: Query spilo pods
-              kubernetes.core.k8s_info:
-                kubeconfig: "{{ kubeconfig_path }}"
-                api_version: v1
-                kind: Pod
-                namespace: "{{ postgres_namespace }}"
-                label_selectors:
-                  - "application=spilo"
-                  - "cluster-name={{ postgres_cluster_name }}"
-                field_selectors:
-                  - status.phase=Running
-              register: _spilo_pods
-              retries: 30
-              delay: 10
-              until: _spilo_pods.resources | length > 0
-
-            # Asserted against the same pod the scrape below uses, not across
-            # the whole set: an aggregate check passes when any pod carries the
-            # port and leaves the scrape to fail on one that does not. Spilo
-            # declares container ports without a name, and selectattr raises on
-            # an item missing the attribute rather than skipping it, so both
-            # tasks filter to named ports through the same expression.
-            - name: Verify the exporter sidecar exposes the metrics port
-              ansible.builtin.assert:
-                that: _named_ports | selectattr('name', 'equalto', 'metrics') | list | length > 0
-                fail_msg: >-
-                  No metrics port on {{ _pod.metadata.name }}. The operator is
-                  not injecting the postgres-exporter sidecar, so the
-                  postgres-clusters PodMonitor has nothing to scrape.
-              vars:
-                _pod: "{{ _spilo_pods.resources | first }}"
-                _named_ports: >-
-                  {{ _pod.spec.containers | map(attribute='ports', default=[])
-                     | flatten | selectattr('name', 'defined') | list }}
-
-            - name: Set spilo scrape facts
-              ansible.builtin.set_fact:
-                _spilo_target: "{{ _pod.status.podIP }}:{{ _port }}"
-                _spilo_pod: "{{ _pod.metadata.name }}"
-              vars:
-                _pod: "{{ _spilo_pods.resources | first }}"
-                _named_ports: >-
-                  {{ _pod.spec.containers | map(attribute='ports', default=[])
-                     | flatten | selectattr('name', 'defined') | list }}
-                _port: "{{ _named_ports | selectattr('name', 'equalto', 'metrics') | map(attribute='containerPort') | first }}"
-
-            # pg_up 0 means the sidecar is running but cannot reach or
-            # authenticate against postgres, and the exporter names the cause
-            # only in its own log. The wait is what fails when that happens, so
-            # the capture has to sit in a rescue: placed after the scrape it
-            # never runs, which is how the first two attempts at this came back
-            # with a bare pg_up 0 and nothing to act on.
-            - name: Verify the exporter is connected to postgres
-              block:
-                - name: Scrape the postgres exporter
-                  ansible.builtin.command:
-                    cmd: >-
-                      kubectl --kubeconfig {{ kubeconfig_path }}
-                      run postgres-metrics-probe-{{ 999 | random }} -n {{ postgres_namespace }}
-                      --rm -i --restart=Never --image=curlimages/curl:8.11.1 --
-                      curl -sS --max-time 10 http://{{ _spilo_target }}/metrics
-                  register: _spilo_metrics
-                  changed_when: false
-                  retries: 20
-                  delay: 15
-                  until:
-                    - _spilo_metrics.rc == 0
-                    # pg_up alone matches pg_up 0, which would exit the loop on
-                    # the first scrape and leave no time to connect.
-                    - _spilo_metrics.stdout_lines | select('match', '^pg_up 1') | list | length > 0
-
-                - name: Report exporter connection
-                  ansible.builtin.debug:
-                    msg: "Exporter reports pg_up 1"
-
-              rescue:
-                - name: Capture exporter logs
-                  ansible.builtin.command:
-                    cmd: >-
-                      kubectl --kubeconfig {{ kubeconfig_path }}
-                      logs -n {{ postgres_namespace }} {{ _spilo_pod }}
-                      -c postgres-exporter --tail=100
-                  register: _exporter_logs
-                  changed_when: false
-                  failed_when: false
-
-                # Never prints the password: USER shows directly whether
-                # $(POSTGRES_USER) expanded, and the password's length settles
-                # the same question for it, since the unexpanded literal
-                # "$(POSTGRES_PASSWORD)" is 20 characters and a spilo password
-                # is not. The length is taken with wc rather than ${#VAR},
-                # whose {# opens a jinja comment and fails to template.
-                - name: Inspect the exporter connection settings
-                  ansible.builtin.command:
-                    cmd: >-
-                      kubectl --kubeconfig {{ kubeconfig_path }}
-                      exec -n {{ postgres_namespace }} {{ _spilo_pod }}
-                      -c postgres-exporter -- sh -c
-                      'L=$(printf %s "$DATA_SOURCE_PASS" | wc -c);
-                      printf "URI=[%s] USER=[%s] PASS_LEN=%s\n"
-                      "$DATA_SOURCE_URI" "$DATA_SOURCE_USER" "$L"'
-                  register: _exporter_env
-                  changed_when: false
-                  failed_when: false
-
-                - name: Report why the exporter is not connected
-                  ansible.builtin.fail:
-                    msg: >-
-                      The exporter never reported pg_up 1.
-                      Connection settings: {{ _exporter_env.stdout | default('<unavailable>') }} --
-                      exporter log: {{ _exporter_logs.stdout | default('<unavailable>') }} --
-                      scrape series: {{ _scrape_errors | join(' ') }}
-                  vars:
-                    _scrape_errors: >-
-                      {{ _spilo_metrics.stdout_lines | default([])
-                         | select('match', '^pg_(up|exporter_last_scrape_error|exporter_scrapes_total)')
-                         | list }}
-
-            - name: Query ingestor pod
-              kubernetes.core.k8s_info:
-                kubeconfig: "{{ kubeconfig_path }}"
-                kind: Pod
-                namespace: monitoring
-                label_selectors:
-                  - "app=vector-ingestor"
-                field_selectors:
-                  - status.phase=Running
-              register: _ingestor_query
-              retries: 30
-              delay: 10
-              until: _ingestor_query.resources | length > 0
-
-            # End to end: the scrape above proves the sidecar works, this proves
-            # the postgres-clusters PodMonitor selector matches and alloy
-            # delivers what it scrapes.
-            - name: Wait for postgres metrics to reach the ingestor
+            - name: Scrape the postgres exporter
               ansible.builtin.command:
                 cmd: >-
                   kubectl --kubeconfig {{ kubeconfig_path }}
-                  exec -n monitoring {{ _ingestor_query.resources | first | json_query('metadata.name') }}
-                  -- sh -c "grep -c pg_up /data/metrics.log || true"
-              register: _ingested_pg
+                  run postgres-metrics-probe-{{ 999 | random }} -n {{ postgres_namespace }}
+                  --rm -i --restart=Never --image=curlimages/curl:8.11.1 --
+                  curl -sS --max-time 10 http://{{ _spilo_target }}/metrics
+              register: _spilo_metrics
               changed_when: false
-              retries: 40
+              retries: 20
               delay: 15
               until:
-                - _ingested_pg.rc == 0
-                - (_ingested_pg.stdout | trim | int) > 0
+                - _spilo_metrics.rc == 0
+                # pg_up alone matches pg_up 0, which would exit the loop on
+                # the first scrape and leave no time to connect.
+                - _spilo_metrics.stdout_lines | select('match', '^pg_up 1') | list | length > 0
 
-            - name: Verify postgres metrics are collected end to end
-              ansible.builtin.assert:
-                that: (_ingested_pg.stdout | trim | int) > 0
-                fail_msg: >-
-                  The exporter serves metrics but none reached the ingestor. The
-                  postgres-clusters PodMonitor selector or its metrics port is
-                  not matching the spilo pods.
-                success_msg: "Ingestor received {{ _ingested_pg.stdout | trim }} pg_up events"
+            - name: Report exporter connection
+              ansible.builtin.debug:
+                msg: "Exporter reports pg_up 1"
 
-            # The postgres-clusters monitor is labelled monitor-optional, which
-            # exempts it from the namespace-coverage assert in the monitoring
-            # scenario. That exemption is only sound if the CR-state series
-            # kube-state-metrics derives from the postgresql CR actually arrive,
-            # so assert them here, where a cluster is known to exist.
-            - name: Wait for postgres CR state metrics to reach the ingestor
+          rescue:
+            - name: Capture exporter logs
               ansible.builtin.command:
                 cmd: >-
                   kubectl --kubeconfig {{ kubeconfig_path }}
-                  exec -n monitoring {{ _ingestor_query.resources | first | json_query('metadata.name') }}
-                  -- sh -c "grep -c kube_postgresql_created /data/metrics.log || true"
-              register: _ingested_crstate
+                  logs -n {{ postgres_namespace }} {{ _spilo_pod }}
+                  -c postgres-exporter --tail=100
+              register: _exporter_logs
               changed_when: false
-              retries: 40
-              delay: 15
-              until:
-                - _ingested_crstate.rc == 0
-                - (_ingested_crstate.stdout | trim | int) > 0
+              failed_when: false
 
-            - name: Verify postgres CR state metrics are collected end to end
-              ansible.builtin.assert:
-                that: (_ingested_crstate.stdout | trim | int) > 0
-                fail_msg: >-
-                  No kube_postgresql_created series reached the ingestor although
-                  a Postgres cluster exists. Either the kube-state-metrics
-                  customResourceState config or its RBAC rule for acid.zalan.do
-                  is not producing the series that the monitor-optional
-                  exemption depends on.
-                success_msg: "Ingestor received {{ _ingested_crstate.stdout | trim }} kube_postgresql_created events"
+            # Never prints the password: USER shows directly whether
+            # $(POSTGRES_USER) expanded, and the password's length settles
+            # the same question for it, since the unexpanded literal
+            # "$(POSTGRES_PASSWORD)" is 20 characters and a spilo password
+            # is not. The length is taken with wc rather than ${#VAR},
+            # whose {# opens a jinja comment and fails to template.
+            - name: Inspect the exporter connection settings
+              ansible.builtin.command:
+                cmd: >-
+                  kubectl --kubeconfig {{ kubeconfig_path }}
+                  exec -n {{ postgres_namespace }} {{ _spilo_pod }}
+                  -c postgres-exporter -- sh -c
+                  'L=$(printf %s "$DATA_SOURCE_PASS" | wc -c);
+                  printf "URI=[%s] USER=[%s] PASS_LEN=%s\n"
+                  "$DATA_SOURCE_URI" "$DATA_SOURCE_USER" "$L"'
+              register: _exporter_env
+              changed_when: false
+              failed_when: false
 
+            - name: Report why the exporter is not connected
+              ansible.builtin.fail:
+                msg: >-
+                  The exporter never reported pg_up 1.
+                  Connection settings: {{ _exporter_env.stdout | default('<unavailable>') }} --
+                  exporter log: {{ _exporter_logs.stdout | default('<unavailable>') }} --
+                  scrape series: {{ _scrape_errors | join(' ') }}
+              vars:
+                _scrape_errors: >-
+                  {{ _spilo_metrics.stdout_lines | default([])
+                     | select('match', '^pg_(up|exporter_last_scrape_error|exporter_scrapes_total)')
+                     | list }}
+
+        - name: Query ingestor pod
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ kubeconfig_path }}"
+            kind: Pod
+            namespace: monitoring
+            label_selectors:
+              - "app=vector-ingestor"
+            field_selectors:
+              - status.phase=Running
+          register: _ingestor_query
+          retries: 30
+          delay: 10
+          until: _ingestor_query.resources | length > 0
+
+        # End to end: the scrape above proves the sidecar works, this proves
+        # the postgres-clusters PodMonitor selector matches and alloy
+        # delivers what it scrapes.
+        - name: Wait for postgres metrics to reach the ingestor
+          ansible.builtin.command:
+            cmd: >-
+              kubectl --kubeconfig {{ kubeconfig_path }}
+              exec -n monitoring {{ _ingestor_query.resources | first | json_query('metadata.name') }}
+              -- sh -c "grep -c pg_up /data/metrics.log || true"
+          register: _ingested_pg
+          changed_when: false
+          retries: 40
+          delay: 15
+          until:
+            - _ingested_pg.rc == 0
+            - (_ingested_pg.stdout | trim | int) > 0
+
+        - name: Verify postgres metrics are collected end to end
+          ansible.builtin.assert:
+            that: (_ingested_pg.stdout | trim | int) > 0
+            fail_msg: >-
+              The exporter serves metrics but none reached the ingestor. The
+              postgres-clusters PodMonitor selector or its metrics port is
+              not matching the spilo pods.
+            success_msg: "Ingestor received {{ _ingested_pg.stdout | trim }} pg_up events"
+
+        # The postgres-clusters monitor is labelled monitor-optional, which
+        # exempts it from the namespace-coverage assert in the monitoring
+        # scenario. That exemption is only sound if the CR-state series
+        # kube-state-metrics derives from the postgresql CR actually arrive,
+        # so assert them here, where a cluster is known to exist.
+        - name: Wait for postgres CR state metrics to reach the ingestor
+          ansible.builtin.command:
+            cmd: >-
+              kubectl --kubeconfig {{ kubeconfig_path }}
+              exec -n monitoring {{ _ingestor_query.resources | first | json_query('metadata.name') }}
+              -- sh -c "grep -c kube_postgresql_created /data/metrics.log || true"
+          register: _ingested_crstate
+          changed_when: false
+          retries: 40
+          delay: 15
+          until:
+            - _ingested_crstate.rc == 0
+            - (_ingested_crstate.stdout | trim | int) > 0
+
+        - name: Verify postgres CR state metrics are collected end to end
+          ansible.builtin.assert:
+            that: (_ingested_crstate.stdout | trim | int) > 0
+            fail_msg: >-
+              No kube_postgresql_created series reached the ingestor although
+              a Postgres cluster exists. Either the kube-state-metrics
+              customResourceState config or its RBAC rule for acid.zalan.do
+              is not producing the series that the monitor-optional
+              exemption depends on.
+            success_msg: "Ingestor received {{ _ingested_crstate.stdout | trim }} kube_postgresql_created events"
+
+      rescue:
+        - name: Query the postgres-clusters PodMonitor
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ kubeconfig_path }}"
+            api_version: monitoring.coreos.com/v1
+            kind: PodMonitor
+            name: postgres-clusters
+            namespace: postgres-operator
+          register: _podmonitor_query
+          failed_when: false
+
+        - name: Debug the postgres-clusters PodMonitor
+          ansible.builtin.debug:
+            msg: >-
+              {{ _podmonitor_query.resources | default([])
+                 | map(attribute='spec') | list }}
+
+        # Separates a monitor alloy refused from one whose selector matched no
+        # pods: the first logs a scrapeconfig error, the second logs nothing.
+        # Absent both, the endpoint is wrong and remote_write is the one failing.
+        - name: Capture alloy collector logs
+          ansible.builtin.command:
+            cmd: >-
+              kubectl --kubeconfig {{ kubeconfig_path }}
+              logs -n monitoring alloy-0 -c alloy --tail=200
+          register: _alloy_logs
+          changed_when: false
+          failed_when: false
+
+        - name: Debug alloy collector errors
+          ansible.builtin.debug:
+            msg: >-
+              {{ _alloy_logs.stdout_lines | default([])
+                 | select('search', 'error generating scrapeconfig|level=error|remote_write')
+                 | list }}
+
+        - name: Terminate playbook
+          ansible.builtin.fail:
+            msg: "postgres metrics verification failed"
+
+    - name: Test Zalando Velero backup and restore
+      block:
         - name: Wait for LoadBalancer to get external IP
           kubernetes.core.k8s_info:
             kubeconfig: "{{ kubeconfig_path }}"
