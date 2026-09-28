@@ -16,6 +16,38 @@ spec:
       valuesObject:
         configKubernetes:
           enable_pod_antiaffinity: false
+        # Spilo serves no Prometheus metrics of its own, so postgres pods are
+        # invisible without an exporter beside them. Declared here rather than
+        # per-cluster because the postgres-clusters PodMonitor selects every
+        # spilo pod in any namespace: a per-CR opt-in would leave the monitor
+        # promising coverage it does not have. configGeneral renders directly
+        # under OperatorConfiguration.configuration, which is where the CRD
+        # defines the global sidecars array.
+        configGeneral:
+          sidecars:
+            - name: postgres-exporter
+              image: quay.io/prometheuscommunity/postgres-exporter:v0.20.1
+              ports:
+                - name: metrics
+                  containerPort: 9187
+                  protocol: TCP
+              env:
+                # The operator prepends POSTGRES_USER and POSTGRES_PASSWORD to
+                # every sidecar's env, and kubernetes expands $(VAR) only from
+                # variables declared earlier in the list, so these resolve.
+                - name: DATA_SOURCE_URI
+                  value: "localhost:5432/postgres?sslmode=prefer"
+                - name: DATA_SOURCE_USER
+                  value: "$(POSTGRES_USER)"
+                - name: DATA_SOURCE_PASS
+                  value: "$(POSTGRES_PASSWORD)"
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 32Mi
+                limits:
+                  cpu: 100m
+                  memory: 128Mi
   destination:
     server: https://kubernetes.default.svc
     namespace: postgres-operator

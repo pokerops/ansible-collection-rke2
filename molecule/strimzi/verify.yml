@@ -384,6 +384,37 @@
                   is not matching the broker pods.
                 success_msg: "Ingestor received {{ _ingested.stdout | trim }} kafka_server events"
 
+            # Both kafka monitors are labelled monitor-optional, which exempts
+            # them from the namespace-coverage assert in the monitoring
+            # scenario: zero Kafka clusters is a valid state and reads the same
+            # as a broken selector. That exemption is only sound if the CR-state
+            # series kube-state-metrics derives from the Kafka CR actually
+            # arrive, so assert them here, where a cluster is known to exist.
+            - name: Wait for kafka CR state metrics to reach the ingestor
+              ansible.builtin.command:
+                cmd: >-
+                  kubectl --kubeconfig {{ kubeconfig_path }}
+                  exec -n monitoring {{ _ingestor_query.resources | first | json_query('metadata.name') }}
+                  -- sh -c "grep -c kube_kafka_created /data/metrics.log || true"
+              register: _ingested_crstate
+              changed_when: false
+              retries: 40
+              delay: 15
+              until:
+                - _ingested_crstate.rc == 0
+                - (_ingested_crstate.stdout | trim | int) > 0
+
+            - name: Verify kafka CR state metrics are collected end to end
+              ansible.builtin.assert:
+                that: (_ingested_crstate.stdout | trim | int) > 0
+                fail_msg: >-
+                  No kube_kafka_created series reached the ingestor although a
+                  Kafka cluster exists. Either the kube-state-metrics
+                  customResourceState config or its RBAC rule for
+                  kafka.strimzi.io is not producing the series that the
+                  monitor-optional exemption depends on.
+                success_msg: "Ingestor received {{ _ingested_crstate.stdout | trim }} kube_kafka_created events"
+
             - name: Capture original Kafka clusterId
               ansible.builtin.set_fact:
                 original_cluster_id: "{{ kafka_status.resources[0].status.clusterId }}"
@@ -469,7 +500,7 @@
 
         - name: Produce messages
           block:
-            - name: Produce {{ message_count }} test messages to Kafka topic {{ topic_name }}
+            - name: Produce test messages to Kafka topic {{ topic_name }}
               kubernetes.core.k8s:
                 kubeconfig: "{{ kubeconfig_path }}"
                 definition:
@@ -882,7 +913,7 @@
               retries: 60
               delay: 15
 
-            - name: Wait until all pods in {{ kafka_namespace }} are Running and Ready
+            - name: Wait until all pods are Running and Ready in namespace {{ kafka_namespace }}
               kubernetes.core.k8s_info:
                 kubeconfig: "{{ kubeconfig_path }}"
                 api_version: v1

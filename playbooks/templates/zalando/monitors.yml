@@ -1,0 +1,44 @@
+---
+# Spilo pods for every Postgres cluster the operator creates, in any namespace.
+# The metrics port belongs to the postgres-exporter sidecar the operator injects
+# globally; without that sidecar these pods serve nothing and this monitor
+# produces no targets. Labelled optional because zero Postgres clusters is a
+# valid state: the verify check cannot tell that apart from a broken selector,
+# so coverage comes from the kube_postgresql_created series instead, which the
+# zalando scenario asserts reaches the ingestor.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: postgres-clusters
+  namespace: postgres-operator
+  labels:
+    pokerops.net/monitor-optional: "true"
+spec:
+  namespaceSelector:
+    any: true
+  selector:
+    matchLabels:
+      application: spilo
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics
+      # Without these every postgres series looks alike. cluster-name is
+      # promoted as postgres_cluster rather than cluster: alloy already sets a
+      # cluster external label for the rke2 cluster itself, and reusing the name
+      # would silently overwrite it.
+      relabelings:
+        - action: replace
+          sourceLabels: [__meta_kubernetes_pod_label_cluster_name]
+          targetLabel: postgres_cluster
+        - action: replace
+          sourceLabels: [__meta_kubernetes_pod_label_spilo_role]
+          targetLabel: spilo_role
+        - action: replace
+          sourceLabels: [__meta_kubernetes_pod_label_team]
+          targetLabel: postgres_team
+        - action: replace
+          sourceLabels: [__meta_kubernetes_namespace]
+          targetLabel: namespace
+        - action: replace
+          sourceLabels: [__meta_kubernetes_pod_name]
+          targetLabel: kubernetes_pod_name

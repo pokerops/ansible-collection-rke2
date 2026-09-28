@@ -192,6 +192,148 @@
               ansible.builtin.fail:
                 msg: "PostgreSQL cluster {{ postgres_cluster_name }} did not become ready before timeout."
 
+        - name: Verify postgres metrics collection
+          block:
+            - name: Query spilo pods
+              kubernetes.core.k8s_info:
+                kubeconfig: "{{ kubeconfig_path }}"
+                api_version: v1
+                kind: Pod
+                namespace: "{{ postgres_namespace }}"
+                label_selectors:
+                  - "application=spilo"
+                  - "cluster-name={{ postgres_cluster_name }}"
+                field_selectors:
+                  - status.phase=Running
+              register: _spilo_pods
+              retries: 30
+              delay: 10
+              until: _spilo_pods.resources | length > 0
+
+            # Asserted against the same pod the scrape below uses, not across
+            # the whole set: an aggregate check passes when any pod carries the
+            # port and leaves the scrape to fail on one that does not.
+            - name: Verify the exporter sidecar exposes the metrics port
+              ansible.builtin.assert:
+                that: "'metrics' in _port_names"
+                fail_msg: >-
+                  No metrics port on {{ _pod.metadata.name }}. The operator is
+                  not injecting the postgres-exporter sidecar, so the
+                  postgres-clusters PodMonitor has nothing to scrape.
+              vars:
+                _pod: "{{ _spilo_pods.resources | first }}"
+                _port_names: >-
+                  {{ _pod.spec.containers | map(attribute='ports', default=[])
+                     | flatten | map(attribute='name', default='') | list }}
+
+            - name: Set spilo scrape facts
+              ansible.builtin.set_fact:
+                _spilo_target: "{{ _pod.status.podIP }}:{{ _port }}"
+              vars:
+                _pod: "{{ _spilo_pods.resources | first }}"
+                _ports: "{{ _pod.spec.containers | map(attribute='ports', default=[]) | flatten }}"
+                _port: "{{ _ports | selectattr('name', 'equalto', 'metrics') | map(attribute='containerPort') | first }}"
+
+            - name: Scrape the postgres exporter
+              ansible.builtin.command:
+                cmd: >-
+                  kubectl --kubeconfig {{ kubeconfig_path }}
+                  run postgres-metrics-probe-{{ 999 | random }} -n {{ postgres_namespace }}
+                  --rm -i --restart=Never --image=curlimages/curl:8.11.1 --
+                  curl -sS --max-time 10 http://{{ _spilo_target }}/metrics
+              register: _spilo_metrics
+              changed_when: false
+              retries: 10
+              delay: 15
+              until:
+                - _spilo_metrics.rc == 0
+                - "'pg_up' in _spilo_metrics.stdout"
+
+            # pg_up 0 means the sidecar is running but cannot authenticate, which
+            # is the failure mode of the $(POSTGRES_USER) wiring in the operator
+            # config. An exporter that serves only zeroes looks healthy to a
+            # scrape check that merely counts series.
+            - name: Verify the exporter is connected to postgres
+              ansible.builtin.assert:
+                that: _pg_up | length > 0
+                fail_msg: >-
+                  The exporter serves metrics but reports pg_up 0: it cannot
+                  authenticate against postgres. Check DATA_SOURCE_USER and
+                  DATA_SOURCE_PASS in the operator sidecar configuration.
+                success_msg: "Exporter reports pg_up 1"
+              vars:
+                _pg_up: "{{ _spilo_metrics.stdout_lines | select('match', '^pg_up 1') | list }}"
+
+            - name: Query ingestor pod
+              kubernetes.core.k8s_info:
+                kubeconfig: "{{ kubeconfig_path }}"
+                kind: Pod
+                namespace: monitoring
+                label_selectors:
+                  - "app=vector-ingestor"
+                field_selectors:
+                  - status.phase=Running
+              register: _ingestor_query
+              retries: 30
+              delay: 10
+              until: _ingestor_query.resources | length > 0
+
+            # End to end: the scrape above proves the sidecar works, this proves
+            # the postgres-clusters PodMonitor selector matches and alloy
+            # delivers what it scrapes.
+            - name: Wait for postgres metrics to reach the ingestor
+              ansible.builtin.command:
+                cmd: >-
+                  kubectl --kubeconfig {{ kubeconfig_path }}
+                  exec -n monitoring {{ _ingestor_query.resources | first | json_query('metadata.name') }}
+                  -- sh -c "grep -c pg_up /data/metrics.log || true"
+              register: _ingested_pg
+              changed_when: false
+              retries: 40
+              delay: 15
+              until:
+                - _ingested_pg.rc == 0
+                - (_ingested_pg.stdout | trim | int) > 0
+
+            - name: Verify postgres metrics are collected end to end
+              ansible.builtin.assert:
+                that: (_ingested_pg.stdout | trim | int) > 0
+                fail_msg: >-
+                  The exporter serves metrics but none reached the ingestor. The
+                  postgres-clusters PodMonitor selector or its metrics port is
+                  not matching the spilo pods.
+                success_msg: "Ingestor received {{ _ingested_pg.stdout | trim }} pg_up events"
+
+            # The postgres-clusters monitor is labelled monitor-optional, which
+            # exempts it from the namespace-coverage assert in the monitoring
+            # scenario. That exemption is only sound if the CR-state series
+            # kube-state-metrics derives from the postgresql CR actually arrive,
+            # so assert them here, where a cluster is known to exist.
+            - name: Wait for postgres CR state metrics to reach the ingestor
+              ansible.builtin.command:
+                cmd: >-
+                  kubectl --kubeconfig {{ kubeconfig_path }}
+                  exec -n monitoring {{ _ingestor_query.resources | first | json_query('metadata.name') }}
+                  -- sh -c "grep -c kube_postgresql_created /data/metrics.log || true"
+              register: _ingested_crstate
+              changed_when: false
+              retries: 40
+              delay: 15
+              until:
+                - _ingested_crstate.rc == 0
+                - (_ingested_crstate.stdout | trim | int) > 0
+
+            - name: Verify postgres CR state metrics are collected end to end
+              ansible.builtin.assert:
+                that: (_ingested_crstate.stdout | trim | int) > 0
+                fail_msg: >-
+                  No kube_postgresql_created series reached the ingestor although
+                  a Postgres cluster exists. Either the kube-state-metrics
+                  customResourceState config or its RBAC rule for acid.zalan.do
+                  is not producing the series that the monitor-optional
+                  exemption depends on.
+                success_msg: "Ingestor received {{ _ingested_crstate.stdout | trim }} kube_postgresql_created events"
+
         - name: Wait for LoadBalancer to get external IP
           kubernetes.core.k8s_info:
             kubeconfig: "{{ kubeconfig_path }}"
@@ -740,7 +882,7 @@
           register: _db_query
 
         - name: Assert Pagila database was restored
-          assert:
+          ansible.builtin.assert:
             that:
               - _db_query.query_result | length > 0
             fail_msg: "Pagila database was not found after restore"
@@ -788,7 +930,7 @@
             restored_pagila_data_counts: "{{ _data_query.query_result }}"
 
         - name: Compare original and restored table lists
-          assert:
+          ansible.builtin.assert:
             that:
               - original_pagila_tables == restored_pagila_tables
               - original_pagila_tables | length == restored_pagila_tables | length

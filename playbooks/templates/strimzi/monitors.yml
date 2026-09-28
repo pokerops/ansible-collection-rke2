@@ -1,0 +1,85 @@
+---
+# The Strimzi chart creates no Service for its operator, so select pods. The
+# container does declare a named port, so address it by name.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: strimzi-cluster-operator
+  namespace: strimzi
+spec:
+  selector:
+    matchLabels:
+      strimzi.io/kind: cluster-operator
+  podMetricsEndpoints:
+    - port: http
+      path: /metrics
+---
+# Kafka node pods (brokers and controllers) for every Kafka the operator
+# creates, in any namespace. strimzi.io/kind=Kafka would be wrong here: it also
+# matches the kafka-exporter pod, which serves an unrelated series set and is
+# scraped by its own monitor below. Labelled optional because zero Kafka
+# clusters is a valid state: the verify check cannot tell that apart from a
+# broken selector, so coverage comes from the kube_kafka_created series
+# instead, which the strimzi scenario asserts reaches the ingestor.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: kafka-brokers
+  namespace: strimzi
+  labels:
+    pokerops.net/monitor-optional: "true"
+spec:
+  namespaceSelector:
+    any: true
+  selector:
+    matchLabels:
+      strimzi.io/component-type: kafka
+  podMetricsEndpoints:
+    - port: tcp-prometheus
+      path: /metrics
+      # Without these every broker series looks alike: the labelmap promotes
+      # strimzi.io/cluster and /kind, which is what separates one Kafka cluster
+      # from another once several exist. strimzi.io/broker-role separates
+      # brokers from controllers within a cluster.
+      relabelings:
+        - action: labelmap
+          regex: __meta_kubernetes_pod_label_(strimzi_io_.+)
+          replacement: $1
+        - action: replace
+          sourceLabels: [__meta_kubernetes_namespace]
+          targetLabel: namespace
+        - action: replace
+          sourceLabels: [__meta_kubernetes_pod_name]
+          targetLabel: kubernetes_pod_name
+---
+# The kafka-exporter pod, which the Kafka CR creates when spec.kafkaExporter is
+# set. It carries tcp-prometheus like the nodes do, so it used to arrive through
+# the broker monitor above; it serves consumer group lag and topic offsets
+# rather than kafka_server_*, so it gets its own monitor to keep the split
+# legible. Optional for the same reason as the node monitor.
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: kafka-exporter
+  namespace: strimzi
+  labels:
+    pokerops.net/monitor-optional: "true"
+spec:
+  namespaceSelector:
+    any: true
+  selector:
+    matchLabels:
+      strimzi.io/component-type: kafka-exporter
+  podMetricsEndpoints:
+    - port: tcp-prometheus
+      path: /metrics
+      relabelings:
+        - action: labelmap
+          regex: __meta_kubernetes_pod_label_(strimzi_io_.+)
+          replacement: $1
+        - action: replace
+          sourceLabels: [__meta_kubernetes_namespace]
+          targetLabel: namespace
+        - action: replace
+          sourceLabels: [__meta_kubernetes_pod_name]
+          targetLabel: kubernetes_pod_name
