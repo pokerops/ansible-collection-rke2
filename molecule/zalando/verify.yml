@@ -232,6 +232,7 @@
             - name: Set spilo scrape facts
               ansible.builtin.set_fact:
                 _spilo_target: "{{ _pod.status.podIP }}:{{ _port }}"
+                _spilo_pod: "{{ _pod.metadata.name }}"
               vars:
                 _pod: "{{ _spilo_pods.resources | first }}"
                 _named_ports: >-
@@ -248,26 +249,43 @@
                   curl -sS --max-time 10 http://{{ _spilo_target }}/metrics
               register: _spilo_metrics
               changed_when: false
-              retries: 10
+              retries: 20
               delay: 15
               until:
                 - _spilo_metrics.rc == 0
-                - "'pg_up' in _spilo_metrics.stdout"
+                # pg_up alone would match pg_up 0, so the loop would exit on the
+                # first scrape and leave no time for the exporter's first
+                # connection. Wait for the value the assertion below requires.
+                - _spilo_metrics.stdout_lines | select('match', '^pg_up 1') | list | length > 0
 
-            # pg_up 0 means the sidecar is running but cannot authenticate, which
-            # is the failure mode of the $(POSTGRES_USER) wiring in the operator
-            # config. An exporter that serves only zeroes looks healthy to a
-            # scrape check that merely counts series.
+            # pg_up 0 means the sidecar is running but cannot reach or
+            # authenticate against postgres. The exporter names the actual cause
+            # only in its own log, so capture that here and report it with the
+            # assertion: an exporter serving nothing but zeroes looks healthy to
+            # a scrape check that merely counts series.
+            - name: Capture exporter logs
+              ansible.builtin.command:
+                cmd: >-
+                  kubectl --kubeconfig {{ kubeconfig_path }}
+                  logs -n {{ postgres_namespace }} {{ _spilo_pod }}
+                  -c postgres-exporter --tail=50
+              register: _exporter_logs
+              changed_when: false
+              failed_when: false
+
             - name: Verify the exporter is connected to postgres
               ansible.builtin.assert:
                 that: _pg_up | length > 0
                 fail_msg: >-
-                  The exporter serves metrics but reports pg_up 0: it cannot
-                  authenticate against postgres. Check DATA_SOURCE_USER and
-                  DATA_SOURCE_PASS in the operator sidecar configuration.
+                  The exporter serves metrics but reports pg_up 0. Exporter
+                  log: {{ _exporter_logs.stdout | default('<none>') }} --
+                  scrape error series: {{ _scrape_errors | join(' ') | default('<none>') }}
                 success_msg: "Exporter reports pg_up 1"
               vars:
                 _pg_up: "{{ _spilo_metrics.stdout_lines | select('match', '^pg_up 1') | list }}"
+                _scrape_errors: >-
+                  {{ _spilo_metrics.stdout_lines
+                     | select('match', '^pg_(up|exporter_last_scrape_error)') | list }}
 
             - name: Query ingestor pod
               kubernetes.core.k8s_info:
