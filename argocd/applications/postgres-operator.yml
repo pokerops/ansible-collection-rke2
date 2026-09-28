@@ -35,8 +35,12 @@ spec:
                 # The operator prepends POSTGRES_USER and POSTGRES_PASSWORD to
                 # every sidecar's env, and kubernetes expands $(VAR) only from
                 # variables declared earlier in the list, so these resolve.
+                # lib/pq is not libpq: it implements only require,
+                # verify-full, verify-ca and disable, and rejects the prefer
+                # that libpq would accept. spilo serves TLS, so require works
+                # and keeps the loopback hop encrypted.
                 - name: DATA_SOURCE_URI
-                  value: "localhost:5432/postgres?sslmode=prefer"
+                  value: "localhost:5432/postgres?sslmode=require"
                 - name: DATA_SOURCE_USER
                   value: "$(POSTGRES_USER)"
                 - name: DATA_SOURCE_PASS
