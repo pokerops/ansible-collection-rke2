@@ -28,6 +28,9 @@ spec:
             - apiGroups: ["acid.zalan.do"]
               resources: ["postgresqls"]
               verbs: ["list", "watch"]
+            - apiGroups: ["k8s.mariadb.com"]
+              resources: ["mariadbs"]
+              verbs: ["list", "watch"]
         customResourceState:
           enabled: true
           config:
@@ -80,6 +83,30 @@ spec:
                           path: [status]
                           labelsFromPath:
                             status: [PostgresClusterStatus]
+                - groupVersionKind:
+                    group: k8s.mariadb.com
+                    version: v1alpha1
+                    kind: MariaDB
+                  metricNamePrefix: kube_mariadb
+                  labelsFromPath:
+                    name: [metadata, name]
+                    namespace: [metadata, namespace]
+                  metrics:
+                    - name: created
+                      help: Unix creation timestamp of the MariaDB cluster
+                      each:
+                        type: Gauge
+                        gauge:
+                          path: [metadata, creationTimestamp]
+                    - name: status_condition
+                      help: Status conditions reported by the MariaDB operator
+                      each:
+                        type: Gauge
+                        gauge:
+                          path: [status, conditions]
+                          labelsFromPath:
+                            type: [type]
+                          valueFrom: [status]
   destination:
     server: https://kubernetes.default.svc
     namespace: monitoring

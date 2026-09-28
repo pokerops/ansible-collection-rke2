@@ -21,7 +21,23 @@
     # DataUpload clone 3x the volume before the backup pod can start.
     mariadb_storage_class: "{{ molecule_storage_class | default('mariadb') }}"
   tasks:
-    - name: Test MariaDB Velero backup and restore
+
+    # Checked before anything is deployed: unset, converge skipped the whole
+    # monitoring stack, so the assertions below cannot pass and failing here
+    # costs seconds instead of a cluster build plus two ten minute waits.
+    - name: Verify the monitoring collector is enabled
+      ansible.builtin.assert:
+        that: rke2_monitoring_endpoint | default('') | length > 0
+        fail_msg: >-
+          rke2_monitoring_endpoint is unset, so converge skipped the monitoring
+          stack and nothing ships to the ingestor. Set it in the scenario
+          inventory.
+        success_msg: "Collector ships to {{ rke2_monitoring_endpoint }}"
+
+    # Setup rather than backup coverage, so it sits outside the Velero block: a
+    # cluster that never starts reports itself instead of surfacing as a backup
+    # failure with a page of Velero diagnostics.
+    - name: Deploy the MariaDB test cluster
       block:
         - name: Destroy existing MariaDB deployment
           block:
@@ -155,6 +171,12 @@
                   annotations:
                     metallb.universe.tf/address-pool: metallb-private
                 replicas: 1
+                # The operator deploys a mysqld-exporter and creates the
+                # ServiceMonitor itself, so nothing here declares a monitor.
+                # username and passwordSecretKeyRef are defaulted by the
+                # operator, which provisions the monitoring user for them.
+                metrics:
+                  enabled: true
                 resources:
                   requests:
                     cpu: 100m
@@ -194,6 +216,153 @@
               ansible.builtin.fail:
                 msg: "MariaDB cluster {{ mariadb_name }} did not become ready before timeout."
 
+    - name: Verify mariadb metrics collection
+      block:
+        # Unlike strimzi and zalando, nothing in this collection declares a
+        # monitor for mariadb: spec.metrics.enabled makes the operator both
+        # deploy the exporter and create the ServiceMonitor. Its presence is
+        # therefore the evidence that metrics are enabled at all.
+        - name: Query the operator-created ServiceMonitor
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ kubeconfig_path }}"
+            api_version: monitoring.coreos.com/v1
+            kind: ServiceMonitor
+            namespace: "{{ mariadb_namespace }}"
+          register: _mariadb_monitor
+          retries: 30
+          delay: 10
+          until: _mariadb_monitor.resources | length > 0
+
+        - name: Set exporter monitor facts
+          ansible.builtin.set_fact:
+            _monitor_selector: "{{ _mariadb_monitor.resources | first | json_query('spec.selector.matchLabels') }}"
+
+        # Driven off the monitor's own selector rather than a hardcoded
+        # label: an empty result here is exactly the failure the
+        # namespace-coverage assert cannot see, a monitor that matches
+        # nothing and so reports success while scraping air.
+        - name: Query services the monitor selects
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ kubeconfig_path }}"
+            api_version: v1
+            kind: Service
+            namespace: "{{ mariadb_namespace }}"
+            label_selectors: "{{ _monitor_selector.keys() | zip(_monitor_selector.values()) | map('join', '=') | list }}"
+          register: _exporter_svc
+          retries: 30
+          delay: 10
+          until: _exporter_svc.resources | length > 0
+
+        - name: Verify the monitor selector matches a service
+          ansible.builtin.assert:
+            that: _exporter_svc.resources | length > 0
+            fail_msg: >-
+              The operator created a ServiceMonitor but its selector
+              {{ _monitor_selector }} matches no service, so it scrapes
+              nothing and still reports success to alloy.
+            success_msg: "Monitor selector matches {{ _exporter_svc.resources | length }} service(s)"
+
+        - name: Set exporter scrape facts
+          ansible.builtin.set_fact:
+            _exporter_target: "{{ _svc.metadata.name }}.{{ mariadb_namespace }}.svc.cluster.local:{{ _svc.spec.ports | first | json_query('port') }}"
+          vars:
+            _svc: "{{ _exporter_svc.resources | first }}"
+
+        - name: Scrape the mysqld exporter
+          ansible.builtin.command:
+            cmd: >-
+              kubectl --kubeconfig {{ kubeconfig_path }}
+              run mariadb-metrics-probe-{{ 999 | random }} -n {{ mariadb_namespace }}
+              --rm -i --restart=Never --image=curlimages/curl:8.11.1 --
+              curl -sS --max-time 10 http://{{ _exporter_target }}/metrics
+          register: _exporter_metrics
+          changed_when: false
+          retries: 10
+          delay: 15
+          until:
+            - _exporter_metrics.rc == 0
+            - "'mysql_up' in _exporter_metrics.stdout"
+
+        # mysql_up 0 means the exporter is running but cannot authenticate.
+        # The operator defaults metrics.username and passwordSecretKeyRef
+        # and provisions that user itself, so a zero here means that
+        # provisioning failed rather than a misconfiguration on our side.
+        - name: Verify the exporter is connected to mariadb
+          ansible.builtin.assert:
+            that: _mysql_up | length > 0
+            fail_msg: >-
+              The exporter serves metrics but reports mysql_up 0: it cannot
+              authenticate. The operator did not provision the monitoring
+              user it defaulted onto spec.metrics.
+            success_msg: "Exporter reports mysql_up 1"
+          vars:
+            _mysql_up: "{{ _exporter_metrics.stdout_lines | select('match', '^mysql_up 1') | list }}"
+
+        - name: Query ingestor pod
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ kubeconfig_path }}"
+            kind: Pod
+            namespace: monitoring
+            label_selectors:
+              - "app=vector-ingestor"
+            field_selectors:
+              - status.phase=Running
+          register: _ingestor_query
+          retries: 30
+          delay: 10
+          until: _ingestor_query.resources | length > 0
+
+        - name: Wait for mariadb metrics to reach the ingestor
+          ansible.builtin.command:
+            cmd: >-
+              kubectl --kubeconfig {{ kubeconfig_path }}
+              exec -n monitoring {{ _ingestor_query.resources | first | json_query('metadata.name') }}
+              -- sh -c "grep -c mysql_up /data/metrics.log || true"
+          register: _ingested_mysql
+          changed_when: false
+          retries: 40
+          delay: 15
+          until:
+            - _ingested_mysql.rc == 0
+            - (_ingested_mysql.stdout | trim | int) > 0
+
+        - name: Verify mariadb metrics are collected end to end
+          ansible.builtin.assert:
+            that: (_ingested_mysql.stdout | trim | int) > 0
+            fail_msg: >-
+              The exporter serves metrics but none reached the ingestor.
+              Alloy is not scraping the ServiceMonitor the operator created.
+            success_msg: "Ingestor received {{ _ingested_mysql.stdout | trim }} mysql_up events"
+
+        # Matches the kafka and postgres checks: the CR-state series are the
+        # only signal that a cluster exists at all, so they are worth as
+        # much as the pod metrics themselves.
+        - name: Wait for mariadb CR state metrics to reach the ingestor
+          ansible.builtin.command:
+            cmd: >-
+              kubectl --kubeconfig {{ kubeconfig_path }}
+              exec -n monitoring {{ _ingestor_query.resources | first | json_query('metadata.name') }}
+              -- sh -c "grep -c kube_mariadb_created /data/metrics.log || true"
+          register: _ingested_crstate
+          changed_when: false
+          retries: 40
+          delay: 15
+          until:
+            - _ingested_crstate.rc == 0
+            - (_ingested_crstate.stdout | trim | int) > 0
+
+        - name: Verify mariadb CR state metrics are collected end to end
+          ansible.builtin.assert:
+            that: (_ingested_crstate.stdout | trim | int) > 0
+            fail_msg: >-
+              No kube_mariadb_created series reached the ingestor although a
+              MariaDB cluster exists. Either the kube-state-metrics
+              customResourceState config or its RBAC rule for
+              k8s.mariadb.com is not producing the series.
+            success_msg: "Ingestor received {{ _ingested_crstate.stdout | trim }} kube_mariadb_created events"
+
+    - name: Test MariaDB Velero backup and restore
+      block:
         - name: Wait for MariaDB LoadBalancer to get external IP
           kubernetes.core.k8s_info:
             kubeconfig: "{{ kubeconfig_path }}"
