@@ -129,6 +129,13 @@
     _members: "{{ _servers + _agents }}"
     _retries: 20
     _delay: 30
+    # ArgoCD app health converges on its own schedule and is the slowest wait
+    # here, so it gets its own budget rather than inflating every other one.
+    _app_retries: 26
+    # Progressing is ordinary convergence and worth waiting out. Degraded will
+    # not improve, so the loop stops on it instead of spending the whole budget
+    # on an application that is already broken.
+    _app_broken_states: ["Degraded"]
   tasks:
     - name: Install jq
       ansible.builtin.package:
@@ -585,7 +592,7 @@
               ansible.builtin.shell:
                 cmd: "/var/lib/rancher/rke2/bin/kubectl get applications -n argocd -o json | jq '.items'"
               register: _argocd_app_data
-              retries: "{{ _retries }}"
+              retries: "{{ _app_retries }}"
               delay: "{{ _delay }}"
               vars:
                 _app_data: "{{ _argocd_app_data.stdout | from_json }}"
@@ -598,9 +605,10 @@
                      | selectattr('status.sync.status', 'equalto', 'Synced')
                      | map(attribute='metadata.name') | list }}
                 _app_failed: "{{ _app_data | rejectattr('metadata.name', 'in', _app_ok) | list }}"
-              until:
-                - _app_data | length > 0
-                - _app_failed | length == 0
+                _app_broken: "{{ _app_status | selectattr('status.health.status', 'in', _app_broken_states) | list }}"
+                _app_settled: >-
+                  {{ _app_data | length > 0 and _app_failed | length == 0 }}
+              until: _app_broken | length > 0 or _app_settled | bool
 
             - name: Debug argocd applications
               ansible.builtin.debug:
@@ -615,7 +623,12 @@
           rescue:
             - name: Debug failed applications
               ansible.builtin.fail:
-                msg: "The following argocd applications are in failed status: {{ _app_report }}"
+                msg: >-
+                  The following argocd applications are in failed status:
+                  {{ _app_report }}. Progressing means the wait budget of
+                  {{ _app_retries | int * _delay | int }}s was too short;
+                  Degraded means it stopped early because the application is
+                  broken.
               vars:
                 _app_data: "{{ _argocd_app_data.stdout | from_json }}"
                 _app_ok: >-
