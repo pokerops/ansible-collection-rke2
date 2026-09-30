@@ -268,35 +268,62 @@
           vars:
             _svc: "{{ _exporter_svc.resources | first }}"
 
-        - name: Scrape the mysqld exporter
-          ansible.builtin.command:
-            cmd: >-
-              kubectl --kubeconfig {{ kubeconfig_path }}
-              run mariadb-metrics-probe-{{ 999 | random }} -n {{ mariadb_namespace }}
-              --rm -i --restart=Never --image=curlimages/curl:8.11.1 --
-              curl -sS --max-time 10 http://{{ _exporter_target }}/metrics
-          register: _exporter_metrics
-          changed_when: false
-          retries: 10
-          delay: 15
-          until:
-            - _exporter_metrics.rc == 0
-            - "'mysql_up' in _exporter_metrics.stdout"
-
-        # mysql_up 0 means the exporter is running but cannot authenticate.
-        # The operator defaults metrics.username and passwordSecretKeyRef
-        # and provisions that user itself, so a zero here means that
-        # provisioning failed rather than a misconfiguration on our side.
+        # mysql_up 0 means the exporter is running but cannot reach or
+        # authenticate against mariadb, and it names the cause only in its own
+        # log. The wait is what fails when that happens, so the capture sits in
+        # a rescue rather than after the scrape, where it would never run.
         - name: Verify the exporter is connected to mariadb
-          ansible.builtin.assert:
-            that: _mysql_up | length > 0
-            fail_msg: >-
-              The exporter serves metrics but reports mysql_up 0: it cannot
-              authenticate. The operator did not provision the monitoring
-              user it defaulted onto spec.metrics.
-            success_msg: "Exporter reports mysql_up 1"
-          vars:
-            _mysql_up: "{{ _exporter_metrics.stdout_lines | select('match', '^mysql_up 1') | list }}"
+          block:
+            - name: Scrape the mysqld exporter
+              ansible.builtin.command:
+                cmd: >-
+                  kubectl --kubeconfig {{ kubeconfig_path }}
+                  run mariadb-metrics-probe-{{ 999 | random }} -n {{ mariadb_namespace }}
+                  --rm -i --restart=Never --image=curlimages/curl:8.11.1 --
+                  curl -sS --max-time 10 http://{{ _exporter_target }}/metrics
+              register: _exporter_metrics
+              changed_when: false
+              retries: 20
+              delay: 15
+              until:
+                - _exporter_metrics.rc == 0
+                # mysql_up alone matches mysql_up 0, which would exit the loop
+                # on the first scrape and leave the exporter no time to
+                # connect. The exporter is its own Deployment, so it can be
+                # serving before mariadb accepts connections.
+                - _exporter_metrics.stdout_lines | select('match', '^mysql_up 1') | list | length > 0
+
+            - name: Report exporter connection
+              ansible.builtin.debug:
+                msg: "Exporter reports mysql_up 1"
+
+          rescue:
+            - name: Capture exporter logs
+              ansible.builtin.command:
+                cmd: >-
+                  kubectl --kubeconfig {{ kubeconfig_path }}
+                  logs -n {{ mariadb_namespace }} -l {{ _selector }}
+                  --tail=100
+              register: _exporter_logs
+              changed_when: false
+              failed_when: false
+              vars:
+                _selector: "{{ _monitor_selector.keys() | zip(_monitor_selector.values()) | map('join', '=') | join(',') }}"
+
+            - name: Report why the exporter is not connected
+              ansible.builtin.fail:
+                msg: >-
+                  The exporter never reported mysql_up 1, so it cannot reach or
+                  authenticate against mariadb. The operator defaults
+                  metrics.username and passwordSecretKeyRef and provisions that
+                  user itself, so this is its provisioning rather than a setting
+                  of ours. Exporter log:
+                  {{ _exporter_logs.stdout | default('<unavailable>') }} --
+                  scrape series: {{ _series | join(' ') }}
+              vars:
+                _series: >-
+                  {{ _exporter_metrics.stdout_lines | default([])
+                     | select('match', '^mysql_up') | list }}
 
         - name: Query ingestor pod
           kubernetes.core.k8s_info:
