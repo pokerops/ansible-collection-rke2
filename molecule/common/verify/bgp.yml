@@ -14,6 +14,13 @@
     bgp_hop_addrs: "{{ bgp_hop_names | map('extract', hostvars, ['ansible_default_ipv4', 'address']) }}"
     _retries: 15
     _delay: 20
+    # ArgoCD app health converges on its own schedule and is the slowest wait
+    # here, so it gets its own budget rather than inflating the other twelve.
+    _app_retries: 40
+    # Progressing is ordinary convergence and worth waiting out. Degraded will
+    # not improve, so the loop stops on it instead of spending the whole budget
+    # on an application that is already broken.
+    _app_broken_states: ["Degraded"]
   tasks:
     - name: Verify ArgoCD Ingress Applications
       block:
@@ -24,7 +31,7 @@
             namespace: argocd
             kubeconfig: "{{ molecule_local_kubeconfig }}"
           register: _argocd_apps_query
-          retries: "{{ 2 * _retries | int }}"
+          retries: "{{ _app_retries }}"
           delay: "{{ _delay }}"
           vars:
             _apps_count: "{{ molecule_rke2_ingress_services | int }}"
@@ -34,10 +41,12 @@
             _apps_status: "{{ _apps_ics | selectattr('status.health.status', 'defined') }}"
             _apps_unhealthy: "{{ _apps_status | rejectattr('status.health.status', 'equalto', 'Healthy') }}"
             _apps_healthy: "{{ _apps_status | selectattr('status.health.status', 'equalto', 'Healthy') }}"
-          until:
-            - _apps_nostatus | length == 0
-            - _apps_unhealthy | length == 0
-            - _apps_healthy | length == _apps_count | int
+            _apps_broken: "{{ _apps_status | selectattr('status.health.status', 'in', _app_broken_states) }}"
+            _apps_settled: >-
+              {{ _apps_nostatus | length == 0
+                 and _apps_unhealthy | length == 0
+                 and _apps_healthy | length == _apps_count | int }}
+          until: _apps_broken | length > 0 or _apps_settled | bool
 
       always:
         - name: Query ArgoCD Ingress applications
@@ -66,9 +75,16 @@
         - name: Verify ArgoCD Ingress application status
           ansible.builtin.assert:
             that: _apps_unhealthy | length == 0
-            fail_msg: "The following ingress controllers have failed {{ _apps_unhealthy | map(attribute='metadata.name') }}"
+            fail_msg: >-
+              The following ingress controllers have failed {{ _apps_report }}.
+              Progressing means the wait budget of
+              {{ _app_retries | int * _delay | int }}s was too short; Degraded
+              means it stopped early because the application is broken.
           vars:
             _apps_unhealthy: "{{ _argocd_ingress_controller_apps | rejectattr('status.health.status', 'equalto', 'Healthy') }}"
+            _apps_report: >-
+              {{ _apps_unhealthy | map('json_query', '{name: metadata.name, health: status.health.status,
+                                                       sync: status.sync.status}') | list }}
 
     - name: Verify BGP Peer resources exist
       block:
