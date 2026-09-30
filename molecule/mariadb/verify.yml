@@ -262,11 +262,29 @@
               nothing and still reports success to alloy.
             success_msg: "Monitor selector matches {{ _exporter_svc.resources | length }} service(s)"
 
+        # The path and target come from the monitor's own endpoint rather than
+        # a hardcoded /metrics. mysqld-exporter runs in multi-target mode, where
+        # the database to probe arrives as a URL parameter at scrape time and
+        # only credentials come from its mounted my.cnf. Scraping /metrics
+        # instead reaches an exporter with no target, which falls back to its
+        # own localhost and correctly answers mysql_up 0 to the wrong question.
         - name: Set exporter scrape facts
           ansible.builtin.set_fact:
-            _exporter_target: "{{ _svc.metadata.name }}.{{ mariadb_namespace }}.svc.cluster.local:{{ _svc.spec.ports | first | json_query('port') }}"
+            _exporter_url: "http://{{ _host }}:{{ _port }}{{ _path }}{{ _query }}"
           vars:
             _svc: "{{ _exporter_svc.resources | first }}"
+            _endpoint: "{{ _mariadb_monitor.resources | first | json_query('spec.endpoints') | first }}"
+            _host: "{{ _svc.metadata.name }}.{{ mariadb_namespace }}.svc.cluster.local"
+            _port: "{{ _svc.spec.ports | first | json_query('port') }}"
+            _path: "{{ _endpoint.path | default('/metrics') }}"
+            _params: "{{ _endpoint.params | default({}) }}"
+            _query: >-
+              {{ '?' ~ (_params.keys() | zip(_params.values() | map('first'))
+                 | map('join', '=') | join('&')) if _params else '' }}
+
+        - name: Report the endpoint under test
+          ansible.builtin.debug:
+            msg: "Probing the exporter at {{ _exporter_url }}"
 
         # mysql_up 0 means the exporter is running but cannot reach or
         # authenticate against mariadb, and it names the cause only in its own
@@ -280,7 +298,7 @@
                   kubectl --kubeconfig {{ kubeconfig_path }}
                   run mariadb-metrics-probe-{{ 999 | random }} -n {{ mariadb_namespace }}
                   --rm -i --restart=Never --image=curlimages/curl:8.11.1 --
-                  curl -sS --max-time 10 http://{{ _exporter_target }}/metrics
+                  curl -sS --max-time 10 "{{ _exporter_url }}"
               register: _exporter_metrics
               changed_when: false
               retries: 20
