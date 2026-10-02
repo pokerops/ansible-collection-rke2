@@ -59,4 +59,10 @@ is a consumer for it.
 
 **Needs a decision before any code:** do rules ship to the remote tenant's
 ruler via alloy (`mimir.rules.kubernetes`), or get evaluated somewhere else
-entirely? That decision shapes everything else here.
+entirely? That decision gates the actual task — alerting when a
+`pokerops.net/monitor-optional` cluster exists but emits no `kube_*_created`
+series.
+
+## Testing
+
+- No Molecule scenario covers Sealed Secrets backup/restore
