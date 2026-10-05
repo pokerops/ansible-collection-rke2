@@ -494,6 +494,60 @@
               monitor-optional exemption depends on.
             success_msg: "Ingestor received {{ _ingested_crstate.stdout | trim }} kube_kafka_created events"
 
+        # Logs have no "created" marker the way CR-state metrics do, so this
+        # asserts on the one thing guaranteed to be true: pods in this
+        # namespace exist and Vector's kubernetes_logs source tags every
+        # line it ships with the source pod's namespace.
+        - name: Wait for kafka namespace logs to reach the ingestor
+          ansible.builtin.command:
+            cmd: >-
+              kubectl --kubeconfig {{ kubeconfig_path }}
+              exec -n monitoring {{ _ingestor_query.resources | first | json_query('metadata.name') }}
+              -- sh -c "grep -c {{ kafka_namespace }} /data/logs.log || true"
+          register: _ingested_logs
+          changed_when: false
+          retries: 40
+          delay: 15
+          until:
+            - _ingested_logs.rc == 0
+            - (_ingested_logs.stdout | trim | int) > 0
+
+        - name: Verify kafka namespace logs are collected end to end
+          ansible.builtin.assert:
+            that: (_ingested_logs.stdout | trim | int) > 0
+            fail_msg: >-
+              No logs tagged with namespace {{ kafka_namespace }} reached the
+              ingestor although Kafka pods are running there. Either the
+              vector agent is not scheduled on their node or the
+              VectorPipeline sink is not delivering.
+            success_msg: "Ingestor received {{ _ingested_logs.stdout | trim }} log lines for {{ kafka_namespace }}"
+
+        # Vector's kubernetes_logs source tails exactly this stdout, so the
+        # literal produce/consume message already asserted above is a free,
+        # zero-fixture, content-level check that logs (not just labels) arrive.
+        - name: Wait for producer/consumer log lines to reach the ingestor
+          ansible.builtin.command:
+            cmd: >-
+              kubectl --kubeconfig {{ kubeconfig_path }}
+              exec -n monitoring {{ _ingestor_query.resources | first | json_query('metadata.name') }}
+              -- sh -c "grep -c '{{ test_message }}' /data/logs.log || true"
+          register: _ingested_message_logs
+          changed_when: false
+          retries: 40
+          delay: 15
+          until:
+            - _ingested_message_logs.rc == 0
+            - (_ingested_message_logs.stdout | trim | int) > 0
+
+        - name: Verify producer/consumer log content is collected end to end
+          ansible.builtin.assert:
+            that: (_ingested_message_logs.stdout | trim | int) > 0
+            fail_msg: >-
+              No log line containing "{{ test_message }}" reached the
+              ingestor although the produce/consume test ran. Vector may not
+              be tailing the producer/consumer pods' stdout.
+            success_msg: "Ingestor received {{ _ingested_message_logs.stdout | trim }} matching log lines"
+
       rescue:
         - name: Query the kafka-brokers PodMonitor
           kubernetes.core.k8s_info:

@@ -10,6 +10,7 @@
     monitoring_namespace: monitoring
     monitoring_ingestor_selector: app=vector-ingestor
     monitoring_ingestor_file: /data/metrics.log
+    monitoring_ingestor_logs_file: /data/logs.log
     monitoring_alloy_pod: alloy-0
     monitoring_cluster_id: "{{ rke2_cluster_name }}"
     monitoring_dropped_metric: container_tasks_state
@@ -56,6 +57,30 @@
           No metrics reached the ingestor. Alloy is scraping but not delivering;
           check the remote_write endpoint path and Alloy logs for HTTP errors.
         success_msg: "Ingestor received {{ _received.stdout.split() | first }} events"
+
+    - name: Wait for logs to reach the ingestor
+      ansible.builtin.command:
+        cmd: >-
+          kubectl --kubeconfig {{ molecule_local_kubeconfig }}
+          exec -n {{ monitoring_namespace }} {{ _ingestor_pod }}
+          -- wc -l {{ monitoring_ingestor_logs_file }}
+      register: _received_logs
+      changed_when: false
+      failed_when: false
+      retries: "{{ monitoring_settle_retries }}"
+      delay: "{{ monitoring_settle_delay }}"
+      until:
+        - _received_logs.rc == 0
+        - (_received_logs.stdout.split() | first | int) > 0
+
+    - name: Verify logs are being delivered
+      ansible.builtin.assert:
+        that: (_received_logs.stdout.split() | first | int) > 0
+        fail_msg: >-
+          No logs reached the ingestor. Vector is running but not delivering;
+          check the VectorPipeline sink address and the vector agent's logs
+          for connection errors.
+        success_msg: "Ingestor received {{ _received_logs.stdout.split() | first }} log lines"
 
     - name: Query received events
       ansible.builtin.command:

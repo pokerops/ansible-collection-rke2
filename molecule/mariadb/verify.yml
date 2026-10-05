@@ -406,6 +406,34 @@
               k8s.mariadb.com is not producing the series.
             success_msg: "Ingestor received {{ _ingested_crstate.stdout | trim }} kube_mariadb_created events"
 
+        # Logs have no "created" marker the way CR-state metrics do, so this
+        # asserts on the one thing guaranteed to be true: pods in this
+        # namespace exist and Vector's kubernetes_logs source tags every
+        # line it ships with the source pod's namespace.
+        - name: Wait for mariadb namespace logs to reach the ingestor
+          ansible.builtin.command:
+            cmd: >-
+              kubectl --kubeconfig {{ kubeconfig_path }}
+              exec -n monitoring {{ _ingestor_query.resources | first | json_query('metadata.name') }}
+              -- sh -c "grep -c {{ mariadb_namespace }} /data/logs.log || true"
+          register: _ingested_logs
+          changed_when: false
+          retries: 40
+          delay: 15
+          until:
+            - _ingested_logs.rc == 0
+            - (_ingested_logs.stdout | trim | int) > 0
+
+        - name: Verify mariadb namespace logs are collected end to end
+          ansible.builtin.assert:
+            that: (_ingested_logs.stdout | trim | int) > 0
+            fail_msg: >-
+              No logs tagged with namespace {{ mariadb_namespace }} reached
+              the ingestor although MariaDB pods are running there. Either
+              the vector agent is not scheduled on their node or the
+              VectorPipeline sink is not delivering.
+            success_msg: "Ingestor received {{ _ingested_logs.stdout | trim }} log lines for {{ mariadb_namespace }}"
+
     - name: Test MariaDB Velero backup and restore
       block:
         - name: Wait for MariaDB LoadBalancer to get external IP

@@ -1,0 +1,14 @@
+---
+- name: Deploy vector collector
+  kubernetes.core.k8s:
+    state: present
+    apply: true
+    kubeconfig: "{{ rke2_config_path }}"
+    resource_definition: "{{ lookup('ansible.builtin.template', 'templates/vector.yml') | from_yaml }}"
+
+- name: Deploy vector logging pipeline
+  kubernetes.core.k8s:
+    state: present
+    apply: true
+    kubeconfig: "{{ rke2_config_path }}"
+    resource_definition: "{{ lookup('ansible.builtin.template', 'templates/vector-pipeline.j2.yml') | from_yaml }}"

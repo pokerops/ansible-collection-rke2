@@ -9,7 +9,8 @@ Standard cluster components for RKE2 clusters.
 | rke2_argocd_hostname         | argocd.{{ rke2_cluster_name }} | string | Argocd URL                                         | no       |
 | rke2_certmanager_issuer_name |                 cluster-issuer | string | Name of the cert-manager cluster issuer            | no       |
 | rke2_monitoring_endpoint     |                                | string | Remote ingestor URL; setting it enables monitoring | no       |
-| rke2_monitoring_cluster_id   |        {{ rke2_cluster_name }} | string | Cluster label stamped on every metric              | no       |
+| rke2_logging_endpoint        |                                | string | Remote ingestor host:port; setting it enables logging | no    |
+| rke2_monitoring_cluster_id   |        {{ rke2_cluster_name }} | string | Cluster label stamped on every metric and log record | no     |
 | rke2_monitoring_tls_enabled  |                          false | bool   | Use mTLS to reach the remote ingestor              | no       |
 
 ## License

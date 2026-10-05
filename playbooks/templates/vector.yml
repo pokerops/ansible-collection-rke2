@@ -1,0 +1,30 @@
+#jinja2: lstrip_blocks: True
+---
+apiVersion: observability.kaasops.io/v1alpha1
+kind: Vector
+metadata:
+  name: vector
+  namespace: "{{ rke2_monitoring_scraper_namespace }}"
+spec:
+  # Only pipelines carrying this label are merged into this agent's config.
+  selector:
+    matchLabels:
+      pokerops.net/vector-pipeline: "true"
+  agent:
+    # Matches the ingestor's own data_dir so dev and prod agree on the path.
+    dataDir: /vector-data-dir
+    volumes:
+      - name: data
+        emptyDir:
+          sizeLimit: "{{ rke2_monitoring_logs_volume_size }}"
+      # The operator does not mount this by default; without it the
+      # kubernetes_logs source has no files to tail and ships nothing.
+      - name: varlogpods
+        hostPath:
+          path: /var/log/pods
+    volumeMounts:
+      - name: data
+        mountPath: /vector-data-dir
+      - name: varlogpods
+        mountPath: /var/log/pods
+        readOnly: true

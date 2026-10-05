@@ -18,6 +18,30 @@
   until: _servicemonitor_crd.resources | length > 0
   when: _rke2_monitoring_deploy | bool
 
+# The Vector and VectorPipeline CRDs arrive via the argocd git sync rather
+# than this role, same as servicemonitors above.
+- name: Wait for vector crd
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ rke2_config_path }}"
+    kind: CustomResourceDefinition
+    name: vectors.observability.kaasops.io
+  register: _vector_crd
+  retries: "{{ _rke2_retry_num }}"
+  delay: "{{ _rke2_retry_delay }}"
+  until: _vector_crd.resources | length > 0
+  when: _rke2_logging_deploy | bool
+
+- name: Wait for vectorpipeline crd
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ rke2_config_path }}"
+    kind: CustomResourceDefinition
+    name: vectorpipelines.observability.kaasops.io
+  register: _vectorpipeline_crd
+  retries: "{{ _rke2_retry_num }}"
+  delay: "{{ _rke2_retry_delay }}"
+  until: _vectorpipeline_crd.resources | length > 0
+  when: _rke2_logging_deploy | bool
+
 - name: Include metallb tasks
   ansible.builtin.include_tasks: metallb.yml
 
@@ -37,6 +61,10 @@
 - name: Include monitoring tasks
   ansible.builtin.include_tasks: monitoring.yml
   when: _rke2_monitoring_deploy | bool
+
+- name: Include logging tasks
+  ansible.builtin.include_tasks: logging.yml
+  when: _rke2_logging_deploy | bool
 
 - name: Include policy tasks
   ansible.builtin.include_tasks: policies.yml

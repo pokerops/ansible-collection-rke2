@@ -23,11 +23,6 @@ Default installation uses [ArgoCD Applications](https://argo-cd.readthedocs.io/e
 - [Kube State Metrics](https://github.com/kubernetes/kube-state-metrics)
 - [Grafana Alloy Operator](https://github.com/grafana/alloy-operator)
 
-## To Do
-
-- Add Molecule test scenario for Sealed Secrets backup and restore
-- Add alerting on operator-managed clusters that exist but deliver no metrics, labelled `pokerops.net/monitor-optional`
-
 ## Collection Variables
 
 The following is the list of parameters intended for end-user manipulation:
