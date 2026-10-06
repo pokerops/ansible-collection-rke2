@@ -78,9 +78,44 @@
         that: (_received_logs.stdout.split() | first | int) > 0
         fail_msg: >-
           No logs reached the ingestor. Vector is running but not delivering;
-          check the VectorPipeline sink address and the vector agent's logs
-          for connection errors.
+          check the ClusterVectorPipeline sink address and the vector agent's
+          logs for connection errors.
         success_msg: "Ingestor received {{ _received_logs.stdout.split() | first }} log lines"
+
+    # kube-system always has running pods (coredns, etc.) in every scenario, so
+    # this is a reliable, cheap proof that collection is not limited to the
+    # pipeline's own namespace. A VectorPipeline (namespaced) is restricted by
+    # the operator to its own namespace by default; only ClusterVectorPipeline
+    # collects cluster-wide. Matches the exact JSON field, not a bare
+    # substring, so an incidental mention elsewhere (e.g. kube-state-metrics
+    # logging a watched resource's namespace) can't produce a false pass.
+    - name: Wait for a non-monitoring namespace's logs to reach the ingestor
+      ansible.builtin.command:
+        cmd: >-
+          kubectl --kubeconfig {{ molecule_local_kubeconfig }}
+          exec -n {{ monitoring_namespace }} {{ _ingestor_pod }}
+          -- sh -c "grep -c '\"pod_namespace\":\"kube-system\"' {{ monitoring_ingestor_logs_file }} || true"
+      register: _received_cross_namespace_logs
+      changed_when: false
+      failed_when: false
+      retries: "{{ monitoring_settle_retries }}"
+      delay: "{{ monitoring_settle_delay }}"
+      until:
+        - _received_cross_namespace_logs.rc == 0
+        - (_received_cross_namespace_logs.stdout | trim | int) > 0
+
+    - name: Verify log collection is not restricted to the agent's own namespace
+      ansible.builtin.assert:
+        that: (_received_cross_namespace_logs.stdout | trim | int) > 0
+        fail_msg: >-
+          No kube-system pod logs reached the ingestor although kube-system
+          always has running pods. The logging pipeline is likely a namespaced
+          VectorPipeline, which the operator restricts to its own namespace by
+          default - it must be a ClusterVectorPipeline for cluster-wide
+          collection.
+        success_msg: >-
+          Ingestor received {{ _received_cross_namespace_logs.stdout | trim }}
+          log lines from kube-system
 
     - name: Query received events
       ansible.builtin.command:

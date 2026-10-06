@@ -1,10 +1,13 @@
 #jinja2: lstrip_blocks: True
 ---
 apiVersion: observability.kaasops.io/v1alpha1
-kind: VectorPipeline
+# A namespaced VectorPipeline is restricted by the operator to sources in its
+# own namespace (extra_namespace_label_selector, injected automatically) -
+# logs would never leave rke2_monitoring_scraper_namespace. ClusterVectorPipeline
+# carries no such restriction, which is what cluster-wide log shipping needs.
+kind: ClusterVectorPipeline
 metadata:
   name: logging
-  namespace: "{{ rke2_monitoring_scraper_namespace }}"
   labels:
     pokerops.net/vector-pipeline: "true"
 spec:

@@ -18,8 +18,8 @@
   until: _servicemonitor_crd.resources | length > 0
   when: _rke2_monitoring_deploy | bool
 
-# The Vector and VectorPipeline CRDs arrive via the argocd git sync rather
-# than this role, same as servicemonitors above.
+# The Vector and ClusterVectorPipeline CRDs arrive via the argocd git sync
+# rather than this role, same as servicemonitors above.
 - name: Wait for vector crd
   kubernetes.core.k8s_info:
     kubeconfig: "{{ rke2_config_path }}"
@@ -31,11 +31,11 @@
   until: _vector_crd.resources | length > 0
   when: _rke2_logging_deploy | bool
 
-- name: Wait for vectorpipeline crd
+- name: Wait for clustervectorpipeline crd
   kubernetes.core.k8s_info:
     kubeconfig: "{{ rke2_config_path }}"
     kind: CustomResourceDefinition
-    name: vectorpipelines.observability.kaasops.io
+    name: clustervectorpipelines.observability.kaasops.io
   register: _vectorpipeline_crd
   retries: "{{ _rke2_retry_num }}"
   delay: "{{ _rke2_retry_delay }}"
