@@ -16,6 +16,10 @@ rke2_monitoring_tls_ca_secret: ""
 # Remote ingestor to ship metrics to. Empty disables monitoring entirely.
 rke2_monitoring_endpoint: ""
 
+# Remote ingestor to ship logs to, as a bare host:port (Vector's native
+# protocol, not an HTTP URL). Empty disables logging entirely.
+rke2_logging_endpoint: ""
+
 # Agent buffers. Metrics are time-bound by Alloy's WAL; logs 2Gi is ~6h at 100 KiB/s.
 rke2_monitoring_metrics_volume_size: 2Gi
 rke2_monitoring_logs_volume_size: 2Gi

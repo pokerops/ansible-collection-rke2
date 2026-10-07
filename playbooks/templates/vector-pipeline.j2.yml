@@ -1,0 +1,33 @@
+#jinja2: lstrip_blocks: True
+---
+apiVersion: observability.kaasops.io/v1alpha1
+# A namespaced VectorPipeline is restricted by the operator to sources in its
+# own namespace (extra_namespace_label_selector, injected automatically) -
+# logs would never leave rke2_monitoring_scraper_namespace. ClusterVectorPipeline
+# carries no such restriction, which is what cluster-wide log shipping needs.
+kind: ClusterVectorPipeline
+metadata:
+  name: logging
+  labels:
+    pokerops.net/vector-pipeline: "true"
+spec:
+  sources:
+    k8s_logs:
+      type: kubernetes_logs
+  sinks:
+    ingestor:
+      type: vector
+      inputs: [k8s_logs]
+      address: "{{ rke2_logging_endpoint }}"
+      version: "2"
+      # Without this, one failed connection at the moment this pipeline is
+      # first applied (e.g. the remote ingestor isn't up yet) permanently
+      # rejects the config in favor of a blackhole fallback, with no retry.
+      # remote_write has no equivalent gate, so logging shouldn't either.
+      healthcheck: false
+      {% if rke2_monitoring_tls_enabled | bool %}
+      tls:
+        ca_file: /etc/vector/tls/ca.crt
+        crt_file: /etc/vector/tls/tls.crt
+        key_file: /etc/vector/tls/tls.key
+      {% endif %}
