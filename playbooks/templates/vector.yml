@@ -11,6 +11,21 @@ spec:
     matchLabels:
       pokerops.net/vector-pipeline: "true"
   agent:
+    # The operator's own default (100m/200Mi request, 1 cpu/1Gi limit) is sized
+    # for a general-purpose host, not a per-node DaemonSet - on a cluster with
+    # several other operators competing for CPU requests on small nodes, that
+    # default is enough on its own to leave other pods unschedulable (observed:
+    # a MariaDB pod requesting 100m CPU stuck Pending with 0/4 nodes available,
+    # solely because every agent node's CPU requests were already saturated by
+    # existing DaemonSets/operators plus this one). Observed real usage here is
+    # well under 50m CPU / 50Mi memory even while shipping cluster-wide logs.
+    resources:
+      requests:
+        cpu: 20m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
     # Matches the ingestor's own data_dir so dev and prod agree on the path.
     dataDir: /vector-data-dir
     volumes:
