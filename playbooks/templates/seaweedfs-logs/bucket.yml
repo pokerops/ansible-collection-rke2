@@ -1,0 +1,15 @@
+---
+# No S3Identity/S3Credentials/S3Policy/S3PolicyBinding chain - confirmed live
+# that filer/mount access needs no credential unless the Seaweed cluster sets
+# spec.securityConfig.jwtSigning, which this one doesn't. That chain exists
+# specifically to authorize S3-API access; Vector and admins both reach this
+# bucket through the mounted filesystem, never the S3 API.
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  name: "{{ rke2_seaweedfs_logs_bucket }}"
+  namespace: "{{ rke2_seaweedfs_logs_namespace }}"
+spec:
+  clusterRef:
+    name: logs
+    namespace: "{{ rke2_seaweedfs_logs_namespace }}"

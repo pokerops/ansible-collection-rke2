@@ -15,6 +15,7 @@ spec:
     k8s_logs:
       type: kubernetes_logs
   sinks:
+    {% if rke2_logging_endpoint | default('') | length > 0 %}
     ingestor:
       type: vector
       inputs: [k8s_logs]
@@ -31,3 +32,24 @@ spec:
         crt_file: /etc/vector/tls/tls.crt
         key_file: /etc/vector/tls/tls.key
       {% endif %}
+    {% endif %}
+    {% if rke2_logging_local_retention_deploy | bool %}
+    local_retention:
+      type: file
+      inputs: [k8s_logs]
+      # Date-templated: the BucketLifecyclePolicy's TTL (whole days) only
+      # expires files that stop being modified - a single never-renamed
+      # path would keep refreshing its own mtime forever and never qualify.
+      path: >-
+        {{ rke2_seaweedfs_logs_mount_path }}/{{ "{{ kubernetes.pod_namespace }}" }}/{{ "{{ kubernetes.pod_name }}" }}/{{ "{{ kubernetes.container_name }}" }}-%Y-%m-%d.log
+      base_dir: "{{ rke2_seaweedfs_logs_mount_path }}"
+      encoding:
+        codec: text
+      healthcheck:
+        enabled: false
+      # Both sinks read the same k8s_logs source. A struggling FUSE mount
+      # must never backpressure the remote sink above - drop local-copy
+      # events instead of ever blocking (default is "block").
+      buffer:
+        when_full: drop_newest
+    {% endif %}

@@ -66,5 +66,24 @@
   ansible.builtin.include_tasks: logging.yml
   when: _rke2_logging_deploy | bool
 
+# The operator itself is deployed unconditionally in every cluster (same
+# ArgoCD Application as the seaweedfs/mariadb/strimzi CI fixtures wait on),
+# so the CRD should already be there - but it arrives via the argocd git
+# sync rather than this role, so wait for it rather than assuming.
+- name: Wait for seaweed crd
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ rke2_config_path }}"
+    kind: CustomResourceDefinition
+    name: seaweeds.seaweed.seaweedfs.com
+  register: _seaweed_crd
+  retries: "{{ _rke2_retry_num }}"
+  delay: "{{ _rke2_retry_delay }}"
+  until: _seaweed_crd.resources | length > 0
+  when: rke2_logging_local_retention_deploy | bool
+
+- name: Include logging retention tasks
+  ansible.builtin.include_tasks: logging-retention.yml
+  when: rke2_logging_local_retention_deploy | bool
+
 - name: Include policy tasks
   ansible.builtin.include_tasks: policies.yml

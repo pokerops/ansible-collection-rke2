@@ -1,0 +1,38 @@
+---
+- name: Deploy SeaweedFS logs cluster
+  kubernetes.core.k8s:
+    state: present
+    apply: true
+    kubeconfig: "{{ rke2_config_path }}"
+    resource_definition: "{{ lookup('ansible.builtin.template', 'templates/seaweedfs-logs/cluster.yml') | from_yaml_all | list }}"
+
+- name: Wait for SeaweedFS logs cluster to be ready
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ rke2_config_path }}"
+    api_version: seaweed.seaweedfs.com/v1
+    kind: Seaweed
+    name: logs
+    namespace: "{{ rke2_seaweedfs_logs_namespace }}"
+  register: _seaweedfs_logs_cluster
+  retries: "{{ _rke2_retry_num }}"
+  delay: "{{ _rke2_retry_delay }}"
+  until:
+    - _seaweedfs_logs_cluster.resources | length > 0
+    - _seaweedfs_logs_cluster.resources[0].status.conditions | default([])
+      | selectattr('type', 'equalto', 'Ready')
+      | selectattr('status', 'equalto', 'True')
+      | list | length > 0
+
+- name: Deploy SeaweedFS logs bucket
+  kubernetes.core.k8s:
+    state: present
+    apply: true
+    kubeconfig: "{{ rke2_config_path }}"
+    resource_definition: "{{ lookup('ansible.builtin.template', 'templates/seaweedfs-logs/bucket.yml') | from_yaml }}"
+
+- name: Deploy SeaweedFS logs retention policy
+  kubernetes.core.k8s:
+    state: present
+    apply: true
+    kubeconfig: "{{ rke2_config_path }}"
+    resource_definition: "{{ lookup('ansible.builtin.template', 'templates/seaweedfs-logs/retention.yml') | from_yaml }}"

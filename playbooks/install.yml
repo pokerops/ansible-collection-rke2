@@ -13,3 +13,6 @@
 
 - name: Deploy RKE2 components
   import_playbook: pokerops.rke2.init
+
+- name: Configure the local log retention mount
+  import_playbook: pokerops.rke2.retention

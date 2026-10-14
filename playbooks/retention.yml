@@ -1,0 +1,96 @@
+---
+# Host-level POSIX mount for the local short-retention log destination.
+# Runs on every node - agents need it so Vector can write, server nodes need
+# it so admins can read. Same mount, both purposes; no separate variant.
+#
+# No kubeconfig/API access needed here: confirmed live that filer/mount
+# access needs no credential (roles/components/tasks/logging-retention.yml
+# never sets spec.securityConfig.jwtSigning on the Seaweed cluster), and the
+# filer's DNS name is fully predictable from vars alone.
+- name: Configure the local log retention mount
+  hosts: "{{ rke2_server_group }}:{{ rke2_agent_group }}"
+  become: true
+  any_errors_fatal: true
+  vars_files:
+    - main.yml
+  vars:
+    # Underscore-prefixed internal names throughout, matching this
+    # collection's own convention - never shadow the public rke2_* var
+    # name in a play-level vars: block (self-referencing precedence there
+    # is ambiguous; this way an inventory override is unambiguously honored).
+    _seaweedfs_logs_namespace: "{{ rke2_seaweedfs_logs_namespace | default('seaweedfs-logs') }}"
+    _seaweedfs_logs_bucket: "{{ rke2_seaweedfs_logs_bucket | default('logs') }}"
+    _seaweedfs_logs_version: "{{ rke2_seaweedfs_logs_version | default('4.48') }}"
+    _seaweedfs_logs_mount_path: "{{ rke2_seaweedfs_logs_mount_path | default('/var/log/cluster') }}"
+    _seaweedfs_logs_filer_endpoint: >-
+      logs-filer.{{ _seaweedfs_logs_namespace }}.svc.cluster.local:8888
+    _weed_release_url: >-
+      https://github.com/seaweedfs/seaweedfs/releases/download/{{ _seaweedfs_logs_version }}/linux_amd64.tar.gz
+  tasks:
+    - name: End play when local log retention is not enabled
+      ansible.builtin.meta: end_play
+      when: not (rke2_logging_local_retention_deploy | default(false) | bool)
+
+    - name: Create log retention mountpoint
+      ansible.builtin.file:
+        path: "{{ _seaweedfs_logs_mount_path }}"
+        state: directory
+        mode: "u=rwx,go=rx"
+
+    - name: Ensure FUSE package is present
+      ansible.builtin.apt:
+        name: fuse3
+        state: present
+
+    - name: Create weed binary tempdir
+      ansible.builtin.tempfile:
+        state: directory
+        suffix: weed
+      register: _weed_tempdir
+      changed_when: false
+
+    - name: Download and verify weed release archive
+      ansible.builtin.get_url:
+        url: "{{ _weed_release_url }}"
+        dest: "{{ _weed_tempdir.path }}/weed.tar.gz"
+        checksum: "md5:{{ _weed_release_url }}.md5"
+        mode: "u=rw,go=r"
+
+    - name: Extract weed binary
+      ansible.builtin.unarchive:
+        src: "{{ _weed_tempdir.path }}/weed.tar.gz"
+        dest: "{{ _weed_tempdir.path }}"
+        remote_src: true
+
+    - name: Install weed binary
+      ansible.builtin.copy:
+        src: "{{ _weed_tempdir.path }}/weed"
+        dest: /usr/local/bin/weed
+        mode: "u=rwx,go=rx"
+        remote_src: true
+
+    - name: Remove weed binary tempdir
+      ansible.builtin.file:
+        path: "{{ _weed_tempdir.path }}"
+        state: absent
+      changed_when: false
+
+    - name: Template weed mount systemd unit
+      ansible.builtin.template:
+        src: templates/weed-mount.service.j2
+        dest: /etc/systemd/system/weed-mount.service
+        owner: root
+        group: root
+        mode: "u=rw,go=r"
+      register: _weed_mount_unit
+
+    - name: Reload systemd daemon
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+      when: _weed_mount_unit.changed
+
+    - name: Enable and start weed mount service
+      ansible.builtin.systemd_service:
+        name: weed-mount.service
+        enabled: true
+        state: "{{ 'restarted' if _weed_mount_unit.changed else 'started' }}"

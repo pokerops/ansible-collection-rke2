@@ -34,12 +34,6 @@ entirely? That decision gates the actual task — alerting when a
 `pokerops.net/monitor-optional` cluster exists but emits no `kube_*_created`
 series.
 
-## Local log retention
-
-A local, short-retention log destination — so logs are queryable for
-debugging even without the remote endpoint configured — would need its own
-internal object store plus a decision on the admin-facing UX
-
 ## Testing
 
 - No Molecule scenario covers Sealed Secrets backup/restore

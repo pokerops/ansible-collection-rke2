@@ -1,0 +1,30 @@
+[Unit]
+Description=SeaweedFS FUSE mount for cluster-local short-retention logs
+After=network-online.target
+Wants=network-online.target
+# Deliberately no Requires= on anything, and nothing else in this unit
+# depends on a successful mount - a failed/absent mount must never delay
+# or block node boot. See roles/components/README.md for the rationale.
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/weed mount \
+  -filer={{ _seaweedfs_logs_filer_endpoint }} \
+  -filer.path=/buckets/{{ _seaweedfs_logs_bucket }} \
+  -dir={{ _seaweedfs_logs_mount_path }} \
+  -dirAutoCreate \
+  -umask=022
+# SeaweedFS not being ready yet (including at cold cluster bring-up) is an
+# expected, retried condition, not a failure state - confirmed live that a
+# write during a filer outage fails cleanly (~13s) rather than hanging, and
+# that the mount recovers automatically once the filer returns.
+Restart=on-failure
+RestartSec=10
+# A convenience feature running on every node, including the ones running
+# etcd/kube-apiserver - bound its footprint the same way Vector's agent
+# needed to be bounded earlier.
+CPUQuota=50%
+MemoryMax=256M
+
+[Install]
+WantedBy=multi-user.target

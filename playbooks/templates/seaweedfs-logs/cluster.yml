@@ -1,0 +1,49 @@
+#jinja2: lstrip_blocks: True
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: "{{ rke2_seaweedfs_logs_namespace }}"
+---
+# Single-replica Longhorn storage class, own class rather than sharing one
+# with mariadb/zalando/strimzi's own ad hoc test classes - different
+# lifecycles, no real DRY win from merging them.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: "{{ rke2_seaweedfs_logs_storage_class }}"
+provisioner: driver.longhorn.io
+allowVolumeExpansion: true
+reclaimPolicy: Delete
+volumeBindingMode: Immediate
+parameters:
+  numberOfReplicas: "1"
+  staleReplicaTimeout: "30"
+  fsType: ext4
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Seaweed
+metadata:
+  name: logs
+  namespace: "{{ rke2_seaweedfs_logs_namespace }}"
+spec:
+  image: "{{ rke2_seaweedfs_logs_image }}"
+  volumeServerDiskCount: 1
+  master:
+    replicas: 1
+  volume:
+    replicas: 1
+    # Headroom beyond this bucket's own needs - an undersized value can
+    # silently exhaust itself on other collections before this bucket's own
+    # volume ever grows (confirmed directly: a value of 2 did exactly that).
+    maxVolumeCounts: {{ rke2_seaweedfs_logs_max_volume_count }}
+    fileSizeLimitMB: 1000
+    storageClassName: "{{ rke2_seaweedfs_logs_storage_class }}"
+    requests:
+      storage: "{{ rke2_seaweedfs_logs_volume_size }}"
+  filer:
+    replicas: 1
+    config: |
+      [leveldb2]
+      enabled = true
+      dir = "/data/filerldb2"

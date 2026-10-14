@@ -1,0 +1,13 @@
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: BucketLifecyclePolicy
+metadata:
+  name: "{{ rke2_seaweedfs_logs_bucket }}"
+  namespace: "{{ rke2_seaweedfs_logs_namespace }}"
+spec:
+  bucketRef:
+    name: "{{ rke2_seaweedfs_logs_bucket }}"
+  rules:
+    - id: expire-after-retention-days
+      expiration:
+        days: {{ rke2_seaweedfs_logs_retention_days }}

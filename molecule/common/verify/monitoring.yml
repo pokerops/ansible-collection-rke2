@@ -117,6 +117,37 @@
           Ingestor received {{ _received_cross_namespace_logs.stdout | trim }}
           log lines from kube-system
 
+    - name: Wait for SeaweedFS logs cluster to be ready
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        api_version: seaweed.seaweedfs.com/v1
+        kind: Seaweed
+        name: logs
+        namespace: seaweedfs-logs
+      register: _seaweedfs_logs_cluster
+      retries: "{{ monitoring_settle_retries }}"
+      delay: "{{ monitoring_settle_delay }}"
+      until:
+        - _seaweedfs_logs_cluster.resources | length > 0
+        - _seaweedfs_logs_cluster.resources[0].status.conditions | default([])
+          | selectattr('type', 'equalto', 'Ready')
+          | selectattr('status', 'equalto', 'True')
+          | list | length > 0
+
+    - name: Wait for SeaweedFS logs bucket to be ready
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        api_version: seaweed.seaweedfs.com/v1
+        kind: Bucket
+        name: logs
+        namespace: seaweedfs-logs
+      register: _seaweedfs_logs_bucket
+      retries: "{{ monitoring_settle_retries }}"
+      delay: "{{ monitoring_settle_delay }}"
+      until:
+        - _seaweedfs_logs_bucket.resources | length > 0
+        - _seaweedfs_logs_bucket.resources[0].status.phase | default('') == 'Ready'
+
     - name: Query received events
       ansible.builtin.command:
         cmd: >-
@@ -220,3 +251,162 @@
           {{ _received_namespaces.stdout_lines
              | map('regex_replace', '^.*:"(.*)"$', '\\1') | unique | list }}
         _unscraped: "{{ _declared | difference(_scraped) }}"
+
+- name: Verify local log retention mount on every node
+  hosts: "rke2_server:rke2_agent"
+  any_errors_fatal: true
+  vars:
+    _mount_path: "{{ rke2_seaweedfs_logs_mount_path | default('/var/log/cluster') }}"
+    _mount_settle_retries: 30
+    _mount_settle_delay: 10
+  tasks:
+    # The mount is non-blocking by design - it may still be retrying if the
+    # SeaweedFS cluster wasn't up yet when this node first booted. Active is
+    # the right thing to wait for; it says nothing about whether the backend
+    # has actually been reachable yet, which the content check below covers.
+    - name: Wait for the weed mount service to be active
+      ansible.builtin.systemd_service:
+        name: weed-mount.service
+      register: _weed_mount_status
+      become: true
+      retries: "{{ _mount_settle_retries }}"
+      delay: "{{ _mount_settle_delay }}"
+      until: _weed_mount_status.status.ActiveState == 'active'
+
+- name: Verify local log retention cross-node visibility
+  hosts: "rke2_server:rke2_agent"
+  any_errors_fatal: true
+  vars:
+    _mount_path: "{{ rke2_seaweedfs_logs_mount_path | default('/var/log/cluster') }}"
+    _marker_namespace: molecule-retention-check
+    # Computed once on the controller so writer and reader agree on the
+    # exact same path regardless of which host resolves it - avoids any
+    # per-node clock-skew edge case around a date rollover.
+    _marker_date: "{{ now(utc=true).strftime('%Y-%m-%d') }}"
+    _marker_file: "{{ _mount_path }}/{{ _marker_namespace }}/marker-{{ _marker_date }}.log"
+    _writer_host: "{{ groups['rke2_server'][0] }}"
+    _reader_host: "{{ groups['rke2_agent'][0] }}"
+    _visibility_retries: 30
+    _visibility_delay: 1
+  tasks:
+    # A real round-trip through the actual mechanism (the mount + whatever
+    # wrote through it), not the hand-run weed mount used to measure this
+    # live during implementation (~1.4s, default settings) - that number
+    # was a sanity check on the underlying mechanism, not proof this
+    # specific wiring behaves the same way.
+    - name: Write a latency marker on the writer node
+      ansible.builtin.shell:
+        cmd: >-
+          mkdir -p {{ _mount_path }}/{{ _marker_namespace }} &&
+          date -u +%s%N > {{ _marker_file }}
+      become: true
+      when: inventory_hostname == _writer_host
+      changed_when: true
+
+    - name: Poll for the marker on the reader node
+      ansible.builtin.command:
+        cmd: cat {{ _marker_file }}
+      register: _marker_read
+      become: true
+      when: inventory_hostname == _reader_host
+      changed_when: false
+      failed_when: false
+      retries: "{{ _visibility_retries }}"
+      delay: "{{ _visibility_delay }}"
+      until: _marker_read.rc == 0
+
+    - name: Verify the marker became visible on a different node
+      ansible.builtin.assert:
+        that: _marker_read.rc == 0
+        fail_msg: >-
+          A log line written on {{ _writer_host }} never became visible on
+          {{ _reader_host }} within {{ _visibility_retries * _visibility_delay }}s.
+          This is the entire point of writing through the mount instead of
+          the old S3-batch sink - if this fails, that architecture change
+          didn't deliver what it was for.
+        success_msg: >-
+          Marker written on {{ _writer_host }} became visible on
+          {{ _reader_host }}
+      when: inventory_hostname == _reader_host
+
+- name: Verify the mount survives a SeaweedFS outage
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Scale the SeaweedFS logs filer to zero
+      kubernetes.core.k8s_scale:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        api_version: apps/v1
+        kind: StatefulSet
+        name: logs-filer
+        namespace: seaweedfs-logs
+        replicas: 0
+        wait: false
+
+- name: Verify affected nodes stay responsive during the outage
+  hosts: "rke2_server:rke2_agent"
+  any_errors_fatal: true
+  vars:
+    _mount_path: "{{ rke2_seaweedfs_logs_mount_path | default('/var/log/cluster') }}"
+  tasks:
+    # Measured live during implementation: a write while the filer is down
+    # fails cleanly after ~13s, not a hang. 30s is headroom on that, not a
+    # new assumption - if this hangs past it, that's the regression this
+    # whole host-level-vs-DaemonSet design exists to prevent.
+    - name: Attempt a write during the outage
+      ansible.builtin.command:
+        cmd: timeout 30 sh -c "echo outage-check > {{ _mount_path }}/outage-check.txt"
+      become: true
+      register: _outage_write
+      changed_when: false
+      failed_when: _outage_write.rc == 124
+
+    - name: Verify the node is otherwise still fully responsive
+      ansible.builtin.command: "true"
+      changed_when: false
+
+- name: Restore the SeaweedFS logs filer
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Scale the SeaweedFS logs filer back up
+      kubernetes.core.k8s_scale:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        api_version: apps/v1
+        kind: StatefulSet
+        name: logs-filer
+        namespace: seaweedfs-logs
+        replicas: 1
+        wait: false
+
+- name: Verify the mount recovers automatically after the outage
+  hosts: "rke2_server:rke2_agent"
+  any_errors_fatal: true
+  vars:
+    _mount_path: "{{ rke2_seaweedfs_logs_mount_path | default('/var/log/cluster') }}"
+    _recovery_retries: 30
+    _recovery_delay: 10
+  tasks:
+    # No remount needed, confirmed live - the same weed mount process just
+    # starts succeeding again once the filer is reachable.
+    - name: Wait for a write to succeed again after recovery
+      ansible.builtin.command:
+        cmd: sh -c "echo recovered > {{ _mount_path }}/recovery-check.txt"
+      become: true
+      register: _recovery_write
+      changed_when: false
+      failed_when: false
+      retries: "{{ _recovery_retries }}"
+      delay: "{{ _recovery_delay }}"
+      until: _recovery_write.rc == 0
+
+    - name: Verify recovery was automatic
+      ansible.builtin.assert:
+        that: _recovery_write.rc == 0
+        fail_msg: >-
+          Writes never succeeded again after the filer recovered - the
+          mount needed manual intervention, which defeats the point of the
+          Restart=on-failure design.
+        success_msg: "Mount recovered automatically after the outage"
