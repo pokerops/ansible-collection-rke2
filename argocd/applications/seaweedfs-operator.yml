@@ -13,7 +13,9 @@ spec:
     chart: seaweedfs-operator
     targetRevision: "0.1.40"
     helm:
-      valuesObject: {}
+      valuesObject:
+        webhook:
+          enabled: false
   destination:
     server: https://kubernetes.default.svc
     namespace: seaweedfs-operator

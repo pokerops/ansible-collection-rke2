@@ -16,6 +16,7 @@ Default installation uses [ArgoCD Applications](https://argo-cd.readthedocs.io/e
 
 - [Keel](https://keel.sh/)
 - [Kubernetes Reflector](https://github.com/emberstack/kubernetes-reflector)
+- [SeaweedFS Operator](https://github.com/seaweedfs/seaweedfs-operator)
 - [Sealed Secrets](https://github.com/bitnami-labs/sealed-secrets)
 - [Strimzi Operator](https://strimzi.io/)
 - [Velero](https://velero.io/)
