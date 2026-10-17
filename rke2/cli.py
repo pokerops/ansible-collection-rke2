@@ -279,8 +279,7 @@ def build(
     if _argocd_version != _collection_version:
         if check:
             typer.echo(
-                f"ArgoCD version {_argocd_version} does not match collection version {_collection_version}, "
-                "please run 'just build-fix' and commit changes",
+                f"ArgoCD version {_argocd_version} does not match collection version {_collection_version}, please run 'just build-fix' and commit changes",
                 err=True,
             )
             exit(1)

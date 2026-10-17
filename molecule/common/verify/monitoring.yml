@@ -117,43 +117,25 @@
           Ingestor received {{ _received_cross_namespace_logs.stdout | trim }}
           log lines from kube-system
 
-    - name: Wait for SeaweedFS logs cluster to be ready
-      kubernetes.core.k8s_info:
-        kubeconfig: "{{ molecule_local_kubeconfig }}"
-        api_version: seaweed.seaweedfs.com/v1
-        kind: Seaweed
-        name: logs
-        namespace: seaweedfs-logs
-      register: _seaweedfs_logs_cluster
-      retries: "{{ monitoring_settle_retries }}"
-      delay: "{{ monitoring_settle_delay }}"
-      until:
-        - _seaweedfs_logs_cluster.resources | length > 0
-        - _seaweedfs_logs_cluster.resources[0].status.conditions | default([])
-          | selectattr('type', 'equalto', 'Ready')
-          | selectattr('status', 'equalto', 'True')
-          | list | length > 0
-
-    - name: Wait for SeaweedFS logs bucket to be ready
-      kubernetes.core.k8s_info:
-        kubeconfig: "{{ molecule_local_kubeconfig }}"
-        api_version: seaweed.seaweedfs.com/v1
-        kind: Bucket
-        name: logs
-        namespace: seaweedfs-logs
-      register: _seaweedfs_logs_bucket
-      retries: "{{ monitoring_settle_retries }}"
-      delay: "{{ monitoring_settle_delay }}"
-      until:
-        - _seaweedfs_logs_bucket.resources | length > 0
-        - _seaweedfs_logs_bucket.resources[0].status.phase | default('') == 'Ready'
-
+    # _received (above) is a stale snapshot by the time this runs - several
+    # tasks and real wall-clock time earlier - and metrics.log only ever
+    # grows (continuous scraping). Comparing a stale total against a fresh
+    # labelled-count recheck is racy by construction, not by bad luck -
+    # confirmed live, repeatedly, labelled exceeding that stale total by a
+    # margin tracking how much time had passed. Even two SEPARATE reads of
+    # the file back-to-back in the same shell invocation (wc -l; grep -c)
+    # still raced - confirmed live a second time, same symptom, smaller but
+    # still nonzero gap - this ingestor receives bursts faster than two
+    # sequential syscalls apart can outrun. A single awk pass counting both
+    # over the exact same read of the file is what actually closes this.
     - name: Query received events
       ansible.builtin.command:
         cmd: >-
           kubectl --kubeconfig {{ molecule_local_kubeconfig }}
           exec -n {{ monitoring_namespace }} {{ _ingestor_pod }}
-          -- sh -c "grep -c '{{ item.pattern }}' {{ monitoring_ingestor_file }} || true"
+          -- awk -v "pat={{ item.pattern }}"
+          '{t++} $0 ~ pat {l++} END {print t+0; print l+0}'
+          {{ monitoring_ingestor_file }}
       register: _event_query
       changed_when: false
       loop:
@@ -164,9 +146,9 @@
 
     - name: Set event count facts
       ansible.builtin.set_fact:
-        _count_total: "{{ _received.stdout.split() | first | int }}"
-        _count_labelled: "{{ _event_query.results[0].stdout | trim | int }}"
-        _count_dropped: "{{ _event_query.results[1].stdout | trim | int }}"
+        _count_total: "{{ _event_query.results[0].stdout_lines[0] | trim | int }}"
+        _count_labelled: "{{ _event_query.results[0].stdout_lines[1] | trim | int }}"
+        _count_dropped: "{{ _event_query.results[1].stdout_lines[1] | trim | int }}"
 
     - name: Verify every event carries the cluster label
       ansible.builtin.assert:
@@ -249,8 +231,55 @@
              | map(attribute='metadata.namespace') | unique | sort | list }}
         _scraped: >-
           {{ _received_namespaces.stdout_lines
-             | map('regex_replace', '^.*:"(.*)"$', '\\1') | unique | list }}
+             | map('regex_replace', '^.*:"(.*)"$', '\1') | unique | list }}
         _unscraped: "{{ _declared | difference(_scraped) }}"
+
+- name: Verify SeaweedFS logs cluster
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    monitoring_settle_retries: 30
+    monitoring_settle_delay: 10
+  tasks:
+    # Deliberately its own play, not nested inside "Verify monitoring
+    # pipeline" above - that play straddles a total-count snapshot (taken
+    # early) and a live recount of the same ever-growing metrics.log
+    # (taken later) that must stay == each other. Sitting these retry loops
+    # between those two measurements widened the gap enough for ordinary
+    # ongoing scraping to push the live recount past the stale snapshot,
+    # failing that unrelated assertion - confirmed live, twice, labelled
+    # count exceeding total by a growing margin each run.
+    - name: Wait for SeaweedFS logs cluster to be ready
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        api_version: seaweed.seaweedfs.com/v1
+        kind: Seaweed
+        name: logs
+        namespace: seaweedfs-logs
+      register: _seaweedfs_logs_cluster
+      retries: "{{ monitoring_settle_retries }}"
+      delay: "{{ monitoring_settle_delay }}"
+      until:
+        - _seaweedfs_logs_cluster.resources | length > 0
+        - _seaweedfs_logs_cluster.resources[0].status.conditions | default([])
+          | selectattr('type', 'equalto', 'Ready')
+          | selectattr('status', 'equalto', 'True')
+          | list | length > 0
+
+    - name: Wait for SeaweedFS logs bucket to be ready
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        api_version: seaweed.seaweedfs.com/v1
+        kind: Bucket
+        name: logs
+        namespace: seaweedfs-logs
+      register: _seaweedfs_logs_bucket
+      retries: "{{ monitoring_settle_retries }}"
+      delay: "{{ monitoring_settle_delay }}"
+      until:
+        - _seaweedfs_logs_bucket.resources | length > 0
+        - _seaweedfs_logs_bucket.resources[0].status.phase | default('') == 'Ready'
 
 - name: Verify local log retention mount on every node
   hosts: "rke2_server:rke2_agent"

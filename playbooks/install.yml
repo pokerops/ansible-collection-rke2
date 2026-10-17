@@ -15,4 +15,4 @@
   import_playbook: pokerops.rke2.init
 
 - name: Configure the local log retention mount
-  import_playbook: pokerops.rke2.retention
+  import_playbook: pokerops.rke2.logretention

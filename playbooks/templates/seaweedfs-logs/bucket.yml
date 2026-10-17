@@ -13,3 +13,13 @@ spec:
   clusterRef:
     name: logs
     namespace: "{{ rke2_seaweedfs_logs_namespace }}"
+  # weed mount's own -dirAutoCreate (playbooks/logretention.yml) creates a
+  # plain filer directory at this same /buckets/<name> path the moment it
+  # first connects, with no awareness of this CRD's ownership tracking -
+  # confirmed live: on a fresh cluster where the mount happened to connect
+  # before this CRD was ever applied, the controller refused to proceed,
+  # phase: Failed, "already exists ... not created by this resource".
+  # Nothing to fix on the mount's side - the directory it creates is the
+  # exact right one either way, so adopt it rather than trying to win a
+  # race between two independent paths to the same directory.
+  adoptExisting: true

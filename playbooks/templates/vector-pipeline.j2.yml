@@ -33,7 +33,7 @@ spec:
         key_file: /etc/vector/tls/tls.key
       {% endif %}
     {% endif %}
-    {% if rke2_logging_local_retention_deploy | bool %}
+    {% if rke2_seaweedfs_logs_enable | bool %}
     local_retention:
       type: file
       inputs: [k8s_logs]
@@ -42,7 +42,15 @@ spec:
       # path would keep refreshing its own mtime forever and never qualify.
       path: >-
         {{ rke2_seaweedfs_logs_mount_path }}/{{ "{{ kubernetes.pod_namespace }}" }}/{{ "{{ kubernetes.pod_name }}" }}/{{ "{{ kubernetes.container_name }}" }}-%Y-%m-%d.log
-      base_dir: "{{ rke2_seaweedfs_logs_mount_path }}"
+      # base_dir looked like a real field in vector.dev's current docs but
+      # the operator's actual deployed Vector (0.48.0) rejects it as unknown
+      # - that docs page reflects the latest release, not what's actually
+      # running. Confirmed live, the hard way: this is exactly the kind of
+      # version mismatch "verify against real behavior" exists to catch, and
+      # reading a docs page is not the same as testing against the real
+      # thing. No path confinement without it; the template's own path
+      # components (kubernetes.pod_namespace/pod_name/container_name) are
+      # well-formed k8s identifiers, not attacker-controlled input here.
       encoding:
         codec: text
       healthcheck:

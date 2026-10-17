@@ -37,8 +37,8 @@ spec:
       - name: varlogpods
         hostPath:
           path: /var/log/pods
-      {% if rke2_logging_local_retention_deploy | bool %}
-      # The host-level mount (playbooks/logging-retention.yml) establishes
+      {% if rke2_seaweedfs_logs_enable | bool %}
+      # The host-level mount (playbooks/logretention.yml) establishes
       # the real FUSE mount here; HostToContainer propagation means this
       # container picks it up whenever it appears, even if that's after
       # this pod already started - the mount isn't guaranteed to exist yet
@@ -53,7 +53,7 @@ spec:
       - name: varlogpods
         mountPath: /var/log/pods
         readOnly: true
-      {% if rke2_logging_local_retention_deploy | bool %}
+      {% if rke2_seaweedfs_logs_enable | bool %}
       - name: seaweedfs-logs
         mountPath: "{{ rke2_seaweedfs_logs_mount_path }}"
         mountPropagation: HostToContainer

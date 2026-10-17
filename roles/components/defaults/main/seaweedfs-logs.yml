@@ -1,0 +1,36 @@
+---
+rke2_seaweedfs_logs_enable: false
+rke2_seaweedfs_logs_namespace: seaweedfs-logs
+# Pinned, not floating :latest - this is a production-facing component now,
+# not the CI-only fixture it was copied from. Also used by the host-level
+# mount playbook to download the matching `weed` binary version, so this is
+# the version number alone, not the full image reference.
+rke2_seaweedfs_logs_version: "4.48"
+rke2_seaweedfs_logs_image: "chrislusf/seaweedfs:{{ rke2_seaweedfs_logs_version }}"
+rke2_seaweedfs_logs_bucket: logs
+rke2_seaweedfs_logs_storage_class: seaweedfs-logs
+# volumeServerDiskCount is 1 - one disk, sized by this value - so this is
+# the actual capacity budget. max_volume_count below does NOT multiply it;
+# it only caps how many SeaweedFS volume files can exist within this one
+# disk. Sized for 2x the retention window at the highest log rate measured
+# in this session's own testing: 318069 lines over 1891s (168.2 lines/sec)
+# during a full cluster bring-up/redeploy burst, at an unbiased ~293
+# bytes/line average sampled across argocd-application-controller,
+# coredns, and longhorn-manager (405 lines, 118550 bytes) - about 4.06
+# GiB/day, so ~8.12 GiB for 2 days. 10Gi leaves ~23% margin. This is a
+# bootstrap-burst rate from test infrastructure, not a production
+# workload's steady-state rate - recalculate from a real cluster's own
+# observed rate rather than trusting this number blindly.
+rke2_seaweedfs_logs_volume_size: 10Gi
+# Headroom beyond what a single collection needs - an undersized value can
+# silently exhaust itself on other collections before this bucket's own
+# volume ever grows, confirmed the hard way during implementation.
+rke2_seaweedfs_logs_max_volume_count: 7
+rke2_seaweedfs_logs_retention_days: 1
+# Volumes are marked read-only once free disk space drops below this, so
+# the master allocates a fresh volume (within max_volume_count) instead of
+# writes hitting a hard ENOSPC at 0% free - the same graceful "this one's
+# full, use another" handling max_volume_count already gets, applied to
+# disk space instead of volume-slot count.
+rke2_seaweedfs_logs_min_free_space_percent: 10
+rke2_seaweedfs_logs_mount_path: /var/log/cluster

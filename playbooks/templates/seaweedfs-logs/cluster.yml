@@ -37,7 +37,25 @@ spec:
     # silently exhaust itself on other collections before this bucket's own
     # volume ever grows (confirmed directly: a value of 2 did exactly that).
     maxVolumeCounts: {{ rke2_seaweedfs_logs_max_volume_count }}
-    fileSizeLimitMB: 1000
+    # Confirmed live, the hard way, without this: a volume server fills its
+    # disk until a raw ENOSPC, not a graceful SeaweedFS-level signal. With
+    # this set, the volume is marked read-only before the disk is truly
+    # full and the master allocates a fresh one instead (within
+    # maxVolumeCounts) - the same "this one's full, use another" handling
+    # maxVolumeCounts itself already gets, just keyed on disk space.
+    minFreeSpacePercent: {{ rke2_seaweedfs_logs_min_free_space_percent }}
+    # Not a rotation/truncation mechanism - nothing in this design performs
+    # one; files only rotate by date (the %Y-%m-%d filename). This is a
+    # hard per-write ceiling: exceed it and that single write is rejected,
+    # which Vector handles the same as any other write failure (drops the
+    # event, logs it, doesn't crash - confirmed live). 1000 was carried
+    # over unexamined from molecule/common/seaweedfs.yml's Velero/BSL
+    # fixture, where large backup archives justify a generous ceiling -
+    # irrelevant here, since Vector writes small, frequent appends, never
+    # anywhere near even this smaller value in a single write. Bounds the
+    # worst case (one noisy pod's single-day file eating a large slice of
+    # the shared volume budget) without affecting normal operation.
+    fileSizeLimitMB: 100
     storageClassName: "{{ rke2_seaweedfs_logs_storage_class }}"
     requests:
       storage: "{{ rke2_seaweedfs_logs_volume_size }}"

@@ -66,4 +66,4 @@ _rke2_skip_deploy: "{{ rke2_skip_deploy | default(false) }}"
 _rke2_monitoring_deploy: "{{ rke2_monitoring_endpoint | default('') | length > 0 }}"
 _rke2_logging_deploy: >-
   {{ (rke2_logging_endpoint | default('') | length > 0)
-     or (rke2_logging_local_retention_deploy | default(false) | bool) }}
+     or (rke2_seaweedfs_logs_enable | default(false) | bool) }}

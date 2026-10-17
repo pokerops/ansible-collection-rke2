@@ -11,14 +11,31 @@ Type=simple
 ExecStart=/usr/local/bin/weed mount \
   -filer={{ _seaweedfs_logs_filer_endpoint }} \
   -filer.path=/buckets/{{ _seaweedfs_logs_bucket }} \
+  -collection={{ _seaweedfs_logs_bucket }} \
   -dir={{ _seaweedfs_logs_mount_path }} \
   -dirAutoCreate \
   -umask=022
+# -collection is not inferred from -filer.path=/buckets/<name> - confirmed
+# live, the hard way: without it, every write silently lands in the
+# default (empty-string) collection instead, which shares the same
+# cluster-wide max_volume_count budget as every other collection. On a
+# completely fresh cluster, with no prior manual testing to blame, all 7
+# volumes still ended up allocated to the default collection and writes
+# started failing with ENOSPC - the bucket's own "logs" collection never
+# got a single volume of its own. The S3 API auto-maps a bucket name to a
+# same-named collection; plain filer/FUSE access to the same path does not.
 # SeaweedFS not being ready yet (including at cold cluster bring-up) is an
 # expected, retried condition, not a failure state - confirmed live that a
 # write during a filer outage fails cleanly (~13s) rather than hanging, and
 # that the mount recovers automatically once the filer returns.
-Restart=on-failure
+#
+# Restart=always, not on-failure: confirmed live that weed mount exits 0
+# (not a failure) once it exhausts its own internal connect-retry budget
+# and can't reach the filer at startup - on-failure never restarts after a
+# clean exit, so the mount would die permanently the first time it starts
+# before the filer (or DNS for it) is ready, which is exactly the ordinary
+# case at cold cluster bring-up this unit exists to tolerate.
+Restart=always
 RestartSec=10
 # A convenience feature running on every node, including the ones running
 # etcd/kube-apiserver - bound its footprint the same way Vector's agent

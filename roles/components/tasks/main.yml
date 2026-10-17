@@ -79,11 +79,11 @@
   retries: "{{ _rke2_retry_num }}"
   delay: "{{ _rke2_retry_delay }}"
   until: _seaweed_crd.resources | length > 0
-  when: rke2_logging_local_retention_deploy | bool
+  when: rke2_seaweedfs_logs_enable | bool
 
 - name: Include logging retention tasks
   ansible.builtin.include_tasks: logging-retention.yml
-  when: rke2_logging_local_retention_deploy | bool
+  when: rke2_seaweedfs_logs_enable | bool
 
 - name: Include policy tasks
   ansible.builtin.include_tasks: policies.yml
