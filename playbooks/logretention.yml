@@ -79,10 +79,15 @@
     # collection's own convention - never shadow the public rke2_* var
     # name in a play-level vars: block (self-referencing precedence there
     # is ambiguous; this way an inventory override is unambiguously honored).
-    _seaweedfs_logs_namespace: "{{ rke2_seaweedfs_logs_namespace | default('seaweedfs-logs') }}"
-    _seaweedfs_logs_bucket: "{{ rke2_seaweedfs_logs_bucket | default('logs') }}"
-    _seaweedfs_logs_version: "{{ rke2_seaweedfs_logs_version | default('4.48') }}"
-    _seaweedfs_logs_mount_path: "{{ rke2_seaweedfs_logs_mount_path | default('/var/log/cluster') }}"
+    # Fallbacks come from the components role defaults (loaded below into a
+    # single namespaced dict), so each default lives in exactly one place.
+    _seaweedfs_logs_namespace: "{{ rke2_seaweedfs_logs_namespace | default(_seaweedfs_logs_defaults.rke2_seaweedfs_logs_namespace) }}"
+    _seaweedfs_logs_bucket: "{{ rke2_seaweedfs_logs_bucket | default(_seaweedfs_logs_defaults.rke2_seaweedfs_logs_bucket) }}"
+    _seaweedfs_logs_image: "{{ rke2_seaweedfs_logs_image | default(_seaweedfs_logs_defaults.rke2_seaweedfs_logs_image) }}"
+    # The weed binary must match the cluster it mounts, so its version is
+    # the image tag rather than a separately pinned value.
+    _seaweedfs_logs_version: "{{ _seaweedfs_logs_image.rsplit(':', 1) | last }}"
+    _seaweedfs_logs_mount_path: "{{ rke2_seaweedfs_logs_mount_path | default(_seaweedfs_logs_defaults.rke2_seaweedfs_logs_mount_path) }}"
     _seaweedfs_logs_filer_endpoint: >-
       logs-filer.{{ _seaweedfs_logs_namespace }}.svc.cluster.local:8888
     _cluster_dns_clusterip: "{{ hostvars['localhost']['_cluster_dns_clusterip'] }}"
@@ -92,6 +97,13 @@
     - name: End play when local log retention is not enabled
       ansible.builtin.meta: end_play
       when: not (rke2_seaweedfs_logs_enable | default(false) | bool)
+
+    # name: scopes the file under one dict instead of setting the rke2_* vars
+    # themselves, which would outrank inventory overrides.
+    - name: Load seaweedfs-logs role defaults
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../roles/components/defaults/main/seaweedfs-logs.yml"
+        name: _seaweedfs_logs_defaults
 
     - name: Create log retention mountpoint
       ansible.builtin.file:

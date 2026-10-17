@@ -1,12 +1,10 @@
 ---
 rke2_seaweedfs_logs_enable: false
 rke2_seaweedfs_logs_namespace: seaweedfs-logs
-# Pinned, not floating :latest - this is a production-facing component now,
-# not the CI-only fixture it was copied from. Also used by the host-level
-# mount playbook to download the matching `weed` binary version, so this is
-# the version number alone, not the full image reference.
-rke2_seaweedfs_logs_version: "4.48"
-rke2_seaweedfs_logs_image: "chrislusf/seaweedfs:{{ rke2_seaweedfs_logs_version }}"
+# Pinned, not floating :latest - bumped by `rke2 update`. The host-level
+# mount playbook downloads the `weed` binary matching this tag, so pinning
+# the image on a cluster pins the mount client along with it.
+rke2_seaweedfs_logs_image: "chrislusf/seaweedfs:4.48"
 rke2_seaweedfs_logs_bucket: logs
 rke2_seaweedfs_logs_storage_class: seaweedfs-logs
 # volumeServerDiskCount is 1 - one disk, sized by this value - so this is

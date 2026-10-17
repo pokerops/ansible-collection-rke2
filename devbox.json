@@ -12,6 +12,7 @@
     "postgresql@latest",
     "kubernetes-helm@latest",
     "kubectl@latest",
+    "skopeo@latest",
     "curl@latest",
     "jq@latest",
     "virt-viewer@latest"
