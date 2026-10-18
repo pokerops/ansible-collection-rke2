@@ -20,10 +20,13 @@ rke2_seaweedfs_logs_storage_class: seaweedfs-logs
 # workload's steady-state rate - recalculate from a real cluster's own
 # observed rate rather than trusting this number blindly.
 rke2_seaweedfs_logs_volume_size: 10Gi
-# Headroom beyond what a single collection needs - an undersized value can
-# silently exhaust itself on other collections before this bucket's own
-# volume ever grows, confirmed the hard way during implementation.
+# Volume slots shared by every collection on the disk - the logs bucket and
+# the filer's own metadata log. Volumes grow one at a time as each fills.
 rke2_seaweedfs_logs_max_volume_count: 7
+# Per-volume ceiling, sized so max_volume_count full volumes fit inside the
+# disk less the min_free_space_percent reserve: 7 x 1300MB = 9100MB, under
+# 90% of 10Gi (9216MB). Recompute whenever either of those changes.
+rke2_seaweedfs_logs_volume_size_limit_mb: 1300
 rke2_seaweedfs_logs_retention_days: 1
 # Volumes are marked read-only once free disk space drops below this, so
 # the master allocates a fresh volume (within max_volume_count) instead of

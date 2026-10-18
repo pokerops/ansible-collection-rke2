@@ -31,11 +31,20 @@ spec:
   volumeServerDiskCount: 1
   master:
     replicas: 1
+    # Sized so maxVolumeCounts volumes fit the one disk - the 30GB default
+    # lets a single volume outgrow it, so slot count never bounded capacity.
+    volumeSizeLimitMB: {{ rke2_seaweedfs_logs_volume_size_limit_mb }}
+    # Grow one volume per request instead of the default 7 for replication
+    # 000. With 7, the first collection to ask after the volume server
+    # registers takes every slot - confirmed live: the filer's own metadata
+    # log (default collection) took all 7 and every logs write hit ENOSPC.
+    config: |
+      [master.volume_growth]
+      copy_1 = 1
   volume:
     replicas: 1
-    # Headroom beyond this bucket's own needs - an undersized value can
-    # silently exhaust itself on other collections before this bucket's own
-    # volume ever grows (confirmed directly: a value of 2 did exactly that).
+    # Slots are shared by every collection (the filer's metadata log lives in
+    # the default one), grown one at a time as each fills.
     maxVolumeCounts: {{ rke2_seaweedfs_logs_max_volume_count }}
     # Confirmed live, the hard way, without this: a volume server fills its
     # disk until a raw ENOSPC, not a graceful SeaweedFS-level signal. With
