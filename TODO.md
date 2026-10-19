@@ -39,6 +39,31 @@ each pinned chart version's values/templates and the component's source.
 - **strimzi** — chart `logConfiguration` with a full log4j2.properties using
   `JsonTemplateLayout`; operator only, Kafka clusters set their own logging
 
+## SeaweedFS mount write cost
+
+Upstream bug, not yet reported - **file a SeaweedFS issue** (with the
+benchmark below) before working around it further.
+
+`weed mount` (4.48, unchanged on master) keeps one
+`page_writer.ChunkWrittenInterval` per write in each 2 MB chunk, never
+merges adjacent ones, and walks the whole list twice per write
+(`addInterval`, then `IsComplete` via `maybeMoveToSealed`). Vector's file
+sink does one write per log line, so each write costs O(writes already in
+the chunk). Profiled live: ~80% of weed's CPU in those two functions; a
+busy agent node spends 7-17% steady, and log bursts outgrow any fixed CPU
+share (`weed-mount.service.j2` now uses `CPUWeight`, not `CPUQuota`, so
+it slows down instead of freezing).
+
+- Benchmark: one held-open fd on the mount, 1000 appends of ~145 bytes.
+  Default mount: 65.7s wall. With `-writebackCache`: 0.23s.
+- `-writebackCache` is not usable here: lines in a file still held open
+  aren't visible from other nodes until it's closed (measured: nothing in
+  110s of appends, all of it right after close), and Vector keeps busy
+  files open all day.
+- Upstream fix shape: scan from the tail for appends (O(1) for sequential
+  writes) and track coverage incrementally instead of walking in
+  `IsComplete`.
+
 ## Deprecations
 
 - `playbooks/templates/vector-pipeline.j2.yml` drops longhorn-manager's

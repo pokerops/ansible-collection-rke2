@@ -20,6 +20,11 @@ rke2_monitoring_endpoint: ""
 # protocol, not an HTTP URL). Empty disables logging entirely.
 rke2_logging_endpoint: ""
 
+# Log agent image. The operator's default is the distroless variant, which
+# has no journalctl for the journald source (rke2 and host-unit logs); the
+# debian variant ships it. Pin only, bumped by rke2 update.
+rke2_vector_agent_image: "timberio/vector:0.48.0-debian"
+
 # Agent buffers. Metrics are time-bound by Alloy's WAL; logs 2Gi is ~6h at 100 KiB/s.
 rke2_monitoring_metrics_volume_size: 2Gi
 rke2_monitoring_logs_volume_size: 2Gi

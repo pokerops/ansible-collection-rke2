@@ -14,6 +14,28 @@ spec:
   sources:
     k8s_logs:
       type: kubernetes_logs
+    # Node logs that never pass through a pod (mounted in vector.j2.yml).
+    # rke2 runs the kubelet and containerd as children of its own unit and
+    # points their output at files under its data dir instead of the
+    # journal. etcd, kube-apiserver and the other control-plane components
+    # are static pods, already covered by k8s_logs.
+    node_files:
+      type: file
+      include:
+        - /var/lib/rancher/rke2/agent/logs/kubelet.log
+        - /var/lib/rancher/rke2/agent/containerd/containerd.log
+    # rke2 itself (supervisor, embedded helm-controller, etcd snapshots,
+    # certificate rotation) and the units this collection installs on the
+    # host. Units absent on a node (rke2-agent on a server, the weed-mount
+    # units with seaweedfs-logs disabled) just match nothing.
+    node_journal:
+      type: journald
+      journal_directory: /var/log/journal
+      include_units:
+        - rke2-server
+        - rke2-agent
+        - weed-mount
+        - weed-mount-vector-restart
   transforms:
     # Known noise dropped before any sink. longhorn-manager logs the API
     # server's "v1 Endpoints is deprecated" warning every few minutes from
@@ -29,11 +51,145 @@ spec:
         source: >-
           !(.kubernetes.pod_namespace == "longhorn-system" &&
           contains(string(.message) ?? "", "v1 Endpoints is deprecated"))
+    # Node events carry no kubernetes.* to say where they came from: node is
+    # the agent's own node (the file source's .host is the agent pod's
+    # hostname, so it's dropped), unit the systemd unit without .service or
+    # the log file's name without .log (kubelet, containerd).
+    node_logs_labeled:
+      type: remap
+      inputs: [node_files, node_journal]
+      source: |
+        .node = get_env_var("VECTOR_SELF_NODE_NAME") ?? "unknown"
+        if .source_type == "journald" {
+          .unit = replace(string(._SYSTEMD_UNIT) ?? "unknown", r'\.service$', "")
+        } else {
+          del(.host)
+          name, err = parse_regex(string(.file) ?? "", r'(?P<name>[^/]+?)(\.log)?$')
+          .unit = if err == null { string(name.name) ?? "unknown" } else { "unknown" }
+        }
+    # Normalizes every event to the project's common log fields (CLAUDE.md,
+    # "Logging invariant"): node, log_format (json, klog, logfmt or text),
+    # level (trace, debug, info, warn, error, fatal or unknown), msg (the
+    # line's own message, else the raw line) and log (every parsed field,
+    # kept under its own key so a component's ts/time/level can never
+    # clobber Vector's own fields). .message stays the untouched raw line,
+    # and .timestamp stays the source's (container runtime write, journal
+    # entry, or file read) time.
+    logs_normalized:
+      type: remap
+      inputs: [k8s_logs_filtered, node_logs_labeled]
+      source: |
+        if .node == null { .node = .kubernetes.pod_node_name }
+        raw = string(.message) ?? ""
+        .log_format = "text"
+        .level = "unknown"
+        .msg = raw
+        fields = {}
+        if starts_with(raw, "{") {
+          parsed, err = parse_json(raw)
+          if err == null && is_object(parsed) {
+            fields = object!(parsed)
+            .log_format = "json"
+          }
+        }
+        if .log_format == "text" && match(raw, r'^[IWEF]\d{4} \d{2}:\d{2}:\d{2}\.\d+\s+\d+ ') {
+          parsed, err = parse_klog(raw)
+          if err == null {
+            fields = parsed
+            .log_format = "klog"
+          }
+        }
+        # SeaweedFS's glog fork drops klog's thread id and "]", which
+        # parse_klog rejects: "E1018 19:43:53.060246 mount_common.go:166 msg".
+        if .log_format == "text" {
+          parsed, err = parse_regex(raw, r'^(?P<severity>[IWEF])(?P<time>\d{4} \d{2}:\d{2}:\d{2}\.\d+) (?P<file>[\w.-]+):(?P<line>\d+)\]? (?P<message>.*)$')
+          if err == null {
+            parsed.level = get(
+              {"I": "info", "W": "warning", "E": "error", "F": "fatal"},
+              [string(parsed.severity) ?? ""]
+            ) ?? null
+            fields = parsed
+            .log_format = "klog"
+          }
+        }
+        if .log_format == "text" && match(raw, r'(^|\s)(level|lvl)=\S') {
+          parsed, err = parse_logfmt(raw)
+          if err == null {
+            fields = parsed
+            .log_format = "logfmt"
+          }
+        }
+        if .log_format != "text" {
+          .log = fields
+          level = fields.level
+          if level == null { level = fields.lvl }
+          if level == null { level = fields.severity }
+          if level == null { level = get(fields, ["log.level"]) ?? null }
+          l = downcase(to_string(level) ?? "")
+          .level = if starts_with(l, "trace") {
+            "trace"
+          } else if starts_with(l, "debug") || l == "dbg" {
+            "debug"
+          } else if starts_with(l, "info") || l == "inf" || l == "notice" {
+            "info"
+          } else if starts_with(l, "warn") || l == "wrn" {
+            "warn"
+          } else if starts_with(l, "err") || l == "eror" {
+            "error"
+          } else if starts_with(l, "fatal") || starts_with(l, "crit") || starts_with(l, "panic") || l == "dpanic" || l == "ftl" {
+            "fatal"
+          } else {
+            "unknown"
+          }
+          message = fields.msg
+          if message == null { message = fields.message }
+          if message != null { .msg = to_string(message) ?? raw }
+        }
+        # Structured klog (the kubelet, most control-plane components) puts
+        # a quoted message and then key="value" pairs in the message part.
+        # The pairs go under .log, never over klog's own file/line/level.
+        if .log_format == "klog" {
+          parts, err = parse_regex(.msg, r'^"(?P<msg>(?:[^"\\]|\\.)*)"\s*(?P<kv>.*)$')
+          if err == null {
+            .msg = parts.msg
+            kv = parse_logfmt(parts.kv) ?? {}
+            .log = merge(kv, object(.log) ?? {})
+          }
+        }
+        # Plain-text journal lines still have the syslog priority the unit
+        # logged them at (stdout defaults to info).
+        if .level == "unknown" && .PRIORITY != null {
+          p = to_int(.PRIORITY) ?? -1
+          .level = if p >= 0 && p <= 2 {
+            "fatal"
+          } else if p == 3 {
+            "error"
+          } else if p == 4 {
+            "warn"
+          } else if p == 5 || p == 6 {
+            "info"
+          } else if p == 7 {
+            "debug"
+          } else {
+            "unknown"
+          }
+        }
+    {% if rke2_seaweedfs_logs_enable | bool %}
+    # The local copy of the weed-mount units' own logs would be written
+    # through the very mount they report on - useless exactly when it's
+    # needed, and a failing mount would feed its errors back into itself.
+    node_logs_local:
+      type: filter
+      inputs: [node_logs_labeled]
+      condition:
+        type: vrl
+        source: '!starts_with(string(.unit) ?? "", "weed-mount")'
+    {% endif %}
   sinks:
     {% if rke2_logging_endpoint | default('') | length > 0 %}
     ingestor:
       type: vector
-      inputs: [k8s_logs_filtered]
+      inputs: [logs_normalized]
       address: "{{ rke2_logging_endpoint }}"
       version: "2"
       # Without this, one failed connection at the moment this pipeline is
@@ -51,6 +207,8 @@ spec:
     {% if rke2_seaweedfs_logs_enable | bool %}
     local_retention:
       type: file
+      # Not logs_normalized: the text codec writes only .message (the
+      # raw line), so normalized fields would be computed and discarded.
       inputs: [k8s_logs_filtered]
       # Date-templated: the BucketLifecyclePolicy's TTL (whole days) only
       # expires files that stop being modified - a single never-renamed
@@ -73,6 +231,19 @@ spec:
       # Both sinks read the same k8s_logs source. A struggling FUSE mount
       # must never backpressure the remote sink above - drop local-copy
       # events instead of ever blocking (default is "block").
+      buffer:
+        when_full: drop_newest
+    # Same as local_retention, for node logs. _node can't collide with a
+    # namespace directory: namespace names can't start with an underscore.
+    local_retention_node:
+      type: file
+      inputs: [node_logs_local]
+      path: >-
+        {{ rke2_seaweedfs_logs_mount_path }}/_node/{{ "{{ node }}" }}/{{ "{{ unit }}" }}-%Y-%m-%d.log
+      encoding:
+        codec: text
+      healthcheck:
+        enabled: false
       buffer:
         when_full: drop_newest
     {% endif %}

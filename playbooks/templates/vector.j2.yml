@@ -11,6 +11,12 @@ spec:
     matchLabels:
       pokerops.net/vector-pipeline: "true"
   agent:
+    image: "{{ rke2_vector_agent_image }}"
+    # Every node, control plane included: without this the control-plane
+    # NoSchedule taint kept the agent off the servers, and their etcd,
+    # kube-apiserver, kubelet and rke2 logs were never collected.
+    tolerations:
+      - operator: Exists
     # The operator's own default (100m/200Mi request, 1 cpu/1Gi limit) is sized
     # for a general-purpose host, not a per-node DaemonSet - on a cluster with
     # several other operators competing for CPU requests on small nodes, that
@@ -37,6 +43,20 @@ spec:
       - name: varlogpods
         hostPath:
           path: /var/log/pods
+      # Node logs outside any pod (the pipeline's node_files and
+      # node_journal sources): rke2 runs the kubelet and containerd as
+      # children of its own unit, writing to files under its data dir
+      # rather than the journal; rke2 itself and the host units log to
+      # the journal.
+      - name: rke2-agent-logs
+        hostPath:
+          path: /var/lib/rancher/rke2/agent/logs
+      - name: rke2-containerd
+        hostPath:
+          path: /var/lib/rancher/rke2/agent/containerd
+      - name: journal
+        hostPath:
+          path: /var/log/journal
       {% if rke2_seaweedfs_logs_enable | bool %}
       # The host-level mount (playbooks/logretention.yml) establishes
       # the real FUSE mount here; HostToContainer propagation means this
@@ -52,6 +72,15 @@ spec:
         mountPath: /vector-data-dir
       - name: varlogpods
         mountPath: /var/log/pods
+        readOnly: true
+      - name: rke2-agent-logs
+        mountPath: /var/lib/rancher/rke2/agent/logs
+        readOnly: true
+      - name: rke2-containerd
+        mountPath: /var/lib/rancher/rke2/agent/containerd
+        readOnly: true
+      - name: journal
+        mountPath: /var/log/journal
         readOnly: true
       {% if rke2_seaweedfs_logs_enable | bool %}
       - name: seaweedfs-logs

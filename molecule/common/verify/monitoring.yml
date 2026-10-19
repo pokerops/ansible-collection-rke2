@@ -117,6 +117,82 @@
           Ingestor received {{ _received_cross_namespace_logs.stdout | trim }}
           log lines from kube-system
 
+    # The logging invariant (CLAUDE.md): every shipped event carries the
+    # common fields set by the pipeline's logs_normalized remap. Recent
+    # window only, so lines received before a pipeline change can't fail a
+    # rerun; one awk pass over a single read, for the same race reason as
+    # the metrics counts below.
+    - name: Query normalized log fields
+      ansible.builtin.command:
+        cmd: >-
+          kubectl --kubeconfig {{ molecule_local_kubeconfig }}
+          exec -n {{ monitoring_namespace }} {{ _ingestor_pod }}
+          -- sh -c "tail -n 2000 {{ monitoring_ingestor_logs_file }} |
+          awk '{t++} /\"log_format\":\"/ && /\"level\":\"/ && /\"msg\":/ && /\"node\":\"/ {n++}
+          END {print t+0; print n+0}'"
+      register: _normalized_logs
+      changed_when: false
+
+    - name: Verify every log event carries the common fields
+      ansible.builtin.assert:
+        that: (_normalized_logs.stdout_lines[1] | int) == (_normalized_logs.stdout_lines[0] | int)
+        fail_msg: >-
+          {{ _normalized_logs.stdout_lines[1] }} of
+          {{ _normalized_logs.stdout_lines[0] }} recent log events carry
+          node, log_format, level and msg. The ingestor sink must read from
+          the pipeline's logs_normalized remap.
+        success_msg: >-
+          All {{ _normalized_logs.stdout_lines[0] }} recent log events carry
+          the common fields
+
+    # Node logs that never pass through a pod: the kubelet's file and
+    # rke2's own journal unit, from every node - control plane included,
+    # which the agent only reaches by tolerating its taint. Prints one
+    # "node unit" pair per line; the unit field is set only on node events,
+    # so pod logs can't produce a false pass. Keys arrive sorted, so a
+    # parsed component's nested log.node (log < node) always comes before
+    # the top-level node: the greedy match keeps the last one.
+    - name: Wait for node logs from every node to reach the ingestor
+      vars:
+        _node_count: "{{ query('ansible.builtin.inventory_hostnames', 'rke2_server:rke2_agent') | length }}"
+      ansible.builtin.command:
+        cmd: >-
+          kubectl --kubeconfig {{ molecule_local_kubeconfig }}
+          exec -n {{ monitoring_namespace }} {{ _ingestor_pod }}
+          -- sh -c "awk 'match($0, /\"unit\":\"(kubelet|rke2-server|rke2-agent)\"/) {
+          u = substr($0, RSTART + 8, RLENGTH - 9); n = $0;
+          sub(/.*\"node\":\"/, \"\", n); sub(/\".*/, \"\", n); print n, u
+          }' {{ monitoring_ingestor_logs_file }} | sort -u"
+      register: _received_node_logs
+      changed_when: false
+      failed_when: false
+      retries: "{{ monitoring_settle_retries }}"
+      delay: "{{ monitoring_settle_delay }}"
+      until:
+        - _received_node_logs.rc == 0
+        - (_received_node_logs.stdout_lines | select('search', ' kubelet$') | list | length)
+          == (_node_count | int)
+        - (_received_node_logs.stdout_lines | select('search', ' rke2-(server|agent)$') | list | length)
+          == (_node_count | int)
+
+    - name: Verify kubelet and rke2 logs arrive from every node
+      vars:
+        _node_count: "{{ query('ansible.builtin.inventory_hostnames', 'rke2_server:rke2_agent') | length }}"
+      ansible.builtin.assert:
+        that:
+          - (_received_node_logs.stdout_lines | select('search', ' kubelet$') | list | length)
+            == (_node_count | int)
+          - (_received_node_logs.stdout_lines | select('search', ' rke2-(server|agent)$') | list | length)
+            == (_node_count | int)
+        fail_msg: >-
+          Expected kubelet and rke2-server/rke2-agent logs from all
+          {{ _node_count }} nodes, got:
+          {{ _received_node_logs.stdout_lines }}. Check the agent runs on
+          every node (tolerations), its host-log mounts, and the pipeline's
+          node_files/node_journal sources.
+        success_msg: >-
+          kubelet and rke2 logs arrive from all {{ _node_count }} nodes
+
     # _received (above) is a stale snapshot by the time this runs - several
     # tasks and real wall-clock time earlier - and metrics.log only ever
     # grows (continuous scraping). Comparing a stale total against a fresh
@@ -358,6 +434,23 @@
           {{ _reader_host }}
       when: inventory_hostname == _reader_host
 
+# Written before the outage and checked after it: the filer's metadata
+# store must survive the filer restart the outage causes. Before the filer
+# had a volume, a restart silently emptied the namespace - fresh writes
+# still worked (so the recovery check below passed) while every earlier
+# file, and every handle Vector held open, was gone.
+- name: Write a pre-outage marker on every node
+  hosts: "rke2_server:rke2_agent"
+  any_errors_fatal: true
+  vars:
+    _mount_path: "{{ rke2_seaweedfs_logs_mount_path | default('/var/log/cluster') }}"
+  tasks:
+    - name: Write the pre-outage marker
+      ansible.builtin.shell:
+        cmd: echo {{ inventory_hostname }} > {{ _mount_path }}/outage-persist-{{ inventory_hostname }}.txt
+      become: true
+      changed_when: true
+
 - name: Verify the mount survives a SeaweedFS outage
   hosts: localhost
   connection: local
@@ -439,3 +532,20 @@
           mount needed manual intervention, which defeats the point of the
           Restart=on-failure design.
         success_msg: "Mount recovered automatically after the outage"
+
+    - name: Read the pre-outage marker back
+      ansible.builtin.command:
+        cmd: cat {{ _mount_path }}/outage-persist-{{ inventory_hostname }}.txt
+      become: true
+      register: _persist_marker
+      changed_when: false
+      failed_when: false
+
+    - name: Verify files written before the outage survived it
+      ansible.builtin.assert:
+        that: _persist_marker.stdout == inventory_hostname
+        fail_msg: >-
+          The marker written before the outage is gone ({{ _persist_marker.stderr
+          | default(_persist_marker.stdout) }}). The filer lost its metadata
+          store on restart - check the Seaweed CR's filer.persistence.
+        success_msg: Files written before the outage survived the filer restart

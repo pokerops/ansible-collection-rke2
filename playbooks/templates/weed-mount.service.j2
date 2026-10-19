@@ -59,9 +59,16 @@ ExecStartPost=-/usr/bin/systemctl --no-block start weed-mount-vector-restart.ser
 Restart=always
 RestartSec=10
 # A convenience feature running on every node, including the ones running
-# etcd/kube-apiserver - bound its footprint the same way Vector's agent
-# needed to be bounded earlier.
-CPUQuota=50%
+# etcd/kube-apiserver - it must yield to them under contention. A weight,
+# not a quota: weed's per-write cost grows with how much of the current
+# chunk is written (TODO.md, "SeaweedFS mount write cost"), so log bursts
+# can need more than any fixed share. Under CPUQuota=50% that throttled it
+# continuously - confirmed live: every FUSE request queued behind the
+# backlog, a Vector write hung for over 8 minutes in D state, and weed
+# couldn't even act on SIGKILL until the quota was lifted. 20 against the
+# default 100 lets it use idle CPU but puts it behind every other unit
+# (rke2, and with it the kubelet and containerd) when CPU is scarce.
+CPUWeight=20
 MemoryMax=256M
 
 [Install]

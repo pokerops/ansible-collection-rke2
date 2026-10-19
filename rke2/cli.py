@@ -25,9 +25,11 @@ VERSION_REGEX = r"v?[0-9]+\.[0-9]+\.[0-9]+$"
 DEFAULT_IMAGE_VARIABLE_GLOBS = ["roles/*/defaults/**/*.yml", "playbooks/vars/*.yml"]
 # image: keys at any depth in tracked manifests (e.g. Helm values in ArgoCD apps)
 DEFAULT_IMAGE_MANIFEST_GLOBS = ["argocd/applications/*.yml", "playbooks/templates/**/*.yml"]
-# Tags that are a plain dotted version, optionally v-prefixed - anything else
-# (latest, -rc1, -alpine, _large_disk, ...) is never an update candidate
-IMAGE_TAG_REGEX = r"^(?P<prefix>v?)(?P<version>[0-9]+(?:\.[0-9]+)*)$"
+# Tags that are a dotted version, optionally v-prefixed, optionally with a
+# variant suffix (-debian). A candidate must match the pinned tag's suffix
+# exactly, so a plain pin never moves to -rc1/-alpine and a -debian pin stays
+# on -debian; anything else (latest, _large_disk, ...) is never a candidate
+IMAGE_TAG_REGEX = r"^(?P<prefix>v?)(?P<version>[0-9]+(?:\.[0-9]+)*)(?P<suffix>-[a-z][a-z0-9.-]*)?$"
 YAML_LINE_LENGTH = 160  # keep dumped yaml within the .yamllint line-length budget
 
 type Version = str
@@ -352,12 +354,12 @@ def image_tags(repository: str) -> list[str] | None:
 
 
 def latest_tag(current: str, tags: list[str]) -> str | None:
-    """Pick the highest tag shaped like the current one (same v-prefix, same number of components)."""
+    """Pick the highest tag shaped like the current one (same v-prefix, number of components and variant suffix)."""
     if not (match := re.match(IMAGE_TAG_REGEX, current)):
         return None
-    shape = (match["prefix"], match["version"].count("."))
+    shape = (match["prefix"], match["version"].count("."), match["suffix"])
     candidates = [
-        m for tag in tags if (m := re.match(IMAGE_TAG_REGEX, tag)) and (m["prefix"], m["version"].count(".")) == shape
+        m for tag in tags if (m := re.match(IMAGE_TAG_REGEX, tag)) and (m["prefix"], m["version"].count("."), m["suffix"]) == shape
     ]
     if not candidates:
         return None

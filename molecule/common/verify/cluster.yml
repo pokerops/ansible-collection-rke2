@@ -253,12 +253,19 @@
           block:
             - name: Set workload pod facts
               ansible.builtin.set_fact:
-                _pods_workload: "{{ _kubectl_node_pods | rejectattr('metadata.namespace', 'in', _rke2_system_nss) }}"
+                _pods_workload: >-
+                  {{ _kubectl_node_pods
+                  | rejectattr('metadata.namespace', 'in', _rke2_system_nss)
+                  | rejectattr('metadata.name', 'match', _rke2_node_agents) }}
               vars:
                 _rke2_system_nss:
                   - kube-system
                   - metallb-system
                   - longhorn-system
+                # Per-node agents outside the system namespaces that must
+                # run on servers too: the log agent tails each node's own
+                # pod, kubelet and rke2 logs, which no other node can see.
+                _rke2_node_agents: "^vector-agent-[a-z0-9]{5}$"
                 _kubectl_pod_list: "{{ _kubectl_pod_data }}"
                 _kubectl_pods_scheduled: "{{ _kubectl_pod_list | selectattr('spec.nodeName', 'defined') }}"
                 _kubectl_node_pods: "{{ _kubectl_pods_scheduled | selectattr('spec.nodeName', 'in', _servers) }}"
