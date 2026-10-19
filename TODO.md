@@ -9,6 +9,16 @@ no chart metrics flag enabled:
   want this at all
 - keel, reflector — operators/agents, lower value
 
+## Deprecations
+
+- `playbooks/templates/vector-pipeline.j2.yml` drops longhorn-manager's
+  "v1 Endpoints is deprecated" warning (the `k8s_logs_filtered` transform),
+  because Longhorn calls the deprecated API from its own code. Upstream fix:
+  longhorn/longhorn#10796, planned for **Longhorn v1.14.0**. Once the Longhorn
+  chart pin in `playbooks/templates/longhorn.yml` reaches v1.14.0 and the
+  warning is confirmed gone from longhorn-manager's own logs, delete the
+  transform and point the sinks back at `k8s_logs`.
+
 ## Alerting
 
 Architectural gap, not just missing files — the pieces currently contradict
