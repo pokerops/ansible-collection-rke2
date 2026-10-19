@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# Restart this node's Vector agent once the log retention mount is live.
+#
+# Vector's file sink keeps a handle open on every file it is appending to.
+# When weed mount restarts, those handles still point at the dead FUSE
+# connection, and a file that keeps receiving writes never goes idle long
+# enough for Vector to close and reopen it - confirmed live: after a weed
+# mount kill, every busy pod's events were dropped until Vector restarted.
+# Likewise, at cold bring-up a Vector that starts before the mount opens its
+# files on the underlying root-disk directory. Restarting the container
+# makes it reopen everything on the live mount.
+set -euo pipefail
+
+mount_path={{ _seaweedfs_logs_mount_path | quote }}
+crictl=/var/lib/rancher/rke2/bin/crictl
+export CRI_CONFIG_FILE=/var/lib/rancher/rke2/agent/etc/crictl.yaml
+
+# Restarting Vector before the mount is live would put it straight back on
+# the root disk, so only proceed once the FUSE mount itself is answering.
+for _ in $(seq 1 {{ _weed_mount_vector_restart_wait_attempts }}); do
+  if findmnt --mountpoint "$mount_path" --types fuse.seaweedfs >/dev/null 2>&1 \
+    && stat "$mount_path" >/dev/null 2>&1; then
+    break
+  fi
+  sleep 5
+done
+if ! findmnt --mountpoint "$mount_path" --types fuse.seaweedfs >/dev/null 2>&1; then
+  echo "mount never came up at $mount_path; leaving vector untouched"
+  exit 0
+fi
+
+if [ ! -x "$crictl" ]; then
+  echo "no crictl on this node; nothing to restart"
+  exit 0
+fi
+
+# Bounded so a hung containerd fails this run instead of leaving it stuck;
+# the unit's TimeoutStartSec is the backstop if anything else hangs.
+cri() {
+  timeout 60 "$crictl" "$@"
+}
+
+# The operator's labels are on the pod sandbox, not the container - crictl
+# ps --label only sees container labels, so select pods first.
+containers=$(
+  cri pods --quiet --state ready \
+    --label app.kubernetes.io/managed-by=vector-operator \
+    --label app.kubernetes.io/component=Agent |
+    while read -r pod; do
+      cri ps --quiet --pod "$pod" --name '^vector-agent$'
+    done
+)
+if [ -z "$containers" ]; then
+  echo "no vector agent running on this node"
+  exit 0
+fi
+# kubelet restarts the stopped container in place; Vector resumes tailing
+# from its checkpoints in the data dir.
+for container in $containers; do
+  echo "restarting vector agent container $container"
+  cri stop "$container" >/dev/null
+done

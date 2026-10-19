@@ -1,0 +1,16 @@
+[Unit]
+Description=Restart the node's Vector agent once the log retention mount is live
+# Started (non-blocking) by weed-mount.service's ExecStartPost on every
+# mount start, crash restarts included; stopping the mount stops a pending
+# wait too.
+PartOf=weed-mount.service
+After=weed-mount.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/weed-mount-vector-restart
+# Above the script's own 10 minute mount wait, so a normal run is never cut
+# short by the 90s default - but finite: a run stuck past it would otherwise
+# sit "activating" forever, and every later weed-mount restart's start
+# request would merge into that stuck job instead of restarting Vector.
+TimeoutStartSec=15min

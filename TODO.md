@@ -1,13 +1,16 @@
 # Roadmap
 
-## Remaining component monitoring coverage
+## Monitoring
 
-Verified against current master — these have no ServiceMonitor/PodMonitor and
-no chart metrics flag enabled:
+These have no ServiceMonitor/PodMonitor and no chart metrics flag enabled:
 
 - **cert-manager** — highest value; certificate expiry is the usual reason to
   want this at all
 - keel, reflector — operators/agents, lower value
+
+## Logging
+
+- Move supporting components to json logs
 
 ## Deprecations
 
@@ -43,7 +46,3 @@ ruler via alloy (`mimir.rules.kubernetes`), or get evaluated somewhere else
 entirely? That decision gates the actual task — alerting when a
 `pokerops.net/monitor-optional` cluster exists but emits no `kube_*_created`
 series.
-
-## Testing
-
-- No Molecule scenario covers Sealed Secrets backup/restore

@@ -8,13 +8,34 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+# A killed FUSE daemon leaves its mount entry behind ("Transport endpoint is
+# not connected"), and weed mount refuses to start on top of it - confirmed
+# live: after an OOM kill every restart failed with "Target mount point is
+# not available", so Restart=always looped without ever recovering. Lazily
+# detach any stale entry first; '-' because there is usually nothing to
+# detach.
+ExecStartPre=-/usr/bin/umount -l {{ _seaweedfs_logs_mount_path }}
 ExecStart=/usr/local/bin/weed mount \
   -filer={{ _seaweedfs_logs_filer_endpoint }} \
   -filer.path=/buckets/{{ _seaweedfs_logs_bucket }} \
   -collection={{ _seaweedfs_logs_bucket }} \
   -dir={{ _seaweedfs_logs_mount_path }} \
   -dirAutoCreate \
-  -umask=022
+  -umask=022 \
+  -readerCacheSizeMB=64 \
+  -concurrentReaders=16 \
+  -memoryLimitMB=192
+# Read-side budgets sized to fit under MemoryMax below. The defaults
+# (readerCacheSizeMB=256, concurrentReaders=128) exceed it on their own -
+# confirmed live: an admin's `grep -R` across the mount got weed OOM-killed
+# at ~330MB RSS. memoryLimitMB is Go's soft limit, so the runtime collects
+# harder well before the cgroup's hard kill.
+ExecStopPost=-/usr/bin/umount -l {{ _seaweedfs_logs_mount_path }}
+# Vector keeps appending through handles on the previous mount (or the bare
+# root-disk directory at cold bring-up) until restarted - see the helper
+# script. --no-block: the helper waits for the mount, which must not hold
+# up this unit's own start.
+ExecStartPost=-/usr/bin/systemctl --no-block start weed-mount-vector-restart.service
 # -collection is not inferred from -filer.path=/buckets/<name> - confirmed
 # live, the hard way: without it, every write silently lands in the
 # default (empty-string) collection instead, which shares the same
