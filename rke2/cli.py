@@ -73,6 +73,16 @@ class Collection(pydantic.BaseModel):
     version: str
 
 
+class ChartPin(pydantic.BaseModel):
+    """Pydantic model representing a chart pinned by a {name, repo, release} variable."""
+
+    path: Path
+    variable: str
+    name: str
+    repo: str
+    release: str
+
+
 class Image(pydantic.BaseModel):
     """Pydantic model representing a pinned container image reference in a file."""
 
@@ -162,6 +172,11 @@ def create_file(path: Path, content: str | None = None) -> None:
 
 def argocd_application_helm_index(app: Application) -> HelmChart | None:
     """Retrieve and parse Helm repository using Helm commands"""
+    return helm_chart_latest(app.spec.source.chart, app.spec.source.repoURL)
+
+
+def helm_chart_latest(chart_name: str, chart_repo: str | None) -> HelmChart | None:
+    """Find the latest published version of a chart in an http or oci repository."""
     with tempfile.TemporaryDirectory() as temp_dir:
         config_repository = Path(temp_dir) / "repository.yaml"
         config_registry = Path(temp_dir) / "registry.yaml"
@@ -169,8 +184,6 @@ def argocd_application_helm_index(app: Application) -> HelmChart | None:
         create_file(config_repository)
         create_file(config_registry)
         _ = os.makedirs(config_cache, exist_ok=True)
-        chart_name = app.spec.source.chart
-        chart_repo = app.spec.source.repoURL
         try:
             if not chart_repo:
                 typer.echo(f"Skipping chart {chart_name} due to missing repoURL.")
@@ -363,6 +376,65 @@ def image_reference_update(path: Path, current: str, updated: str) -> None:
         typer.echo(f"Error updating file {path}: {e}")
 
 
+def variable_chart_pins(path: Path, data: object) -> list[ChartPin]:
+    """Collect top-level variables shaped like a chart pin: a mapping with string name, repo and release."""
+    if not isinstance(data, dict):
+        return []
+    return [
+        ChartPin(path=path, variable=str(key), name=value["name"], repo=value["repo"], release=value["release"])  # pyright: ignore[reportUnknownArgumentType]
+        for key, value in data.items()  # pyright: ignore[reportUnknownVariableType]
+        if isinstance(value, dict)
+        and all(isinstance(value.get(field), str) for field in ("name", "repo", "release"))  # pyright: ignore[reportUnknownMemberType]
+        and not any("{{" in value[field] for field in ("name", "repo", "release"))
+    ]
+
+
+def find_chart_pins(variable_globs: list[str]) -> list[ChartPin]:
+    """Find chart pins in role/playbook variables."""
+    return [
+        pin
+        for path in tracked_files(variable_globs)
+        for doc in load_yaml_documents(path)
+        for pin in variable_chart_pins(path, doc)
+    ]
+
+
+def chart_pin_update(pin: ChartPin, release: str) -> None:
+    """Rewrite the release line inside one pin variable's block, preserving formatting, comments and quoting."""
+    try:
+        lines = pin.path.read_text().splitlines(keepends=True)
+    except IOError as e:
+        typer.echo(f"Error reading file {pin.path}: {e}")
+        return
+    start = next((n for n, line in enumerate(lines) if re.match(rf"^{re.escape(pin.variable)}:\s*$", line)), None)
+    if start is None:
+        typer.echo(f"Skipping chart {pin.name}: variable {pin.variable} not found as a block in {pin.path}.")
+        return
+    for n in range(start + 1, len(lines)):
+        if lines[n].strip() and not lines[n][0].isspace():
+            break  # next top-level key: this block has no release line of its own
+        if match := re.match(r"^(\s+release:\s*)([\"']?)([^\"'\s#]+)([\"']?)(.*)$", lines[n], re.DOTALL):
+            lines[n] = f"{match[1]}{match[2]}{release}{match[4]}{match[5]}"
+            _ = pin.path.write_text("".join(lines))
+            return
+    typer.echo(f"Skipping chart {pin.name}: no release line under {pin.variable} in {pin.path}.")
+
+
+def update_chart_pins(dry_run: bool) -> None:
+    """Update {name, repo, release} chart pin variables to the latest published chart version."""
+    for pin in find_chart_pins(DEFAULT_IMAGE_VARIABLE_GLOBS):
+        index = helm_chart_latest(pin.name, pin.repo)
+        if index is None:
+            typer.echo(f"Skipping chart {pin.name} update due to index fetch error.")
+            continue
+        if index.version == pin.release:
+            typer.echo(f"Chart {pin.name} is already up to date at version {pin.release}.")
+            continue
+        typer.echo(f"Updating chart {pin.name} ({pin.variable} in {pin.path}) from version {pin.release} to {index.version}.")
+        if not dry_run:
+            chart_pin_update(pin, index.version)
+
+
 def update_charts(directories: list[Path], dry_run: bool) -> None:
     """Update ArgoCD Application Helm chart versions to latest."""
     yaml_files = flatten([find_yaml_files(directory) for directory in directories])
@@ -416,8 +488,9 @@ def update(
     directories: list[Path] = DEFAULT_DIRECTORIES,
     dry_run: Annotated[bool, typer.Option(help="Skip manifest updates")] = False,
 ) -> None:
-    """Update ArgoCD Application Helm chart versions and pinned container images to latest."""
+    """Update ArgoCD Application Helm chart versions, chart pin variables and pinned container images to latest."""
     update_charts(directories, dry_run)
+    update_chart_pins(dry_run)
     update_images(dry_run)
 
 

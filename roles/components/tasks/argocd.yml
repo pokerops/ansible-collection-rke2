@@ -43,6 +43,7 @@
         chart: "{{ rke2_argocd_chart.name }}"
         targetNamespace: "{{ rke2_argocd_chart.namespace }}"
         repo: "{{ rke2_argocd_chart.repo }}"
+        version: "{{ rke2_argocd_chart.release }}"
         valuesContent: "{{ _rke2_argocd_chart_values }}"
 
 - name: Wait for appproject crd
@@ -93,5 +94,6 @@
             chart: "{{ rke2_argocd_apps_chart.name }}"
             targetNamespace: "{{ rke2_argocd_apps_chart.namespace }}"
             repo: "{{ rke2_argocd_apps_chart.repo }}"
+            version: "{{ rke2_argocd_apps_chart.release }}"
             valuesContent: |-
               {{ rke2_argocd_apps_values | to_nice_yaml(indent=2) }}

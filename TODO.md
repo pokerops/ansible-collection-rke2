@@ -10,7 +10,34 @@ These have no ServiceMonitor/PodMonitor and no chart metrics flag enabled:
 
 ## Logging
 
-- Move supporting components to json logs
+Move supporting components to json logs. Options below were verified against
+each pinned chart version's values/templates and the component's source.
+
+- **argocd** — `global.logging.format: json` in `rke2_argocd_values`; covers
+  server, controller, repo-server, applicationset, notifications and dex
+  (redis has no json option)
+- **cert-manager** — `config.logging.format`, `webhook.config.logging.format`
+  and `cainjector.config.logging.format: json` (`roles/components/tasks/certmanager.yml`)
+- **traefik** — `log.format: json` (`playbooks/templates/traefik.yml`); also
+  drops the ANSI color codes. Access logs: `accessLog.format: json`
+- **velero** — `configuration.logFormat: json`; covers velero and node-agent
+- **sealed-secrets** — `logFormat: json`
+- **postgres-operator** — `enableJsonLogging: true`; the postgres-exporter
+  sidecar takes `args: ["--log.format=json"]` in `configGeneral.sidecars`
+- **alloy** — `logging { format = "json" }` block in the config
+  (`playbooks/templates/alloy.yml`); its config-reloader sidecar needs
+  `spec.configReloader.customArgs` restating `--watched-dir=/etc/alloy` and
+  `--reload-url=http://localhost:12345/-/reload` plus `--log-format=json`
+  (customArgs replaces the defaults)
+- **vector agent** — `spec.agent.env: VECTOR_LOG_FORMAT=json`
+  (`playbooks/templates/vector.j2.yml`)
+- **vector-operator** — chart `args: [--zap-encoder=json]`
+- **seaweedfs-logs** — env `WEED_LOG_JSON=true` on master/filer/volume in
+  `playbooks/templates/seaweedfs-logs/cluster.yml` (`extraArgs` lands after
+  the subcommand, too late for this global flag). The host `weed mount`
+  takes the same `-log_json`
+- **strimzi** — chart `logConfiguration` with a full log4j2.properties using
+  `JsonTemplateLayout`; operator only, Kafka clusters set their own logging
 
 ## Deprecations
 
