@@ -193,6 +193,15 @@
         state: absent
       changed_when: false
 
+    - name: Template weed mount systemd slice
+      ansible.builtin.template:
+        src: templates/weedmount.slice.j2
+        dest: /etc/systemd/system/weedmount.slice
+        owner: root
+        group: root
+        mode: "u=rw,go=r"
+      register: _weed_mount_slice
+
     - name: Template weed mount systemd unit
       ansible.builtin.template:
         src: templates/weed-mount.service.j2
@@ -222,12 +231,17 @@
     - name: Reload systemd daemon
       ansible.builtin.systemd_service:
         daemon_reload: true
-      when: _weed_mount_unit.changed or _weed_mount_vector_restart_unit.changed
+      when: >-
+        _weed_mount_slice.changed or _weed_mount_unit.changed
+        or _weed_mount_vector_restart_unit.changed
 
     # A new binary (an image tag bump) only takes effect on restart, same
-    # as a changed unit.
+    # as a changed unit - and a running service only moves into its slice
+    # on restart.
     - name: Enable and start weed mount service
       ansible.builtin.systemd_service:
         name: weed-mount.service
         enabled: true
-        state: "{{ 'restarted' if (_weed_mount_unit.changed or _weed_binary.changed) else 'started' }}"
+        state: >-
+          {{ 'restarted' if (_weed_mount_slice.changed or _weed_mount_unit.changed
+          or _weed_binary.changed) else 'started' }}

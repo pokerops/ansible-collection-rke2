@@ -1,0 +1,15 @@
+[Unit]
+Description=SeaweedFS log retention mount
+# Top level (no dash in the name: systemd reads dashes as nesting), so the
+# weight below competes with kubepods.slice and system.slice directly.
+# Inside system.slice, a unit's weight only ranks it against other system
+# units - confirmed live: with weight 20 there, weed still took 69% of a
+# CPU from pods, because system.slice (100) outweighs kubepods.slice.
+Before=slices.target
+
+[Slice]
+# Low against kubepods.slice (proportional to node CPUs, 79 on 2 vCPUs)
+# and system.slice (100): weed yields to pods, the kubelet and rke2 when
+# CPU is scarce, and still uses whatever is idle. A weight, never a quota
+# - see weed-mount.service.
+CPUWeight=20

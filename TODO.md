@@ -51,8 +51,9 @@ merges adjacent ones, and walks the whole list twice per write
 sink does one write per log line, so each write costs O(writes already in
 the chunk). Profiled live: ~80% of weed's CPU in those two functions; a
 busy agent node spends 7-17% steady, and log bursts outgrow any fixed CPU
-share (`weed-mount.service.j2` now uses `CPUWeight`, not `CPUQuota`, so
-it slows down instead of freezing).
+share (weed now runs under a low `CPUWeight` on its own top-level
+`weedmount.slice`, not a `CPUQuota`, so it slows down instead of
+freezing; measured ~1.5 CPUs of demand on a busy 2-vCPU agent).
 
 - Benchmark: one held-open fd on the mount, 1000 appends of ~145 bytes.
   Default mount: 65.7s wall. With `-writebackCache`: 0.23s.
