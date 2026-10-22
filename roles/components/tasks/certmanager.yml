@@ -14,6 +14,7 @@
         targetNamespace: "{{ rke2_certmanager_chart.namespace }}"
         createNamespace: true
         repo: "{{ rke2_certmanager_chart.repo }}"
+        version: "{{ rke2_certmanager_chart.release }}"
         valuesContent: |-
           crds:
             enabled: true
