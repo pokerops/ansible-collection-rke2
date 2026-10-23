@@ -11,6 +11,7 @@
     monitoring_ingestor_selector: app=vector-ingestor
     monitoring_ingestor_file: /data/metrics.log
     monitoring_ingestor_logs_file: /data/logs.log
+    monitoring_ingestor_units_file: /data/node-units.log
     monitoring_alloy_pod: alloy-0
     monitoring_cluster_id: "{{ rke2_cluster_name }}"
     monitoring_dropped_metric: container_tasks_state
@@ -117,12 +118,104 @@
           Ingestor received {{ _received_cross_namespace_logs.stdout | trim }}
           log lines from kube-system
 
+    # The logging invariant (CLAUDE.md): every shipped event carries the
+    # common fields set by the pipeline's logs_normalized remap. Recent
+    # window only, so lines received before a pipeline change can't fail a
+    # rerun; one awk pass over a single read, for the same race reason as
+    # the metrics counts below.
+    - name: Query normalized log fields
+      ansible.builtin.command:
+        cmd: >-
+          kubectl --kubeconfig {{ molecule_local_kubeconfig }}
+          exec -n {{ monitoring_namespace }} {{ _ingestor_pod }}
+          -- sh -c "tail -n 2000 {{ monitoring_ingestor_logs_file }} |
+          awk '{t++} /\"log_format\":\"/ && /\"level\":\"/ && /\"msg\":/ && /\"node\":\"/ {n++}
+          END {print t+0; print n+0}'"
+      register: _normalized_logs
+      changed_when: false
+
+    - name: Verify every log event carries the common fields
+      ansible.builtin.assert:
+        that: (_normalized_logs.stdout_lines[1] | int) == (_normalized_logs.stdout_lines[0] | int)
+        fail_msg: >-
+          {{ _normalized_logs.stdout_lines[1] }} of
+          {{ _normalized_logs.stdout_lines[0] }} recent log events carry
+          node, log_format, level and msg. The ingestor sink must read from
+          the pipeline's logs_normalized remap.
+        success_msg: >-
+          All {{ _normalized_logs.stdout_lines[0] }} recent log events carry
+          the common fields
+
+    # Node logs that never pass through a pod: the kubelet's file and
+    # rke2's own journal unit, from every node - control plane included,
+    # which the agent only reaches by tolerating its taint. Read from the
+    # ingestor's node-units file (one line per node and unit ever seen),
+    # not logs.log: rke2-agent logs at boot and then goes quiet, and
+    # logs.log only keeps recent history. Prints one "node unit" pair per
+    # line; the unit field is set only on node events, so pod logs can't
+    # produce a false pass.
+    - name: Wait for node logs from every node to reach the ingestor
+      vars:
+        _node_count: "{{ query('ansible.builtin.inventory_hostnames', 'rke2_server:rke2_agent') | length }}"
+      ansible.builtin.command:
+        cmd: >-
+          kubectl --kubeconfig {{ molecule_local_kubeconfig }}
+          exec -n {{ monitoring_namespace }} {{ _ingestor_pod }}
+          -- sh -c "awk 'match($0, /\"unit\":\"(kubelet|rke2-server|rke2-agent)\"/) {
+          u = substr($0, RSTART + 8, RLENGTH - 9); n = $0;
+          sub(/.*\"node\":\"/, \"\", n); sub(/\".*/, \"\", n); print n, u
+          }' {{ monitoring_ingestor_units_file }} | sort -u"
+      register: _received_node_logs
+      changed_when: false
+      failed_when: false
+      retries: "{{ monitoring_settle_retries }}"
+      delay: "{{ monitoring_settle_delay }}"
+      until:
+        - _received_node_logs.rc == 0
+        - (_received_node_logs.stdout_lines | select('search', ' kubelet$') | list | length)
+          == (_node_count | int)
+        - (_received_node_logs.stdout_lines | select('search', ' rke2-(server|agent)$') | list | length)
+          == (_node_count | int)
+
+    - name: Verify kubelet and rke2 logs arrive from every node
+      vars:
+        _node_count: "{{ query('ansible.builtin.inventory_hostnames', 'rke2_server:rke2_agent') | length }}"
+      ansible.builtin.assert:
+        that:
+          - (_received_node_logs.stdout_lines | select('search', ' kubelet$') | list | length)
+            == (_node_count | int)
+          - (_received_node_logs.stdout_lines | select('search', ' rke2-(server|agent)$') | list | length)
+            == (_node_count | int)
+        fail_msg: >-
+          Expected kubelet and rke2-server/rke2-agent logs from all
+          {{ _node_count }} nodes, got:
+          {{ _received_node_logs.stdout_lines }}. Check the agent runs on
+          every node (tolerations), its host-log mounts, and the pipeline's
+          node_files/node_journal sources.
+        success_msg: >-
+          kubelet and rke2 logs arrive from all {{ _node_count }} nodes
+
+    # _received (above) is a stale snapshot by the time this runs - several
+    # tasks and real wall-clock time earlier - and metrics.log only ever
+    # grows (continuous scraping). Comparing a stale total against a fresh
+    # labelled-count recheck is racy by construction, not by bad luck -
+    # confirmed live, repeatedly, labelled exceeding that stale total by a
+    # margin tracking how much time had passed. Even two SEPARATE reads of
+    # the file back-to-back in the same shell invocation (wc -l; grep -c)
+    # still raced - confirmed live a second time, same symptom, smaller but
+    # still nonzero gap - this ingestor receives bursts faster than two
+    # sequential syscalls apart can outrun. A single awk pass counting both
+    # over the exact same read of the file is what actually closes this.
+    # Lines not starting with "{" are skipped: the ingestor's trim cuts the
+    # file block-aligned, so its first line can be a partial event.
     - name: Query received events
       ansible.builtin.command:
         cmd: >-
           kubectl --kubeconfig {{ molecule_local_kubeconfig }}
           exec -n {{ monitoring_namespace }} {{ _ingestor_pod }}
-          -- sh -c "grep -c '{{ item.pattern }}' {{ monitoring_ingestor_file }} || true"
+          -- awk -v "pat={{ item.pattern }}"
+          '!/^[{]/ {next} {t++} $0 ~ pat {l++} END {print t+0; print l+0}'
+          {{ monitoring_ingestor_file }}
       register: _event_query
       changed_when: false
       loop:
@@ -133,9 +226,9 @@
 
     - name: Set event count facts
       ansible.builtin.set_fact:
-        _count_total: "{{ _received.stdout.split() | first | int }}"
-        _count_labelled: "{{ _event_query.results[0].stdout | trim | int }}"
-        _count_dropped: "{{ _event_query.results[1].stdout | trim | int }}"
+        _count_total: "{{ _event_query.results[0].stdout_lines[0] | trim | int }}"
+        _count_labelled: "{{ _event_query.results[0].stdout_lines[1] | trim | int }}"
+        _count_dropped: "{{ _event_query.results[1].stdout_lines[1] | trim | int }}"
 
     - name: Verify every event carries the cluster label
       ansible.builtin.assert:
@@ -218,5 +311,63 @@
              | map(attribute='metadata.namespace') | unique | sort | list }}
         _scraped: >-
           {{ _received_namespaces.stdout_lines
-             | map('regex_replace', '^.*:"(.*)"$', '\\1') | unique | list }}
+             | map('regex_replace', '^.*:"(.*)"$', '\1') | unique | list }}
         _unscraped: "{{ _declared | difference(_scraped) }}"
+
+# Vector's internal metrics, scraped through the operator's PodMonitor and
+# allowlisted in Alloy (rke2_monitoring_keep_metrics_vector): the allowed
+# counters must arrive, and nothing else from the agent may.
+- name: Verify the Vector agent's metrics are forwarded
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    monitoring_namespace: monitoring
+    monitoring_ingestor_file: /data/metrics.log
+    monitoring_settle_retries: 30
+    monitoring_settle_delay: 10
+  tasks:
+    - name: Wait for the agent's sent-events counter to reach the ingestor
+      ansible.builtin.command:
+        cmd: >-
+          kubectl --kubeconfig {{ molecule_local_kubeconfig }}
+          exec -n {{ monitoring_namespace }} {{ _ingestor_pod }}
+          -- sh -c "tail -n 100000 {{ monitoring_ingestor_file }} |
+          grep -c '\"name\":\"vector_component_sent_events_total\"' || true"
+      register: _vector_sent_metrics
+      changed_when: false
+      retries: "{{ monitoring_settle_retries }}"
+      delay: "{{ monitoring_settle_delay }}"
+      until: (_vector_sent_metrics.stdout | trim | int) > 0
+
+    - name: Verify allowlisted vector metrics are forwarded
+      ansible.builtin.assert:
+        that: (_vector_sent_metrics.stdout | trim | int) > 0
+        fail_msg: >-
+          No vector_component_sent_events_total sample reached the ingestor.
+          Check the Vector CR's internalMetrics, the vector-agent PodMonitor
+          and rke2_monitoring_keep_metrics_vector in Alloy's relabel rules.
+        success_msg: >-
+          Allowlisted vector metrics are forwarded ({{ _vector_sent_metrics.stdout | trim }}
+          recent samples)
+
+    # ~80% of the agent's ~770 series per node are histogram buckets; only
+    # the allowlisted counters may be forwarded.
+    - name: Count forwarded vector histogram samples
+      ansible.builtin.command:
+        cmd: >-
+          kubectl --kubeconfig {{ molecule_local_kubeconfig }}
+          exec -n {{ monitoring_namespace }} {{ _ingestor_pod }}
+          -- sh -c "tail -n 100000 {{ monitoring_ingestor_file }} |
+          grep -cE '\"name\":\"vector_[a-z_]+_bucket\"|__tmp_keep' || true"
+      register: _vector_histograms
+      changed_when: false
+
+    - name: Verify only allowlisted vector metrics are forwarded
+      ansible.builtin.assert:
+        that: (_vector_histograms.stdout | trim | int) == 0
+        fail_msg: >-
+          {{ _vector_histograms.stdout | trim }} recent samples are vector
+          histogram buckets or carry the __tmp_keep marker label; Alloy's
+          vector allowlist rules are not applied.
+        success_msg: Only allowlisted vector metrics are forwarded

@@ -1,0 +1,237 @@
+#jinja2: lstrip_blocks: True
+---
+apiVersion: observability.kaasops.io/v1alpha1
+# A namespaced VectorPipeline is restricted by the operator to sources in its
+# own namespace (extra_namespace_label_selector, injected automatically) -
+# logs would never leave rke2_monitoring_scraper_namespace. ClusterVectorPipeline
+# carries no such restriction, which is what cluster-wide log shipping needs.
+kind: ClusterVectorPipeline
+metadata:
+  name: logging
+  labels:
+    pokerops.net/vector-pipeline: "true"
+spec:
+  sources:
+    k8s_logs:
+      type: kubernetes_logs
+    # Node logs that never pass through a pod (mounted in agent.j2.yml).
+    # rke2 runs the kubelet and containerd as children of its own unit and
+    # points their output at files under its data dir instead of the
+    # journal. etcd, kube-apiserver and the other control-plane components
+    # are static pods, already covered by k8s_logs.
+    node_files:
+      type: file
+      include:
+        - /var/lib/rancher/rke2/agent/logs/kubelet.log
+        - /var/lib/rancher/rke2/agent/containerd/containerd.log
+    # rke2 itself (supervisor, embedded helm-controller, etcd snapshots,
+    # certificate rotation) and the units this collection installs on the
+    # host. Units absent on a node (rke2-agent on a server) just match
+    # nothing.
+    node_journal:
+      type: journald
+      journal_directory: /var/log/journal
+      include_units:
+        - rke2-server
+        - rke2-agent
+  transforms:
+    # Known noise dropped before any sink. longhorn-manager logs the API
+    # server's "v1 Endpoints is deprecated" warning every few minutes from
+    # its own code - nothing configurable stops it until upstream switches
+    # to EndpointSlices (longhorn/longhorn#10796, planned for v1.14.0;
+    # tracked in TODO.md). Scoped to longhorn-system so the same warning
+    # from anything else still surfaces.
+    k8s_logs_filtered:
+      type: filter
+      inputs: [k8s_logs]
+      condition:
+        type: vrl
+        source: >-
+          !(.kubernetes.pod_namespace == "longhorn-system" &&
+          contains(string(.message) ?? "", "v1 Endpoints is deprecated"))
+    # Node events carry no kubernetes.* to say where they came from: node is
+    # the agent's own node (the file source's .host is the agent pod's
+    # hostname, so it's dropped), unit the systemd unit without .service or
+    # the log file's name without .log (kubelet, containerd).
+    node_logs_labeled:
+      type: remap
+      inputs: [node_files, node_journal]
+      source: |
+        .node = get_env_var("VECTOR_SELF_NODE_NAME") ?? "unknown"
+        if .source_type == "journald" {
+          .unit = replace(string(._SYSTEMD_UNIT) ?? "unknown", r'\.service$', "")
+        } else {
+          del(.host)
+          name, err = parse_regex(string(.file) ?? "", r'(?P<name>[^/]+?)(\.log)?$')
+          .unit = if err == null { string(name.name) ?? "unknown" } else { "unknown" }
+        }
+    # Normalizes every event to the project's common log fields (CLAUDE.md,
+    # "Logging invariant"): node, log_format (json, klog, logfmt or text),
+    # level (trace, debug, info, warn, error, fatal or unknown), msg (the
+    # line's own message, else the raw line) and log (every parsed field,
+    # kept under its own key so a component's ts/time/level can never
+    # clobber Vector's own fields). .message stays the untouched raw line,
+    # and .timestamp stays the source's (container runtime write, journal
+    # entry, or file read) time.
+    logs_normalized:
+      type: remap
+      inputs: [k8s_logs_filtered, node_logs_labeled]
+      source: |
+        if .node == null { .node = .kubernetes.pod_node_name }
+        raw = string(.message) ?? ""
+        .log_format = "text"
+        .level = "unknown"
+        .msg = raw
+        fields = {}
+        if starts_with(raw, "{") {
+          parsed, err = parse_json(raw)
+          if err == null && is_object(parsed) {
+            fields = object!(parsed)
+            .log_format = "json"
+          }
+        }
+        if .log_format == "text" && match(raw, r'^[IWEF]\d{4} \d{2}:\d{2}:\d{2}\.\d+\s+\d+ ') {
+          parsed, err = parse_klog(raw)
+          if err == null {
+            fields = parsed
+            .log_format = "klog"
+          }
+        }
+        # SeaweedFS's glog fork drops klog's thread id and "]", which
+        # parse_klog rejects: "E1018 19:43:53.060246 mount_common.go:166 msg".
+        if .log_format == "text" {
+          parsed, err = parse_regex(raw, r'^(?P<severity>[IWEF])(?P<time>\d{4} \d{2}:\d{2}:\d{2}\.\d+) (?P<file>[\w.-]+):(?P<line>\d+)\]? (?P<message>.*)$')
+          if err == null {
+            parsed.level = get(
+              {"I": "info", "W": "warning", "E": "error", "F": "fatal"},
+              [string(parsed.severity) ?? ""]
+            ) ?? null
+            fields = parsed
+            .log_format = "klog"
+          }
+        }
+        if .log_format == "text" && match(raw, r'(^|\s)(level|lvl)=\S') {
+          parsed, err = parse_logfmt(raw)
+          if err == null {
+            fields = parsed
+            .log_format = "logfmt"
+          }
+        }
+        # Leveled plain text from components that can't be switched to JSON
+        # (or not yet - TODO.md): log_format stays "text", but level and msg
+        # come from the line. zap's console encoder first (time, level,
+        # logger, msg and an optional JSON object, tab-separated - e.g.
+        # seaweedfs-operator), then a level token after a leading timestamp
+        # (Vector's text format, log4j patterns like strimzi's), coredns's
+        # "[LEVEL] msg", and the kubelet's startup flag deprecation notices.
+        if .log_format == "text" {
+          parsed, err = parse_regex(raw, r'^(?P<time>\d{4}-\d{2}-\d{2}T\S+)\t(?P<level>[A-Z]+)\t(?P<logger>[^\t]*)\t(?P<msg>[^\t]*)\t?(?P<extra>.*)$')
+          if err == null {
+            extra = {}
+            if parsed.extra != "" {
+              extra = object(parse_json(string(parsed.extra) ?? "") ?? {}) ?? {}
+            }
+            fields = merge(extra, {"time": parsed.time, "level": parsed.level, "logger": parsed.logger, "msg": parsed.msg})
+          } else {
+            parsed, err = parse_regex(raw, r'^\d{4}-\d{2}-\d{2}[T ][\d:.,]+Z?\s+(?P<level>TRACE|DEBUG|INFO|WARN|WARNING|ERROR|FATAL)\s+(?P<msg>.*)$')
+            if err != null {
+              parsed, err = parse_regex(raw, r'^\[(?P<level>DEBUG|INFO|WARNING|ERROR|FATAL)\] (?P<msg>.*)$')
+            }
+            if err != null && match(raw, r'^Flag --\S+ has been deprecated') {
+              parsed = {"level": "warning", "msg": raw}
+              err = null
+            }
+            if err == null { fields = parsed }
+          }
+        }
+        if length(fields) > 0 {
+          .log = fields
+          level = fields.level
+          if level == null { level = fields.lvl }
+          if level == null { level = fields.severity }
+          if level == null { level = get(fields, ["log.level"]) ?? null }
+          l = downcase(to_string(level) ?? "")
+          .level = if starts_with(l, "trace") {
+            "trace"
+          } else if starts_with(l, "debug") || l == "dbg" {
+            "debug"
+          } else if starts_with(l, "info") || l == "inf" || l == "notice" {
+            "info"
+          } else if starts_with(l, "warn") || l == "wrn" {
+            "warn"
+          } else if starts_with(l, "err") || l == "eror" {
+            "error"
+          } else if starts_with(l, "fatal") || starts_with(l, "crit") || starts_with(l, "panic") || l == "dpanic" || l == "ftl" {
+            "fatal"
+          } else {
+            "unknown"
+          }
+          message = fields.msg
+          if message == null { message = fields.message }
+          if message != null { .msg = to_string(message) ?? raw }
+        }
+        # Structured klog (the kubelet, most control-plane components) puts
+        # a quoted message and then key="value" pairs in the message part.
+        # The pairs go under .log, never over klog's own file/line/level.
+        if .log_format == "klog" {
+          parts, err = parse_regex(.msg, r'^"(?P<msg>(?:[^"\\]|\\.)*)"\s*(?P<kv>.*)$')
+          if err == null {
+            .msg = parts.msg
+            kv = parse_logfmt(parts.kv) ?? {}
+            .log = merge(kv, object(.log) ?? {})
+          }
+        }
+        # Plain-text journal lines still have the syslog priority the unit
+        # logged them at (stdout defaults to info).
+        if .level == "unknown" && .PRIORITY != null {
+          p = to_int(.PRIORITY) ?? -1
+          .level = if p >= 0 && p <= 2 {
+            "fatal"
+          } else if p == 3 {
+            "error"
+          } else if p == 4 {
+            "warn"
+          } else if p == 5 || p == 6 {
+            "info"
+          } else if p == 7 {
+            "debug"
+          } else {
+            "unknown"
+          }
+        }
+  sinks:
+    {% if rke2_logging_endpoint | default('') | length > 0 %}
+    ingestor:
+      type: vector
+      inputs: [logs_normalized]
+      address: "{{ rke2_logging_endpoint }}"
+      version: "2"
+      # Without this, one failed connection at the moment this pipeline is
+      # first applied (e.g. the remote ingestor isn't up yet) permanently
+      # rejects the config in favor of a blackhole fallback, with no retry.
+      # remote_write has no equivalent gate, so logging shouldn't either.
+      healthcheck: false
+      # Unsent events must survive an agent restart while the remote is
+      # unreachable: sources save their read position as soon as an event
+      # leaves them, so anything still in a memory buffer is lost for good
+      # (seen live: rke2-agent's startup lines, read before the remote was
+      # up and dropped by a config-change restart). The disk buffer lives
+      # in the agent's data_dir, a hostPath, so it also survives pod
+      # recreation. Acknowledgements make the journald and file sources
+      # (node logs) hold their position until events are in that buffer;
+      # kubernetes_logs can't acknowledge in 0.48 (can_acknowledge is
+      # false), so pod logs keep a sub-second window between read and
+      # buffer write.
+      buffer:
+        type: disk
+        max_size: {{ rke2_logging_buffer_size }}
+        when_full: block
+      acknowledgements:
+        enabled: true
+      {% if rke2_monitoring_tls_enabled | bool %}
+      tls:
+        ca_file: /etc/vector/tls/ca.crt
+        crt_file: /etc/vector/tls/tls.crt
+        key_file: /etc/vector/tls/tls.key
+      {% endif %}
+    {% endif %}

@@ -11,6 +11,9 @@
     ingestor_metrics_port: 9090
     ingestor_logs_port: 8989
     ingestor_api_port: 8686
+    # Per file (logs.log, metrics.log): trimmed back to keep once past max.
+    ingestor_max_bytes: 2147483648
+    ingestor_keep_bytes: 1073741824
     # File sinks rather than a real backend: the verify playbook asserts on them.
     ingestor_config:
       data_dir: /vector-data-dir
@@ -25,6 +28,21 @@
           type: vector
           address: "0.0.0.0:{{ ingestor_logs_port }}"
           version: "2"
+      transforms:
+        # One line per node and unit ever seen, in a file of its own: the
+        # node-logs check needs units that log once at boot and then go
+        # quiet (rke2-agent), which the trimmed logs.log can't keep.
+        node_units:
+          type: remap
+          inputs: [logs_in]
+          source: |
+            if !exists(.unit) { abort }
+            . = {"node": .node, "unit": .unit}
+        node_units_seen:
+          type: dedupe
+          inputs: [node_units]
+          fields:
+            match: [node, unit]
       sinks:
         metrics_file:
           type: file
@@ -36,6 +54,12 @@
           type: file
           inputs: [logs_in]
           path: /data/logs.log
+          encoding:
+            codec: json
+        node_units_file:
+          type: file
+          inputs: [node_units_seen]
+          path: /data/node-units.log
           encoding:
             codec: json
   tasks:
@@ -106,6 +130,32 @@
                       - {name: config, mountPath: /etc/vector}
                       - {name: data, mountPath: /data}
                       - {name: state, mountPath: /vector-data-dir}
+                  # logs.log and metrics.log grow by ~3 GB an hour; untrimmed
+                  # they fill the node's disk and the pod is evicted for disk
+                  # pressure, losing everything received so far. Cuts the
+                  # oldest data in place, keeping the newest ingestor_keep_bytes:
+                  # the file sink appends (O_APPEND), so its writes keep landing
+                  # at the new end. The cut is block-aligned, so the first line
+                  # left can be partial; readers of the whole file skip lines
+                  # not starting with "{".
+                  - name: trim
+                    image: "{{ ingestor_image }}"
+                    command: ["/bin/sh", "-c"]
+                    args:
+                      - |
+                        while true; do
+                          for f in /data/logs.log /data/metrics.log; do
+                            size=$(stat -c %s "$f" 2>/dev/null || echo 0)
+                            if [ "$size" -gt {{ ingestor_max_bytes }} ]; then
+                              cut=$(( (size - {{ ingestor_keep_bytes }}) / 4096 * 4096 ))
+                              fallocate --collapse-range --offset 0 --length "$cut" "$f" &&
+                                echo "level=info msg=\"trimmed ingestor file\" file=$f bytes=$cut"
+                            fi
+                          done
+                          sleep 60
+                        done
+                    volumeMounts:
+                      - {name: data, mountPath: /data}
                 volumes:
                   - name: config
                     configMap:
