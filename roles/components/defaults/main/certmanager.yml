@@ -3,5 +3,5 @@ rke2_certmanager_chart:
   name: "cert-manager"
   namespace: "cert-manager"
   repo: "https://charts.jetstack.io"
-  release: "v1.18.2"
+  release: "v1.21.2"
 rke2_certmanager_issuer_name: "cluster-issuer"

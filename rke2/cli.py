@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
+import json
 import os
+import re
 import tempfile
 from itertools import chain
 from pathlib import Path
@@ -19,6 +21,15 @@ DEFAULT_DIRECTORIES = [Path("argocd/applications"), Path("playbooks/templates")]
 DEFAULT_GALAXY_PATH = Path("galaxy.yml")
 DEFAULT_ARGOCD_PATH = Path("roles/components/defaults/main/argocd.yml")
 VERSION_REGEX = r"v?[0-9]+\.[0-9]+\.[0-9]+$"
+# Variables named *_image in tracked role defaults and playbook vars
+DEFAULT_IMAGE_VARIABLE_GLOBS = ["roles/*/defaults/**/*.yml", "playbooks/vars/*.yml"]
+# image: keys at any depth in tracked manifests (e.g. Helm values in ArgoCD apps)
+DEFAULT_IMAGE_MANIFEST_GLOBS = ["argocd/applications/*.yml", "playbooks/templates/**/*.yml"]
+# Tags that are a dotted version, optionally v-prefixed, optionally with a
+# variant suffix (-debian). A candidate must match the pinned tag's suffix
+# exactly, so a plain pin never moves to -rc1/-alpine and a -debian pin stays
+# on -debian; anything else (latest, _large_disk, ...) is never a candidate
+IMAGE_TAG_REGEX = r"^(?P<prefix>v?)(?P<version>[0-9]+(?:\.[0-9]+)*)(?P<suffix>-[a-z][a-z0-9.-]*)?$"
 YAML_LINE_LENGTH = 160  # keep dumped yaml within the .yamllint line-length budget
 
 type Version = str
@@ -62,6 +73,25 @@ class Collection(pydantic.BaseModel):
 
     name: str
     version: str
+
+
+class ChartPin(pydantic.BaseModel):
+    """Pydantic model representing a chart pinned by a {name, repo, release} variable."""
+
+    path: Path
+    variable: str
+    name: str
+    repo: str
+    release: str
+
+
+class Image(pydantic.BaseModel):
+    """Pydantic model representing a pinned container image reference in a file."""
+
+    path: Path
+    reference: str
+    repository: str
+    tag: str
 
 
 def format_yaml(data: object) -> object:
@@ -144,6 +174,11 @@ def create_file(path: Path, content: str | None = None) -> None:
 
 def argocd_application_helm_index(app: Application) -> HelmChart | None:
     """Retrieve and parse Helm repository using Helm commands"""
+    return helm_chart_latest(app.spec.source.chart, app.spec.source.repoURL)
+
+
+def helm_chart_latest(chart_name: str, chart_repo: str | None) -> HelmChart | None:
+    """Find the latest published version of a chart in an http or oci repository."""
     with tempfile.TemporaryDirectory() as temp_dir:
         config_repository = Path(temp_dir) / "repository.yaml"
         config_registry = Path(temp_dir) / "registry.yaml"
@@ -151,8 +186,6 @@ def argocd_application_helm_index(app: Application) -> HelmChart | None:
         create_file(config_repository)
         create_file(config_registry)
         _ = os.makedirs(config_cache, exist_ok=True)
-        chart_name = app.spec.source.chart
-        chart_repo = app.spec.source.repoURL
         try:
             if not chart_repo:
                 typer.echo(f"Skipping chart {chart_name} due to missing repoURL.")
@@ -233,16 +266,179 @@ def yaml_attribute_update(file: Path, attribute: dict) -> None:  # pyright: igno
         typer.echo(f"Error opening file {file}: {e}")
 
 
-app = typer.Typer(help="Manage Helm chart versions")
+def tracked_files(globs: list[str]) -> list[Path]:
+    """List git-tracked files matching globs, so vendored/ignored roles are never touched."""
+    try:
+        result = run(["git", "ls-files", "-z", "--", *globs], check=True, capture_output=True, text=True)
+    except (CalledProcessError, FileNotFoundError) as e:
+        typer.echo(f"Error listing tracked files: {e}")
+        return []
+    return [Path(name) for name in result.stdout.split("\0") if name]
 
 
-@app.command()
-def update(
-    directories: list[Path] = DEFAULT_DIRECTORIES,
-    dry_run: Annotated[bool, typer.Option(help="Skip manifest updates")] = False,
-) -> None:
+def image_reference(path: Path, reference: str) -> Image | None:
+    """Parse a pinned repository:tag reference; templated and digest-pinned references are skipped."""
+    if "{{" in reference or "@" in reference:
+        typer.echo(f"Skipping image {reference} in {path}: templated or digest-pinned.")
+        return None
+    repository, sep, tag = reference.rpartition(":")
+    if not sep or "/" in tag:
+        typer.echo(f"Skipping image {reference} in {path}: no tag.")
+        return None
+    return Image(path=path, reference=reference, repository=repository, tag=tag)
+
+
+def load_yaml_documents(path: Path) -> list[object]:
+    """Load every YAML document in a file; files that are not plain YAML (e.g. jinja templates) yield none."""
+    try:
+        with path.open("r") as f:
+            return [doc for doc in yaml.safe_load_all(f) if doc is not None]  # pyright: ignore[reportAny]
+    except (yaml.YAMLError, FileNotFoundError):
+        return []
+
+
+def manifest_image_values(data: object) -> list[str]:
+    """Collect string values of image: keys at any depth."""
+    if isinstance(data, dict):
+        return flatten(
+            [
+                [value] if key == "image" and isinstance(value, str) else manifest_image_values(value)  # pyright: ignore[reportUnknownArgumentType]
+                for key, value in data.items()  # pyright: ignore[reportUnknownVariableType]
+            ]
+        )
+    if isinstance(data, list):
+        return flatten([manifest_image_values(item) for item in data])  # pyright: ignore[reportUnknownVariableType]
+    return []
+
+
+def variable_image_values(data: object) -> list[str]:
+    """Collect string values of top-level variables named *_image."""
+    if not isinstance(data, dict):
+        return []
+    return [value for key, value in data.items() if str(key).endswith("_image") and isinstance(value, str)]  # pyright: ignore[reportUnknownVariableType, reportUnknownArgumentType]
+
+
+def find_images(variable_globs: list[str], manifest_globs: list[str]) -> list[Image]:
+    """Find pinned images in role/playbook variables and manifest image: keys."""
+    sources = [(path, variable_image_values) for path in tracked_files(variable_globs)] + [
+        (path, manifest_image_values) for path in tracked_files(manifest_globs)
+    ]
+    return [
+        image
+        for path, extract in sources
+        for doc in load_yaml_documents(path)
+        for value in extract(doc)
+        if (image := image_reference(path, value))
+    ]
+
+
+def registry_repository(repository: str) -> str:
+    """Fully qualify a repository so skopeo does not depend on local short-name config."""
+    host = repository.split("/", 1)[0]
+    if "/" in repository and ("." in host or ":" in host or host == "localhost"):
+        return repository
+    return f"docker.io/{repository if '/' in repository else f'library/{repository}'}"
+
+
+def image_tags(repository: str) -> list[str] | None:
+    """List the tags published for a repository."""
+    try:
+        cmd = ["skopeo", "list-tags", f"docker://{registry_repository(repository)}"]
+        result = run(cmd, check=True, capture_output=True, text=True)
+        return list(json.loads(result.stdout)["Tags"])  # pyright: ignore[reportAny]
+    except FileNotFoundError:
+        typer.echo("skopeo command not found. Please ensure skopeo is installed.")
+    except (CalledProcessError, json.JSONDecodeError, KeyError) as e:
+        typer.echo(f"Error listing tags for {repository}: {e}")
+    return None
+
+
+def latest_tag(current: str, tags: list[str]) -> str | None:
+    """Pick the highest tag shaped like the current one (same v-prefix, number of components and variant suffix)."""
+    if not (match := re.match(IMAGE_TAG_REGEX, current)):
+        return None
+    shape = (match["prefix"], match["version"].count("."), match["suffix"])
+    candidates = [
+        m for tag in tags if (m := re.match(IMAGE_TAG_REGEX, tag)) and (m["prefix"], m["version"].count("."), m["suffix"]) == shape
+    ]
+    if not candidates:
+        return None
+    newest = max(candidates, key=lambda m: tuple(int(part) for part in m["version"].split(".")))
+    return newest.string
+
+
+def image_reference_update(path: Path, current: str, updated: str) -> None:
+    """Replace a whole image reference in place, preserving the file's formatting and comments."""
+    # Boundaries keep repo:v1.1 from matching inside repo:v1.14.1
+    pattern = rf"(?<![\w./-]){re.escape(current)}(?![\w.-])"
+    try:
+        content = path.read_text()
+        _ = path.write_text(re.sub(pattern, updated, content))
+    except IOError as e:
+        typer.echo(f"Error updating file {path}: {e}")
+
+
+def variable_chart_pins(path: Path, data: object) -> list[ChartPin]:
+    """Collect top-level variables shaped like a chart pin: a mapping with string name, repo and release."""
+    if not isinstance(data, dict):
+        return []
+    return [
+        ChartPin(path=path, variable=str(key), name=value["name"], repo=value["repo"], release=value["release"])  # pyright: ignore[reportUnknownArgumentType]
+        for key, value in data.items()  # pyright: ignore[reportUnknownVariableType]
+        if isinstance(value, dict)
+        and all(isinstance(value.get(field), str) for field in ("name", "repo", "release"))  # pyright: ignore[reportUnknownMemberType]
+        and not any("{{" in value[field] for field in ("name", "repo", "release"))
+    ]
+
+
+def find_chart_pins(variable_globs: list[str]) -> list[ChartPin]:
+    """Find chart pins in role/playbook variables."""
+    return [
+        pin
+        for path in tracked_files(variable_globs)
+        for doc in load_yaml_documents(path)
+        for pin in variable_chart_pins(path, doc)
+    ]
+
+
+def chart_pin_update(pin: ChartPin, release: str) -> None:
+    """Rewrite the release line inside one pin variable's block, preserving formatting, comments and quoting."""
+    try:
+        lines = pin.path.read_text().splitlines(keepends=True)
+    except IOError as e:
+        typer.echo(f"Error reading file {pin.path}: {e}")
+        return
+    start = next((n for n, line in enumerate(lines) if re.match(rf"^{re.escape(pin.variable)}:\s*$", line)), None)
+    if start is None:
+        typer.echo(f"Skipping chart {pin.name}: variable {pin.variable} not found as a block in {pin.path}.")
+        return
+    for n in range(start + 1, len(lines)):
+        if lines[n].strip() and not lines[n][0].isspace():
+            break  # next top-level key: this block has no release line of its own
+        if match := re.match(r"^(\s+release:\s*)([\"']?)([^\"'\s#]+)([\"']?)(.*)$", lines[n], re.DOTALL):
+            lines[n] = f"{match[1]}{match[2]}{release}{match[4]}{match[5]}"
+            _ = pin.path.write_text("".join(lines))
+            return
+    typer.echo(f"Skipping chart {pin.name}: no release line under {pin.variable} in {pin.path}.")
+
+
+def update_chart_pins(dry_run: bool) -> None:
+    """Update {name, repo, release} chart pin variables to the latest published chart version."""
+    for pin in find_chart_pins(DEFAULT_IMAGE_VARIABLE_GLOBS):
+        index = helm_chart_latest(pin.name, pin.repo)
+        if index is None:
+            typer.echo(f"Skipping chart {pin.name} update due to index fetch error.")
+            continue
+        if index.version == pin.release:
+            typer.echo(f"Chart {pin.name} is already up to date at version {pin.release}.")
+            continue
+        typer.echo(f"Updating chart {pin.name} ({pin.variable} in {pin.path}) from version {pin.release} to {index.version}.")
+        if not dry_run:
+            chart_pin_update(pin, index.version)
+
+
+def update_charts(directories: list[Path], dry_run: bool) -> None:
     """Update ArgoCD Application Helm chart versions to latest."""
-
     yaml_files = flatten([find_yaml_files(directory) for directory in directories])
     if not yaml_files:
         typer.echo(f"No YAML files found in {', '.join([str(d) for d in directories])}")
@@ -265,6 +461,41 @@ def update(
             yaml_attribute_update(chart.path, {"spec": {"source": {"targetRevision": _vnew}}})
 
 
+def update_images(dry_run: bool) -> None:
+    """Update pinned container image tags to the latest published version."""
+    images = find_images(DEFAULT_IMAGE_VARIABLE_GLOBS, DEFAULT_IMAGE_MANIFEST_GLOBS)
+    tags = {repository: image_tags(repository) for repository in {image.repository for image in images}}
+    for image in images:
+        _tags = tags[image.repository]
+        if _tags is None:
+            typer.echo(f"Skipping image {image.repository} update due to tag fetch error.")
+            continue
+        _vnew = latest_tag(image.tag, _tags)
+        if _vnew is None:
+            typer.echo(f"Skipping image {image.reference} in {image.path}: tag is not a plain version.")
+            continue
+        if _vnew == image.tag:
+            typer.echo(f"Image {image.repository} is already up to date at version {image.tag}.")
+            continue
+        typer.echo(f"Updating image {image.repository} in {image.path} from version {image.tag} to {_vnew}.")
+        if not dry_run:
+            image_reference_update(image.path, image.reference, f"{image.repository}:{_vnew}")
+
+
+app = typer.Typer(help="Manage Helm chart and container image versions")
+
+
+@app.command()
+def update(
+    directories: list[Path] = DEFAULT_DIRECTORIES,
+    dry_run: Annotated[bool, typer.Option(help="Skip manifest updates")] = False,
+) -> None:
+    """Update ArgoCD Application Helm chart versions, chart pin variables and pinned container images to latest."""
+    update_charts(directories, dry_run)
+    update_chart_pins(dry_run)
+    update_images(dry_run)
+
+
 @app.command()
 def build(
     galaxy_path: Path = DEFAULT_GALAXY_PATH,
@@ -279,8 +510,7 @@ def build(
     if _argocd_version != _collection_version:
         if check:
             typer.echo(
-                f"ArgoCD version {_argocd_version} does not match collection version {_collection_version}, "
-                "please run 'just build-fix' and commit changes",
+                f"ArgoCD version {_argocd_version} does not match collection version {_collection_version}, please run 'just build-fix' and commit changes",
                 err=True,
             )
             exit(1)
