@@ -20,9 +20,19 @@ rke2_monitoring_endpoint: ""
 # protocol, not an HTTP URL). Empty disables logging entirely.
 rke2_logging_endpoint: ""
 
-# Agent buffers. Metrics are time-bound by Alloy's WAL; logs 2Gi is ~6h at 100 KiB/s.
+# Disk buffer for logs bound for rke2_logging_endpoint, per node, in bytes
+# (Vector's minimum is 256 MiB). Unsent events wait here across agent
+# restarts while the remote is unreachable; when it fills, reading stops
+# until the remote catches up. 1 GiB is roughly an hour of a busy node.
+rke2_logging_buffer_size: 1073741824
+
+# Log agent image. The operator's default is the distroless variant, which
+# has no journalctl for the journald source (rke2 and host-unit logs); the
+# debian variant ships it. Pin only, bumped by rke2 update.
+rke2_vector_agent_image: "timberio/vector:0.48.0-debian"
+
+# Alloy's WAL volume; metrics in it are time-bound by the WAL itself.
 rke2_monitoring_metrics_volume_size: 2Gi
-rke2_monitoring_logs_volume_size: 2Gi
 
 # Cardinality control, applied by Alloy as metric_relabel_configs. Measured
 # against real scrapes, not inherited: together these cut ~45% of active series.
@@ -42,6 +52,20 @@ rke2_monitoring_drop_metrics_cadvisor:
 # The container and hierarchy scopes duplicate each other on leaf cgroups.
 rke2_monitoring_keep_memory_failure_type: "^pgmajfault$"
 rke2_monitoring_keep_memory_failure_scope: "^container$"
+
+# The only Vector agent metrics forwarded; every other vector_ series is
+# dropped. Enough to see each component's flow and, above all, lost
+# events: errors and discards per component (component_id, intentional),
+# and buffer-full drops (a sink buffer's drop_newest), which Vector counts
+# under the buffer, not the component. Several only appear
+# once the first such event happens.
+rke2_monitoring_keep_metrics_vector:
+  - vector_component_received_events_total
+  - vector_component_sent_events_total
+  - vector_component_discarded_events_total
+  - vector_component_errors_total
+  - vector_buffer_discarded_events_total
+  - vector_buffer_events
 
 rke2_monitoring_drop_metrics_ksm:
   - kube_pod_tolerations # 336 series, not queried

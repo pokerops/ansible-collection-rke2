@@ -1,0 +1,91 @@
+#jinja2: lstrip_blocks: True
+---
+apiVersion: observability.kaasops.io/v1alpha1
+kind: Vector
+metadata:
+  name: vector
+  namespace: "{{ rke2_monitoring_scraper_namespace }}"
+spec:
+  # Only pipelines carrying this label are merged into this agent's config.
+  selector:
+    matchLabels:
+      pokerops.net/vector-pipeline: "true"
+  agent:
+    image: "{{ rke2_vector_agent_image }}"
+    # Every node, control plane included: without this the control-plane
+    # NoSchedule taint kept the agent off the servers, and their etcd,
+    # kube-apiserver, kubelet and rke2 logs were never collected.
+    tolerations:
+      - operator: Exists
+    # The operator's own default (100m/200Mi request, 1 cpu/1Gi limit) is sized
+    # for a general-purpose host, not a per-node DaemonSet - on a cluster with
+    # several other operators competing for CPU requests on small nodes, that
+    # default is enough on its own to leave other pods unschedulable (observed:
+    # a MariaDB pod requesting 100m CPU stuck Pending with 0/4 nodes available,
+    # solely because every agent node's CPU requests were already saturated by
+    # existing DaemonSets/operators plus this one). Observed real usage here is
+    # well under 50m CPU / 50Mi memory even while shipping cluster-wide logs.
+    #
+    # No CPU limit, only the request: a CFS quota can wedge on the nodes'
+    # kernel (6.8) - confirmed live, the agent's cgroup was counted
+    # throttled in every period while running for 0us, its threads stayed
+    # runnable without ever being scheduled, and the node shipped nothing
+    # for 3.5h until the quota was lifted. The request still sets its
+    # share under contention.
+    resources:
+      requests:
+        cpu: 20m
+        memory: 64Mi
+      limits:
+        memory: 256Mi
+    # Vector's own metrics on the prom-exporter port, with a PodMonitor the
+    # operator creates; Alloy forwards only rke2_monitoring_keep_metrics_vector
+    # (the drop and error counters among them), not the histograms.
+    internalMetrics: true
+    # Matches the ingestor's own data_dir so dev and prod agree on the path.
+    dataDir: /vector-data-dir
+    volumes:
+      # Holds the sources' read checkpoints and the remote sink's disk
+      # buffer (up to rke2_logging_buffer_size on the node's root disk);
+      # both must outlive the pod: on an emptyDir every pod recreation
+      # (rollout, image bump, drain) re-read and re-shipped every pod log,
+      # kubelet.log, containerd.log and the boot's journal still on disk -
+      # confirmed live, all 585 kubelet.log lines arrived again.
+      - name: data
+        hostPath:
+          path: /var/lib/vector-agent
+          type: DirectoryOrCreate
+      # The operator does not mount this by default; without it the
+      # kubernetes_logs source has no files to tail and ships nothing.
+      - name: varlogpods
+        hostPath:
+          path: /var/log/pods
+      # Node logs outside any pod (the pipeline's node_files and
+      # node_journal sources): rke2 runs the kubelet and containerd as
+      # children of its own unit, writing to files under its data dir
+      # rather than the journal; rke2 itself and the host units log to
+      # the journal.
+      - name: rke2-agent-logs
+        hostPath:
+          path: /var/lib/rancher/rke2/agent/logs
+      - name: rke2-containerd
+        hostPath:
+          path: /var/lib/rancher/rke2/agent/containerd
+      - name: journal
+        hostPath:
+          path: /var/log/journal
+    volumeMounts:
+      - name: data
+        mountPath: /vector-data-dir
+      - name: varlogpods
+        mountPath: /var/log/pods
+        readOnly: true
+      - name: rke2-agent-logs
+        mountPath: /var/lib/rancher/rke2/agent/logs
+        readOnly: true
+      - name: rke2-containerd
+        mountPath: /var/lib/rancher/rke2/agent/containerd
+        readOnly: true
+      - name: journal
+        mountPath: /var/log/journal
+        readOnly: true

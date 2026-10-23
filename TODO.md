@@ -1,13 +1,49 @@
 # Roadmap
 
-## Remaining component monitoring coverage
+## Monitoring
 
-Verified against current master — these have no ServiceMonitor/PodMonitor and
-no chart metrics flag enabled:
+These have no ServiceMonitor/PodMonitor and no chart metrics flag enabled:
 
 - **cert-manager** — highest value; certificate expiry is the usual reason to
   want this at all
 - keel, reflector — operators/agents, lower value
+
+## Logging
+
+Move supporting components to json logs. Options below were verified against
+each pinned chart version's values/templates and the component's source.
+
+- **argocd** — `global.logging.format: json` in `rke2_argocd_values`; covers
+  server, controller, repo-server, applicationset, notifications and dex
+  (redis has no json option)
+- **cert-manager** — `config.logging.format`, `webhook.config.logging.format`
+  and `cainjector.config.logging.format: json` (`roles/components/tasks/certmanager.yml`)
+- **traefik** — `log.format: json` (`playbooks/templates/traefik.yml`); also
+  drops the ANSI color codes. Access logs: `accessLog.format: json`
+- **velero** — `configuration.logFormat: json`; covers velero and node-agent
+- **sealed-secrets** — `logFormat: json`
+- **postgres-operator** — `enableJsonLogging: true`; the postgres-exporter
+  sidecar takes `args: ["--log.format=json"]` in `configGeneral.sidecars`
+- **alloy** — `logging { format = "json" }` block in the config
+  (`playbooks/templates/alloy.yml`); its config-reloader sidecar needs
+  `spec.configReloader.customArgs` restating `--watched-dir=/etc/alloy` and
+  `--reload-url=http://localhost:12345/-/reload` plus `--log-format=json`
+  (customArgs replaces the defaults)
+- **vector agent** — `spec.agent.env: VECTOR_LOG_FORMAT=json`
+  (`playbooks/templates/vector/agent.j2.yml`)
+- **vector-operator** — chart `args: [--zap-encoder=json]`
+- **strimzi** — chart `logConfiguration` with a full log4j2.properties using
+  `JsonTemplateLayout`; operator only, Kafka clusters set their own logging
+
+## Deprecations
+
+- `playbooks/templates/vector/pipeline.j2.yml` drops longhorn-manager's
+  "v1 Endpoints is deprecated" warning (the `k8s_logs_filtered` transform),
+  because Longhorn calls the deprecated API from its own code. Upstream fix:
+  longhorn/longhorn#10796, planned for **Longhorn v1.14.0**. Once the Longhorn
+  chart pin in `playbooks/templates/longhorn.yml` reaches v1.14.0 and the
+  warning is confirmed gone from longhorn-manager's own logs, delete the
+  transform and point the sinks back at `k8s_logs`.
 
 ## Alerting
 
@@ -33,12 +69,6 @@ ruler via alloy (`mimir.rules.kubernetes`), or get evaluated somewhere else
 entirely? That decision gates the actual task — alerting when a
 `pokerops.net/monitor-optional` cluster exists but emits no `kube_*_created`
 series.
-
-## Local log retention
-
-A local, short-retention log destination — so logs are queryable for
-debugging even without the remote endpoint configured — would need its own
-internal object store plus a decision on the admin-facing UX
 
 ## Testing
 
