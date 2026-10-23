@@ -32,6 +32,15 @@ spec:
     automated:
       prune: true
       selfHeal: true
+    # Argo's built-in retry for automated syncs (5 attempts, about 2.5m)
+    # gives up on a repo-server restart, and an automated sync never
+    # retries a failed revision.
+    retry:
+      limit: 10
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m
     syncOptions:
       - CreateNamespace=true
   ignoreDifferences:

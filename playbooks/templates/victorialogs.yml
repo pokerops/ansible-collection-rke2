@@ -1,0 +1,71 @@
+---
+# Cluster-local log store: every event the agents ship (logs_normalized),
+# kept for rke2_logging_retention_days and searchable by field, for
+# troubleshooting when the remote endpoint is unreachable or not set.
+# Reached only through kubectl port-forward: a headless ClusterIP Service,
+# no Ingress, and a NetworkPolicy admitting only the Vector agents (ingest)
+# and Alloy (metrics). Not a record of evidence - anyone with cluster-admin
+# can alter it; the remote endpoint is that.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: victoria-logs
+  namespace: argocd
+spec:
+  project: default
+  source:
+    chart: victoria-logs-single
+    repoURL: https://victoriametrics.github.io/helm-charts/
+    targetRevision: "0.13.10"
+    helm:
+      valuesObject:
+        server:
+          fullnameOverride: victoria-logs
+          # Logs JSON already (extraArgs loggerFormat: json, the chart's
+          # default), so its events need no remap (CLAUDE.md).
+          retentionPeriod: "{{ rke2_logging_retention_days }}d"
+          # Oldest days go first once the volume is this full, so a burst
+          # can never fill it and stop ingestion.
+          retentionMaxDiskUsagePercent: 85
+          persistentVolume:
+            enabled: true
+            size: "{{ rke2_logging_volume_size }}"
+            storageClassName: "{{ rke2_logging_storage_class }}"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+        networkPolicy:
+          enabled: true
+          ingress:
+            - from:
+                - podSelector:
+                    matchLabels:
+                      app.kubernetes.io/managed-by: vector-operator
+                      app.kubernetes.io/component: Agent
+                - podSelector:
+                    matchLabels:
+                      app.kubernetes.io/name: alloy
+              ports:
+                - port: 9428
+                  protocol: TCP
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: "{{ rke2_monitoring_scraper_namespace }}"
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    # Argo's built-in retry for automated syncs (5 attempts, about 2.5m)
+    # gives up on a repo-server restart, and an automated sync never
+    # retries a failed revision.
+    retry:
+      limit: 10
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m
+    syncOptions:
+      - CreateNamespace=true

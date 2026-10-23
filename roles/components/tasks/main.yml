@@ -29,7 +29,6 @@
   retries: "{{ _rke2_retry_num }}"
   delay: "{{ _rke2_retry_delay }}"
   until: _vector_crd.resources | length > 0
-  when: _rke2_logging_deploy | bool
 
 - name: Wait for clustervectorpipeline crd
   kubernetes.core.k8s_info:
@@ -40,7 +39,6 @@
   retries: "{{ _rke2_retry_num }}"
   delay: "{{ _rke2_retry_delay }}"
   until: _vectorpipeline_crd.resources | length > 0
-  when: _rke2_logging_deploy | bool
 
 - name: Include metallb tasks
   ansible.builtin.include_tasks: metallb.yml
@@ -64,7 +62,6 @@
 
 - name: Include logging tasks
   ansible.builtin.include_tasks: logging.yml
-  when: _rke2_logging_deploy | bool
 
 - name: Include policy tasks
   ansible.builtin.include_tasks: policies.yml

@@ -314,6 +314,261 @@
              | map('regex_replace', '^.*:"(.*)"$', '\1') | unique | list }}
         _unscraped: "{{ _declared | difference(_scraped) }}"
 
+# The cluster-local log store (VictoriaLogs). Queried only through
+# kubectl port-forward, the admin path: its NetworkPolicy admits only the
+# Vector agents and Alloy, and port-forward traffic enters the pod over its
+# own loopback, which the policy doesn't filter.
+- name: Verify the local log store
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    _vl_namespace: monitoring
+    _vl_name: victoria-logs
+    _vl_port: 19428
+    _vl_settle_retries: 30
+    _vl_settle_delay: 10
+    _vl_probe_image: "curlimages/curl:8.11.1"
+    _kubectl: "kubectl --kubeconfig {{ molecule_local_kubeconfig }}"
+    _node_count: "{{ query('ansible.builtin.inventory_hostnames', 'rke2_server:rke2_agent') | length }}"
+    # Runs one LogsQL query through a port-forward and prints the JSON
+    # lines it returns.
+    _vl_query: >-
+      {{ _kubectl }} -n {{ _vl_namespace }} port-forward svc/{{ _vl_name }}
+      {{ _vl_port }}:9428 >/dev/null 2>&1 & pf=$!; trap 'kill $pf' EXIT;
+      for i in $(seq 1 40); do
+      curl -sf http://127.0.0.1:{{ _vl_port }}/health >/dev/null && break; sleep 0.25;
+      done;
+      curl -sf http://127.0.0.1:{{ _vl_port }}/select/logsql/query --data-urlencode
+  tasks:
+    - name: Wait for VictoriaLogs to become ready
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        api_version: apps/v1
+        kind: StatefulSet
+        name: "{{ _vl_name }}"
+        namespace: "{{ _vl_namespace }}"
+      register: _vl_sts
+      retries: "{{ _vl_settle_retries }}"
+      delay: "{{ _vl_settle_delay }}"
+      until:
+        - _vl_sts.resources | length > 0
+        - (_vl_sts.resources[0].status.readyReplicas | default(0)) == 1
+
+    # rke2-agent logs at boot and then goes quiet, so look back a full day
+    # (the scenario's whole life); the store keeps it for its retention.
+    - name: Wait for node logs from every node to reach the local store
+      ansible.builtin.shell:
+        cmd: >-
+          {{ _vl_query }}
+          'query=_time:1d unit:in("kubelet", "rke2-server", "rke2-agent") | stats by (node, unit) count() hits'
+      register: _vl_node_logs
+      changed_when: false
+      failed_when: false
+      retries: "{{ _vl_settle_retries }}"
+      delay: "{{ _vl_settle_delay }}"
+      until:
+        - _vl_node_logs.rc == 0
+        - (_vl_node_logs.stdout_lines | map('from_json') | selectattr('unit', 'equalto', 'kubelet') | list | length)
+          == (_node_count | int)
+        - (_vl_node_logs.stdout_lines | map('from_json') | selectattr('unit', 'match', '^rke2-(server|agent)$') | list | length)
+          == (_node_count | int)
+
+    - name: Verify kubelet and rke2 logs reach the local store from every node
+      ansible.builtin.assert:
+        that:
+          - _vl_node_logs.rc == 0
+          - (_vl_node_logs.stdout_lines | map('from_json') | selectattr('unit', 'equalto', 'kubelet') | list | length)
+            == (_node_count | int)
+          - (_vl_node_logs.stdout_lines | map('from_json') | selectattr('unit', 'match', '^rke2-(server|agent)$') | list | length)
+            == (_node_count | int)
+        fail_msg: >-
+          Expected kubelet and rke2-server/rke2-agent logs from all {{ _node_count }}
+          nodes in VictoriaLogs, got (rc={{ _vl_node_logs.rc }}):
+          {{ _vl_node_logs.stdout_lines | default([]) }}. Check the pipeline's
+          local sink and VictoriaLogs' NetworkPolicy.
+        success_msg: "kubelet and rke2 logs reach the local store from all {{ _node_count }} nodes"
+
+    # Fields arrive flattened and searchable: a recent kube-system pod event
+    # must carry its namespace, node and a real level.
+    - name: Query recent pod log levels in the local store
+      ansible.builtin.shell:
+        cmd: >-
+          {{ _vl_query }}
+          'query=_time:15m kubernetes.pod_namespace:="kube-system" node:* | stats by (level) count() hits'
+      register: _vl_levels
+      changed_when: false
+
+    - name: Verify pod logs are searchable by field with real levels
+      ansible.builtin.assert:
+        that: _levels | reject('equalto', 'unknown') | list | length > 0
+        fail_msg: >-
+          No kube-system pod event in the last 15 minutes has a level other
+          than unknown ({{ _vl_levels.stdout_lines }}). Check the local sink's
+          inputs (logs_normalized) and its query fields.
+        success_msg: "Pod logs are searchable by field (levels: {{ _levels | join(', ') }})"
+      vars:
+        _levels: "{{ _vl_levels.stdout_lines | map('from_json') | map(attribute='level') | list }}"
+
+    # Retention by age and by disk usage, as rendered from the role's values.
+    - name: Query VictoriaLogs container args
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        api_version: apps/v1
+        kind: StatefulSet
+        name: "{{ _vl_name }}"
+        namespace: "{{ _vl_namespace }}"
+      register: _vl_sts_spec
+
+    - name: Set VictoriaLogs container args fact
+      ansible.builtin.set_fact:
+        _vl_args: "{{ _vl_sts_spec.resources[0].spec.template.spec.containers[0].args }}"
+
+    - name: Verify VictoriaLogs retention flags
+      ansible.builtin.assert:
+        that:
+          - "'--retentionPeriod=' ~ (rke2_logging_retention_days | default(3)) ~ 'd' in _vl_args"
+          - "'--retention.maxDiskUsagePercent=85' in _vl_args"
+          - "'--loggerFormat=json' in _vl_args"
+        fail_msg: "VictoriaLogs runs with {{ _vl_args }}"
+        success_msg: "VictoriaLogs retention flags are applied"
+
+    - name: Probe VictoriaLogs from a pod the NetworkPolicy doesn't admit
+      ansible.builtin.command:
+        cmd: >-
+          {{ _kubectl }} -n {{ _vl_namespace }} run victoria-logs-probe
+          --image={{ _vl_probe_image }} --restart=Never --rm -i --quiet
+          --command -- curl -s -m 5 -o /dev/null -w '%{http_code}'
+          http://{{ _vl_name }}.{{ _vl_namespace }}.svc:9428/health
+      register: _vl_probe
+      changed_when: false
+      failed_when: false
+
+    - name: Verify the NetworkPolicy blocks other pods
+      ansible.builtin.assert:
+        that: _vl_probe.stdout is not search('200')
+        fail_msg: >-
+          A pod outside the NetworkPolicy's allowed set reached VictoriaLogs
+          (HTTP {{ _vl_probe.stdout }}). Check the policy and that Cilium
+          enforces it.
+        success_msg: "The NetworkPolicy blocks other pods ({{ _vl_probe.stdout | default('no response', true) }})"
+
+# The agents' disk buffer for the local sink must carry events logged while
+# the store is down. Argo CD's self-heal would restore the StatefulSet at
+# once, so automated sync is paused for the outage and restored after.
+- name: Verify the local store catches up after an outage
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    _vl_namespace: monitoring
+    _vl_name: victoria-logs
+    _vl_port: 19428
+    _vl_settle_retries: 30
+    _vl_settle_delay: 10
+    _vl_probe_image: "curlimages/curl:8.11.1"
+    _kubectl: "kubectl --kubeconfig {{ molecule_local_kubeconfig }}"
+    _vl_query: >-
+      {{ _kubectl }} -n {{ _vl_namespace }} port-forward svc/{{ _vl_name }}
+      {{ _vl_port }}:9428 >/dev/null 2>&1 & pf=$!; trap 'kill $pf' EXIT;
+      for i in $(seq 1 40); do
+      curl -sf http://127.0.0.1:{{ _vl_port }}/health >/dev/null && break; sleep 0.25;
+      done;
+      curl -sf http://127.0.0.1:{{ _vl_port }}/select/logsql/query --data-urlencode
+  tasks:
+    - name: Name the outage marker
+      ansible.builtin.set_fact:
+        _vl_marker: "local-store-outage-{{ lookup('ansible.builtin.pipe', 'date +%s') }}"
+
+    - name: Pause automated sync of the VictoriaLogs application
+      ansible.builtin.command:
+        cmd: >-
+          {{ _kubectl }} -n argocd patch application {{ _vl_name }} --type merge
+          -p '{"spec":{"syncPolicy":{"automated":null}}}'
+      changed_when: true
+
+    - name: Scale VictoriaLogs to zero
+      kubernetes.core.k8s_scale:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        api_version: apps/v1
+        kind: StatefulSet
+        name: "{{ _vl_name }}"
+        namespace: "{{ _vl_namespace }}"
+        replicas: 0
+        wait: true
+        wait_timeout: 180
+
+    # Kept until the end: deleting the pod removes its log file, and the
+    # agent's kubernetes_logs source only looks for new files about once a
+    # minute.
+    - name: Log the marker while the store is down
+      ansible.builtin.command:
+        cmd: >-
+          {{ _kubectl }} -n {{ _vl_namespace }} run victoria-logs-marker
+          --image={{ _vl_probe_image }} --restart=Never
+          --command -- sh -c 'echo {{ _vl_marker }}'
+      changed_when: true
+
+    - name: Wait for the marker pod to finish
+      ansible.builtin.command:
+        cmd: >-
+          {{ _kubectl }} -n {{ _vl_namespace }} wait pod/victoria-logs-marker
+          --for=jsonpath='{.status.phase}'=Succeeded --timeout=180s
+      changed_when: false
+
+    # Long enough for the agent to discover the marker's log file and fail
+    # delivery to the store, so the marker can only arrive from the buffer.
+    - name: Keep the store down while the agent picks up the marker
+      ansible.builtin.wait_for:
+        timeout: 90
+
+    - name: Scale VictoriaLogs back up
+      kubernetes.core.k8s_scale:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        api_version: apps/v1
+        kind: StatefulSet
+        name: "{{ _vl_name }}"
+        namespace: "{{ _vl_namespace }}"
+        replicas: 1
+        wait: true
+        wait_timeout: 300
+
+    - name: Restore automated sync of the VictoriaLogs application
+      ansible.builtin.command:
+        cmd: >-
+          {{ _kubectl }} -n argocd patch application {{ _vl_name }} --type merge
+          -p '{"spec":{"syncPolicy":{"automated":{"prune":true,"selfHeal":true}}}}'
+      changed_when: true
+
+    - name: Wait for the marker to reach the local store
+      ansible.builtin.shell:
+        cmd: >-
+          {{ _vl_query }}
+          'query=_time:1h "{{ _vl_marker }}" | stats count() hits'
+      register: _vl_marker_query
+      changed_when: false
+      failed_when: false
+      retries: "{{ _vl_settle_retries }}"
+      delay: "{{ _vl_settle_delay }}"
+      until:
+        - _vl_marker_query.rc == 0
+        - (_vl_marker_query.stdout_lines | map('from_json') | map(attribute='hits') | map('int') | sum) > 0
+
+    - name: Verify events logged during the outage arrive afterwards
+      ansible.builtin.assert:
+        that: (_vl_marker_query.stdout_lines | default([]) | map('from_json') | map(attribute='hits') | map('int') | sum) > 0
+        fail_msg: >-
+          The marker logged while VictoriaLogs was down never arrived
+          (rc={{ _vl_marker_query.rc }}, {{ _vl_marker_query.stdout_lines | default([]) }}).
+          Check the local sink's disk buffer and that Argo CD restored the
+          StatefulSet.
+        success_msg: "Events logged during the outage arrive afterwards"
+
+    - name: Remove the marker pod
+      ansible.builtin.command:
+        cmd: "{{ _kubectl }} -n {{ _vl_namespace }} delete pod victoria-logs-marker --ignore-not-found"
+      changed_when: true
+
 # Vector's internal metrics, scraped through the operator's PodMonitor and
 # allowlisted in Alloy (rke2_monitoring_keep_metrics_vector): the allowed
 # counters must arrive, and nothing else from the agent may.

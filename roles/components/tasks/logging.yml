@@ -1,4 +1,21 @@
 ---
+- name: Deploy VictoriaLogs application
+  kubernetes.core.k8s:
+    state: present
+    apply: true
+    kubeconfig: "{{ rke2_config_path }}"
+    resource_definition: "{{ _victorialogs_manifest | combine(_victorialogs_overrides, recursive=True) }}"
+  vars:
+    _victorialogs_manifest: "{{ lookup('ansible.builtin.template', 'templates/victorialogs.yml') | from_yaml }}"
+    _victorialogs_overrides:
+      spec:
+        source:
+          helm:
+            valuesObject:
+              server:
+                serviceMonitor:
+                  enabled: "{{ _rke2_monitoring_deploy | bool }}"
+
 - name: Deploy vector collector
   kubernetes.core.k8s:
     state: present
