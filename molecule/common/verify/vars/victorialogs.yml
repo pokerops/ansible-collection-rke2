@@ -1,0 +1,19 @@
+---
+# Reaching the cluster-local VictoriaLogs store from the verify playbooks
+# (monitoring.yml, logging.yml), loaded with vars_files.
+_vl_namespace: monitoring
+_vl_name: victoria-logs
+_vl_port: 19428
+_vl_settle_retries: 30
+_vl_settle_delay: 10
+_vl_probe_image: "curlimages/curl:8.11.1"
+_kubectl: "kubectl --kubeconfig {{ molecule_local_kubeconfig }}"
+# Runs one LogsQL query through a port-forward and prints the JSON lines it
+# returns; append the query as a quoted 'query=...' argument.
+_vl_query: >-
+  {{ _kubectl }} -n {{ _vl_namespace }} port-forward svc/{{ _vl_name }}
+  {{ _vl_port }}:9428 >/dev/null 2>&1 & pf=$!; trap 'kill $pf' EXIT;
+  for i in $(seq 1 40); do
+  curl -sf http://127.0.0.1:{{ _vl_port }}/health >/dev/null && break; sleep 0.25;
+  done;
+  curl -sf http://127.0.0.1:{{ _vl_port }}/select/logsql/query --data-urlencode

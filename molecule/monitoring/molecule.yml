@@ -78,7 +78,7 @@ provisioner:
         log.id: M7Q4P-46WDR
     - name: python-logging
       lines:
-        - '2026-10-24 01:00:00,123  INFO: Loading Config object from vtysh show running'
+        - "2026-10-24 01:00:00,123  INFO: Loading Config object from vtysh show running"
       expect:
         log_format: text
         level: info
@@ -104,6 +104,29 @@ provisioner:
         level: error
         msg: POST /v1/volumes/pvc-0000?action=attach 500
         log.status: 500
+  # Read by ../common/verify/logging.yml ("Verify workload logs carry real
+  # levels"): each filter selects one component's events in the local log
+  # store, of which at most max_unknown_ratio (default 0) may be at level
+  # unknown; time (default 1d) and min_events (default 1) are optional.
+  logging_workloads:
+    - name: argocd-application-controller
+      filter: 'kubernetes.pod_namespace:="argocd" kubernetes.container_name:="application-controller"'
+    - name: cert-manager-controller
+      filter: 'kubernetes.container_name:="cert-manager-controller"'
+    - name: vector-agent
+      filter: 'kubernetes.container_name:="vector-agent"'
+    - name: reflector
+      filter: 'kubernetes.pod_namespace:="kube-system" kubernetes.container_name:="reflector"'
+    - name: strimzi-cluster-operator
+      filter: 'kubernetes.container_name:="strimzi-cluster-operator"'
+    # tgtd's and go-iscsi-helper's lines carry no level
+    - name: longhorn-instance-manager
+      filter: 'kubernetes.pod_namespace:="longhorn-system" kubernetes.container_name:="instance-manager"'
+      max_unknown_ratio: 0.1
+    # the entrypoint's "Starting Redis Server" and the shutdown notice
+    - name: argocd-redis
+      filter: 'kubernetes.pod_namespace:="argocd" kubernetes.container_name:="redis"'
+      max_unknown_ratio: 0.1
 verifier:
   name: ansible
 scenario:
