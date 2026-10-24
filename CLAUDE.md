@@ -26,8 +26,12 @@ bump one to a version that may have changed its logging:
 
    A `text` line still gets a real `level` and `msg` when its format is
    leveled text the remap knows (zap console, a level token after a
-   timestamp, coredns's `[LEVEL]`); that is the fallback for components
+   timestamp, Serilog's `[LVL] (Source)`, redis's `pid:role time sym`,
+   coredns's and haproxy's `[LEVEL]`); that is the fallback for components
    whose JSON logging can't be enabled, not a substitute for enabling it.
+   Formats are recognized on an event's first line: pod logs pass through
+   `k8s_logs_merged` first, which folds stack-trace continuation lines into
+   the event that started them.
 
    Node logs (outside any pod) also carry `unit`: the systemd unit without
    `.service`, or the log file's name without `.log` (`kubelet`,
@@ -36,7 +40,9 @@ bump one to a version that may have changed its logging:
 
    Run the `monitoring` scenario and confirm the new component's events get
    a real `level` and `msg`, not `unknown` and the raw line. If its level or
-   message use keys the remap doesn't know yet, extend the remap.
+   message use keys the remap doesn't know yet, extend the remap, and add
+   the format's lines and expected fields to `provisioner.logging_events`
+   in `molecule/monitoring/molecule.yml` so verify keeps checking them.
 
 4. **Ship host-level logs too.** A systemd unit this collection installs on
    the nodes goes in the pipeline's `node_journal` `include_units`; a log

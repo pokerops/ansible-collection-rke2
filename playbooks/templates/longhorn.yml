@@ -25,6 +25,16 @@ spec:
           secureBackends: true
         enablePSP: false
         concurrentAutomaticEngineUpgradePerNodeLimit: 1
+        # JSON for longhorn-manager and the driver deployer (chart 1.12.1).
+        # longhorn-csi-plugin stays logfmt: the deployer hardcodes its args
+        # without -j (longhorn-manager csi/deployment.go); the CSI sidecars
+        # log klog
+        longhornManager:
+          log:
+            format: json
+        longhornDriver:
+          log:
+            format: json
   destination:
     server: https://kubernetes.default.svc
     namespace: longhorn-system

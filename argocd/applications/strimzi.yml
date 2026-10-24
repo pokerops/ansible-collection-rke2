@@ -8,6 +8,13 @@ metadata:
     argocd.argoproj.io/sync-wave: "-1"
 spec:
   project: default
+  # Logs text, not JSON (log4j pattern layout, parsed by the remap). JSON is
+  # possible but not worth its weight here: the operator needs a full
+  # log4j2.properties with JsonTemplateLayout in the chart's logConfiguration,
+  # and each Kafka cluster sets its own spec.kafka.logging - an external
+  # ConfigMap per Log4j generation (Kafka 4.0: JsonTemplateLayout, 3.9:
+  # jsonevent-layout; both ship in the 0.47.0 images), with no operator-wide
+  # default to enforce it.
   source:
     chart: strimzi-kafka-operator
     repoURL: https://strimzi.io/charts/

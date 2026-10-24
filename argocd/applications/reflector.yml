@@ -8,6 +8,11 @@ metadata:
     argocd.argoproj.io/sync-wave: "-1"
 spec:
   project: default
+  # Logs text, not JSON: its Serilog console sink can be switched to a JSON
+  # formatter through ES_Serilog__* env overrides (v10.0.65), but every
+  # event carrying an exception then comes out as invalid JSON split over
+  # many lines (tested with Compact, RenderedCompact and core JsonFormatter).
+  # The remap in vector/pipeline.j2.yml parses its text format instead.
   source:
     chart: reflector
     repoURL: https://emberstack.github.io/helm-charts

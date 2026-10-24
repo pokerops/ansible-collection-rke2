@@ -42,6 +42,68 @@ provisioner:
     links:
       group_vars: ../common/group_vars
       hosts: ./hosts.yml
+  logging_events:
+    - name: json
+      lines:
+        - '{"level":"warning","msg":"volume nearly full","volume":"data","usage":91}'
+      expect:
+        log_format: json
+        level: warn
+        msg: volume nearly full
+        log.volume: data
+        log.usage: 91
+    - name: java-stack-trace
+      lines:
+        - "2026-01-01 00:00:00 ERROR Probe:1 - Reconciliation failed"
+        - "java.lang.IllegalStateException: boom"
+        - "\tat io.example.Probe.run(Probe.java:10)"
+        - "Caused by: java.io.IOException: nope"
+        - "\t... 3 more"
+      expect:
+        log_format: text
+        level: error
+        msg: "Probe:1 - Reconciliation failed\n\
+          java.lang.IllegalStateException: boom\n\
+          \tat io.example.Probe.run(Probe.java:10)\n\
+          Caused by: java.io.IOException: nope\n\
+          \t... 3 more"
+    - name: frr
+      lines:
+        - "2026/10/24 02:20:41.890 notifications: BGP: [M7Q4P-46WDR] vty[23]@> enable"
+      expect:
+        log_format: text
+        level: info
+        msg: vty[23]@> enable
+        log.daemon: BGP
+        log.id: M7Q4P-46WDR
+    - name: python-logging
+      lines:
+        - '2026-10-24 01:00:00,123  INFO: Loading Config object from vtysh show running'
+      expect:
+        log_format: text
+        level: info
+        msg: Loading Config object from vtysh show running
+    - name: logfmt-process-prefix
+      lines:
+        - >-
+          [pvc-0000-r-21cdfbed] time="2026-10-24T01:01:11.129Z" level=warning
+          msg="Failed to write" func="dataconn.(*Server).write" file="server.go:141"
+      expect:
+        log_format: logfmt
+        level: warn
+        msg: Failed to write
+        log.process: pvc-0000-r-21cdfbed
+        log.func: dataconn.(*Server).write
+    - name: http-access
+      lines:
+        - >-
+          10.42.0.12 - - [24/Oct/2026:01:00:00 +0000]
+          "POST /v1/volumes/pvc-0000?action=attach HTTP/1.1" 500 120 "" "Go-http-client/1.1"
+      expect:
+        log_format: text
+        level: error
+        msg: POST /v1/volumes/pvc-0000?action=attach 500
+        log.status: 500
 verifier:
   name: ansible
 scenario:

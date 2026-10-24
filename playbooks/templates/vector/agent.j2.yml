@@ -42,6 +42,10 @@ spec:
     # operator creates; Alloy forwards only rke2_monitoring_keep_metrics_vector
     # (the drop and error counters among them), not the histograms.
     internalMetrics: true
+    # The agent's own logs (Vector 0.48 reads --log-format from this)
+    env:
+      - name: VECTOR_LOG_FORMAT
+        value: json
     # Matches the ingestor's own data_dir so dev and prod agree on the path.
     dataDir: /vector-data-dir
     volumes:

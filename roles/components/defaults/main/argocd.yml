@@ -39,6 +39,10 @@ rke2_argocd_values:
   configs: "{{ rke2_argocd_values_configs | default({}) }}"
   notifications: "{{ rke2_argocd_values_notifications | default({}) }}"
   global:
+    # JSON for server, controller, repo-server, applicationset, notifications
+    # and dex (chart 10.10.5); redis has no JSON option and logs text
+    logging:
+      format: json
     env:
       - name: ARGOCD_EXEC_TIMEOUT
         value: "{{ rke2_argocd_exec_timeout }}"

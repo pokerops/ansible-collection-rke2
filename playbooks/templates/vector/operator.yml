@@ -15,6 +15,11 @@ spec:
     chart: vector-operator
     repoURL: https://kaasops.github.io/vector-operator/helm
     targetRevision: "0.10.0"
+    helm:
+      valuesObject:
+        # The operator's zap logger defaults to its console (text) encoder
+        args:
+          - --zap-encoder=json
   destination:
     server: https://kubernetes.default.svc
     namespace: monitoring

@@ -453,6 +453,126 @@
           enforces it.
         success_msg: "The NetworkPolicy blocks other pods ({{ _vl_probe.stdout | default('no response', true) }})"
 
+    # Known log lines must reach the store as the events the pipeline is
+    # meant to make of them. Each entry in molecule.yml
+    # (provisioner.logging_events) gives the raw lines one container prints
+    # and the fields its single resulting event must carry: msg is the
+    # store's _msg, nested fields use their flattened names (log.caller),
+    # and every value compares as a string.
+    - name: Verify logging events parse as expected
+      when: _logging_events | length > 0
+      vars:
+        _logging_events: "{{ molecule_yml.provisioner.logging_events | default([]) }}"
+      block:
+        # Fixed once: a templated timestamp would change on every use
+        - name: Name this run's logging event pods
+          ansible.builtin.set_fact:
+            _logging_event_run: "{{ lookup('ansible.builtin.pipe', 'date +%s') }}"
+
+        - name: Set logging event pod names
+          ansible.builtin.set_fact:
+            _logging_event_pods: >-
+              {{ _logging_events | map(attribute='name')
+              | map('regex_replace', '[^a-z0-9-]', '-')
+              | map('regex_replace', '^(.*)$', 'logging-event-\1-' ~ _logging_event_run) | list }}
+
+        # The lines go in through the environment, so JSON quotes and the
+        # tabs of a stack trace reach the container log untouched; base64,
+        # because Ansible would turn a JSON line into a dict on templating.
+        - name: Log each event's lines from its own pod
+          kubernetes.core.k8s:
+            kubeconfig: "{{ molecule_local_kubeconfig }}"
+            state: present
+            definition:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: "{{ _logging_event_pods[_index] }}"
+                namespace: "{{ _vl_namespace }}"
+                labels:
+                  pokerops.net/logging-event: "{{ _logging_event_run }}"
+              spec:
+                restartPolicy: Never
+                containers:
+                  - name: event
+                    image: "{{ _vl_probe_image }}"
+                    command: ["sh", "-c", 'echo "$EVENT_LINES" | base64 -d']
+                    env:
+                      - name: EVENT_LINES
+                        value: "{{ (item.lines | join('\n') ~ '\n') | b64encode }}"
+          loop: "{{ _logging_events }}"
+          loop_control:
+            index_var: _index
+            label: "{{ item.name }}"
+
+        - name: Wait for the logging event pods to finish
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ molecule_local_kubeconfig }}"
+            kind: Pod
+            namespace: "{{ _vl_namespace }}"
+            label_selectors:
+              - "pokerops.net/logging-event={{ _logging_event_run }}"
+          register: _logging_event_pod_status
+          retries: "{{ _vl_settle_retries }}"
+          delay: "{{ _vl_settle_delay }}"
+          until: >-
+            _logging_event_pod_status.resources | length == _logging_events | length and
+            _logging_event_pod_status.resources | map(attribute='status.phase') | reject('equalto', 'Succeeded') | list | length == 0
+
+        - name: Wait for each logging event to reach the local store
+          ansible.builtin.shell:
+            cmd: >-
+              {{ _vl_query }}
+              'query=_time:1h kubernetes.pod_name:="{{ _logging_event_pods[_index] }}"'
+          register: _logging_event_results
+          changed_when: false
+          failed_when: false
+          retries: "{{ _vl_settle_retries }}"
+          delay: "{{ _vl_settle_delay }}"
+          until:
+            - _logging_event_results.rc == 0
+            - _logging_event_results.stdout_lines | length > 0
+          loop: "{{ _logging_events }}"
+          loop_control:
+            index_var: _index
+            label: "{{ item.name }}"
+
+        - name: Verify each logging event parses as expected
+          ansible.builtin.assert:
+            that:
+              - _stored | length == 1
+              - _mismatches | length == 0
+            fail_msg: >-
+              Logging event {{ item.item.name }} should arrive as one event with
+              {{ item.item.expect }}; got {{ _stored | length }} event(s),
+              mismatched fields {{ _mismatches }}. Check the pipeline's
+              k8s_logs_merged and logs_normalized transforms.
+            success_msg: "Logging event {{ item.item.name }} arrives parsed as expected"
+          loop: "{{ _logging_event_results.results }}"
+          loop_control:
+            label: "{{ item.item.name }}"
+          vars:
+            _stored: "{{ item.stdout_lines | default([]) | map('from_json') | list }}"
+            _mismatches: >-
+              {%- set out = [] -%}
+              {%- for key, want in item.item.expect.items() -%}
+              {%- set field = '_msg' if key == 'msg' else key -%}
+              {%- set got = (_stored[0] | default({}))[field] | default('<missing>') -%}
+              {%- if (got | string) != (want | string) -%}
+              {%- set _ = out.append({'field': key, 'want': want, 'got': got}) -%}
+              {%- endif -%}
+              {%- endfor -%}
+              {{ out }}
+      always:
+        - name: Remove the logging event pods
+          kubernetes.core.k8s:
+            kubeconfig: "{{ molecule_local_kubeconfig }}"
+            state: absent
+            kind: Pod
+            namespace: "{{ _vl_namespace }}"
+            label_selectors:
+              - "pokerops.net/logging-event={{ _logging_event_run }}"
+
 # The agents' disk buffer for the local sink must carry events logged while
 # the store is down. Argo CD's self-heal would restore the StatefulSet at
 # once, so automated sync is paused for the outage and restored after.
