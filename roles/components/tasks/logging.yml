@@ -1,4 +1,33 @@
 ---
+- name: Deploy vector operator application
+  kubernetes.core.k8s:
+    state: present
+    apply: true
+    kubeconfig: "{{ rke2_config_path }}"
+    resource_definition: "{{ lookup('ansible.builtin.template', 'templates/vector/operator.yml') | from_yaml }}"
+
+# The operator's chart brings the Vector and ClusterVectorPipeline CRDs; once
+# they exist, its Argo CD sync has also created the monitoring namespace.
+- name: Wait for vector crd
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ rke2_config_path }}"
+    kind: CustomResourceDefinition
+    name: vectors.observability.kaasops.io
+  register: _vector_crd
+  retries: "{{ _rke2_retry_num }}"
+  delay: "{{ _rke2_retry_delay }}"
+  until: _vector_crd.resources | length > 0
+
+- name: Wait for clustervectorpipeline crd
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ rke2_config_path }}"
+    kind: CustomResourceDefinition
+    name: clustervectorpipelines.observability.kaasops.io
+  register: _vectorpipeline_crd
+  retries: "{{ _rke2_retry_num }}"
+  delay: "{{ _rke2_retry_delay }}"
+  until: _vectorpipeline_crd.resources | length > 0
+
 - name: Deploy VictoriaLogs application
   kubernetes.core.k8s:
     state: present

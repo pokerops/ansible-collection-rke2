@@ -18,28 +18,6 @@
   until: _servicemonitor_crd.resources | length > 0
   when: _rke2_monitoring_deploy | bool
 
-# The Vector and ClusterVectorPipeline CRDs arrive via the argocd git sync
-# rather than this role, same as servicemonitors above.
-- name: Wait for vector crd
-  kubernetes.core.k8s_info:
-    kubeconfig: "{{ rke2_config_path }}"
-    kind: CustomResourceDefinition
-    name: vectors.observability.kaasops.io
-  register: _vector_crd
-  retries: "{{ _rke2_retry_num }}"
-  delay: "{{ _rke2_retry_delay }}"
-  until: _vector_crd.resources | length > 0
-
-- name: Wait for clustervectorpipeline crd
-  kubernetes.core.k8s_info:
-    kubeconfig: "{{ rke2_config_path }}"
-    kind: CustomResourceDefinition
-    name: clustervectorpipelines.observability.kaasops.io
-  register: _vectorpipeline_crd
-  retries: "{{ _rke2_retry_num }}"
-  delay: "{{ _rke2_retry_delay }}"
-  until: _vectorpipeline_crd.resources | length > 0
-
 - name: Include metallb tasks
   ansible.builtin.include_tasks: metallb.yml
 

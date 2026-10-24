@@ -123,8 +123,8 @@ def create_http_session() -> requests.Session:
 
 
 def find_yaml_files(directory: Path) -> list[Path]:
-    """Find all YAML files in directory."""
-    return list(directory.glob("*.yaml")) + list(directory.glob("*.yml"))
+    """Find all YAML files under directory, subdirectories included (playbooks/templates/vector/)."""
+    return list(directory.rglob("*.yaml")) + list(directory.rglob("*.yml"))
 
 
 def flatten[T](elements: list[list[T]]) -> list[T]:
