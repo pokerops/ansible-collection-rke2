@@ -48,7 +48,7 @@ rke2_argocd_apps_chart:
   namespace: "argocd"
   repo: "https://argoproj.github.io/argo-helm"
   release: "2.0.7"
-rke2_argocd_apps_pokerops_revision: 0.9.18
+rke2_argocd_apps_pokerops_revision: 0.9.19
 rke2_argocd_apps_values_extra: {}
 rke2_argocd_apps_directory_include: "{*.yml,*.yaml}"
 rke2_argocd_apps_directory_exclude: ""
@@ -71,6 +71,15 @@ rke2_argocd_apps_values_base:
         automated:
           prune: true
           selfHeal: true
+        # Argo's built-in retry for automated syncs (5 attempts, about 2.5m)
+        # gives up on a repo-server restart, and an automated sync never
+        # retries a failed revision. Same policy on every app.
+        retry:
+          limit: 10
+          backoff:
+            duration: 10s
+            factor: 2
+            maxDuration: 3m
         syncOptions:
           - ApplyOutOfSyncOnly=true
       revisionHistoryLimit:
@@ -94,6 +103,12 @@ rke2_argocd_apps_values_base:
         automated:
           prune: true
           selfHeal: true
+        retry:
+          limit: 10
+          backoff:
+            duration: 10s
+            factor: 2
+            maxDuration: 3m
         syncOptions:
           - ApplyOutOfSyncOnly=true
       revisionHistoryLimit:

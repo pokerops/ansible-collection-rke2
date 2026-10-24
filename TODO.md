@@ -19,7 +19,7 @@ each pinned chart version's values/templates and the component's source.
 - **cert-manager** — `config.logging.format`, `webhook.config.logging.format`
   and `cainjector.config.logging.format: json` (`roles/components/tasks/certmanager.yml`)
 - **traefik** — `log.format: json` (`playbooks/templates/traefik.yml`); also
-  drops the ANSI color codes. Access logs: `accessLog.format: json`
+  drops the ANSI color codes. Access logs: see "Traffic visibility" below
 - **velero** — `configuration.logFormat: json`; covers velero and node-agent
 - **sealed-secrets** — `logFormat: json`
 - **postgres-operator** — `enableJsonLogging: true`; the postgres-exporter
@@ -34,6 +34,39 @@ each pinned chart version's values/templates and the component's source.
 - **vector-operator** — chart `args: [--zap-encoder=json]`
 - **strimzi** — chart `logConfiguration` with a full log4j2.properties using
   `JsonTemplateLayout`; operator only, Kafka clusters set their own logging
+
+### Traffic visibility
+
+For incident response: who talked to what. Today neither sink records DNS
+queries or HTTP requests. CoreDNS's Corefile has `errors` but no `log`, and
+Hubble keeps flows in the agents' memory only (no `hubble-export-*` in
+`cilium-config`, no L7 policy, so DNS and HTTP aren't parsed).
+
+1. **Ingress access logs** — cheapest; covers all north-south HTTP with
+   client IP, host, path, status and backend service.
+   - traefik: access logs are off by default (chart 41.5.0); needs
+     `accessLog.enabled: true` as well as `accessLog.format: json`
+   - ingress-nginx: access logs are on, as text; JSON takes a `controller.config`
+     `log-format-upstream` JSON template plus `log-format-escape-json: "true"`
+2. **DNS query visibility** — answers "which pod resolved this domain".
+   - CoreDNS `log . { class denial error }` (HelmChartConfig for
+     `rke2-coredns`) is a cheap first step: NXDOMAIN and error answers only.
+     Clients are pod IPs, which get reused, so attribution after the fact is
+     weak; logging every query has the same problem and far more volume
+   - Hubble DNS visibility attributes each query to its pod (namespace, name,
+     labels): a cluster-wide CiliumClusterwideNetworkPolicy with a
+     `rules.dns` `matchPattern: "*"` rule sends all DNS through Cilium's
+     per-node DNS proxy, plus Hubble flow export (DNS events only) to a node
+     file the vector agent mounts and ships. The proxy becomes a dependency of
+     every pod's DNS; needs a design pass before code
+3. **L7 HTTP inspection (opt-in, per service)** — same mechanism as Hubble
+   DNS visibility, through Envoy: method, URL, status and latency with
+   source and destination pods. Plaintext HTTP only (TLS stays opaque
+   without TLS interception, not recommended). Rules name specific endpoints
+   and ports, an L7 ingress rule default-denies the pod unless
+   `enableDefaultDeny: false`, and Envoy adds latency and per-node resources.
+   Use Hubble's redaction for URL query, user info and headers. Not
+   cluster-wide; only for services where it's needed
 
 ## Deprecations
 

@@ -15,7 +15,7 @@ bump one to a version that may have changed its logging:
    component's config so the next person doesn't re-probe it.
 3. **Check its events are normalized.** `logs_normalized` in
    `playbooks/templates/vector/pipeline.j2.yml` sets, on every event shipped
-   to the remote sink:
+   to the remote sink and the cluster-local VictoriaLogs store:
    - `node`: the node the event came from
    - `log_format`: `json`, `klog`, `logfmt` or `text`
    - `level`: `trace`, `debug`, `info`, `warn`, `error`, `fatal` or `unknown`
@@ -48,6 +48,7 @@ bump one to a version that may have changed its logging:
 
 `molecule/common/verify/monitoring.yml` asserts that every recent event at
 the test ingestor carries `node`, `log_format`, `level` and `msg`, and that
-kubelet and rke2 logs arrive from every node. Components that
+kubelet and rke2 logs arrive from every node, at the ingestor and in the
+local store. Components that
 support JSON but don't have it enabled yet are listed under "Logging" in
 `TODO.md`.

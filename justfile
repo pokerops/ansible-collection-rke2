@@ -20,6 +20,32 @@ build-fix:
 update:
   ${UV} --directory . run rke2 update
 
+# Forward the cluster-local VictoriaLogs store and open its web UI (Ctrl-C stops)
+logs port="9428":
+  #!/usr/bin/env bash
+  set -euo pipefail
+  # $KUBECONFIG, else the molecule scenario's .kubeconfig, else kubectl's default
+  if ! [ -f .kubeconfig ]; then
+    echo "Could not find project kubeconfig"
+    exit 1
+  fi
+  _url="http://localhost:{{ port }}/select/vmui/"
+  KUBECONFIG=.kubeconfig kubectl -n monitoring port-forward svc/victoria-logs '{{ port }}:9428' &
+  _forward=$!
+  trap 'kill "$_forward" 2>/dev/null || true' EXIT INT TERM
+  for _ in $(seq 1 40); do
+    curl -fsS --max-time 1 "http://localhost:{{ port }}/health" >/dev/null 2>&1 && break
+    kill -0 "$_forward" 2>/dev/null || { echo "port-forward to victoria-logs failed" >&2; exit 1; }
+    sleep 0.25
+  done
+  echo "VictoriaLogs at $_url (Ctrl-C to stop)"
+  if command -v xdg-open >/dev/null; then
+    xdg-open "$_url" >/dev/null 2>&1 || true
+  elif command -v open >/dev/null; then
+    open "$_url" || true
+  fi
+  wait "$_forward"
+
 # Refresh cloudflare edge ip ranges from the cloudflare api
 cloudflare-acl:
   #!/usr/bin/env bash

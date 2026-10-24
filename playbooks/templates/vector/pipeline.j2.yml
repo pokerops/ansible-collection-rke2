@@ -200,6 +200,45 @@ spec:
           }
         }
   sinks:
+    # The cluster-local store (playbooks/templates/victorialogs.yml), always
+    # on. VictoriaLogs takes Elasticsearch's bulk API; nested fields arrive
+    # flattened (kubernetes.pod_name, log.*), so every normalized field is
+    # searchable. msg is the message shown, timestamp the source's time, and
+    # each node's unit or container is its own stream.
+    local:
+      type: elasticsearch
+      inputs: [logs_normalized]
+      endpoints:
+        - "http://victoria-logs.{{ rke2_monitoring_scraper_namespace }}.svc:9428/insert/elasticsearch/"
+      api_version: v8
+      compression: gzip
+      # Same reason as the remote sink's: the store may not be up yet when
+      # this pipeline is first applied.
+      healthcheck:
+        enabled: false
+      query:
+        _msg_field: msg
+        _time_field: timestamp
+        _stream_fields: node,unit,kubernetes.pod_namespace,kubernetes.pod_name,kubernetes.container_name
+        # Kubernetes metadata that's the same on every event of a node or
+        # namespace, or never searched for: dozens of fields per event.
+        # Pod labels, the image and the node stay.
+        ignore_fields: >-
+          kubernetes.node_labels.*,kubernetes.namespace_labels.*,kubernetes.pod_annotations.*,kubernetes.container_image_id,kubernetes.pod_uid
+        # Some components color their text logs (traefik); strip ANSI codes
+        # so message searches match.
+        decolorize_fields: msg,message
+      # Survives agent restarts while VictoriaLogs restarts or moves nodes;
+      # the store is a single pod, so short gaps are expected. drop_newest:
+      # a struggling local store must never backpressure the sources, and
+      # with them the remote sink - its drops are counted
+      # (vector_buffer_discarded_events_total, forwarded by Alloy).
+      buffer:
+        type: disk
+        max_size: 268435488
+        when_full: drop_newest
+      acknowledgements:
+        enabled: true
     {% if rke2_logging_endpoint | default('') | length > 0 %}
     ingestor:
       type: vector
