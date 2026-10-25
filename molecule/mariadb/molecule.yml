@@ -15,19 +15,19 @@ platforms:
       - rke2_server
   - name: rke2-${MOLECULE_SCENARIO_NAME}-agent-01
     image: "${MOLECULE_KVM_IMAGE}"
-    cpu: 1
+    cpu: 2
     mem: 4
     groups:
       - rke2_agent
   - name: rke2-${MOLECULE_SCENARIO_NAME}-agent-02
     image: "${MOLECULE_KVM_IMAGE}"
-    cpu: 1
+    cpu: 2
     mem: 4
     groups:
       - rke2_agent
   - name: rke2-${MOLECULE_SCENARIO_NAME}-agent-03
     image: "${MOLECULE_KVM_IMAGE}"
-    cpu: 1
+    cpu: 2
     mem: 4
     groups:
       - rke2_agent
@@ -47,6 +47,32 @@ provisioner:
     links:
       group_vars: ../common/group_vars
       hosts: ./hosts.yml
+  # Read by ../common/verify/logging.yml; see ../monitoring/molecule.yml for
+  # the fields of both lists.
+  logging_events:
+    - name: mariadb-server
+      lines:
+        - "2026-10-24  5:22:21 0 [Warning] --temp-pool is deprecated and will be removed in a future release"
+      expect:
+        log_format: text
+        level: warn
+        msg: --temp-pool is deprecated and will be removed in a future release
+    - name: mariadb-entrypoint
+      lines:
+        - "2026-10-24 05:22:19+00:00 [Note] [Entrypoint]: Initializing database files"
+      expect:
+        log_format: text
+        level: info
+        msg: "[Entrypoint]: Initializing database files"
+  logging_workloads:
+    # its "Version: ..." banner and InnoDB recovery progress carry no level
+    - name: mariadb-server
+      filter: 'kubernetes.pod_namespace:="molecule" kubernetes.container_name:="mariadb"'
+      max_unknown_ratio: 0.1
+    - name: mariadb-exporter
+      filter: 'kubernetes.pod_namespace:="molecule" kubernetes.container_name:="exporter"'
+    - name: mariadb-operator
+      filter: 'kubernetes.pod_namespace:="mariadb-operator" kubernetes.container_name:="controller"'
 verifier:
   name: ansible
 scenario:

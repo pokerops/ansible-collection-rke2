@@ -433,6 +433,9 @@
                  | select('search', 'error generating scrapeconfig|level=error|remote_write')
                  | list }}
 
+        - name: Debug the test ingestor
+          ansible.builtin.include_tasks: ../common/verify/tasks/ingestor.yml
+
         - name: Terminate playbook
           ansible.builtin.fail:
             msg: "postgres metrics verification failed"
@@ -1231,3 +1234,6 @@
         - name: Terminate playbook
           ansible.builtin.fail:
             msg: "backup verification failed"
+
+- name: Verify log parsing in the local store
+  ansible.builtin.import_playbook: ../common/verify/logging.yml

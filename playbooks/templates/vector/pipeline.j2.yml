@@ -49,13 +49,17 @@ spec:
         source: >-
           !(.kubernetes.pod_namespace == "longhorn-system" &&
           contains(string(.message) ?? "", "v1 Endpoints is deprecated"))
-    # A pod's multi-line events (Java and .NET stack traces, Caused by:
-    # chains) arrive one line per event; kubernetes_logs has no multiline
-    # option, so lines are merged here, per container log file. A line that
-    # starts with whitespace, "Caused by: " or a fully qualified exception
-    # name joins the event before it; anything else starts a new one. Each
-    # event waits for its container's next line or 1s of quiet, and
-    # max_events caps a container that only ever prints indented lines.
+    # A pod's multi-line events (Java, .NET and Python stack traces, Caused
+    # by: chains) arrive one line per event; kubernetes_logs has no multiline
+    # option, so lines are merged here, per container log file. A blank
+    # line, or one that starts with whitespace, "Caused by: ", Python's
+    # traceback header and chaining notes, an exception name (dotted, or a
+    # bare Python builtin like "KeyError: ") or Postgres's follow-ups
+    # ("DETAIL:  ", "HINT:  ") joins the event before it; anything else
+    # starts a new one. Each event waits for its container's next line or 1s
+    # of quiet, and max_events caps a container that only ever prints
+    # indented lines (above Kafka's ~300-line "KafkaConfig values:" dump,
+    # which a lower cap split into an unparsed tail).
     k8s_logs_merged:
       type: reduce
       inputs: [k8s_logs_filtered]
@@ -64,14 +68,14 @@ spec:
         type: vrl
         source: >-
           !match(string(.message) ?? "",
-          r'^(\s|Caused by: |([A-Za-z_$][\w$]*\.)+[A-Z][\w$]*(Exception|Error|Throwable)(: |$))')
+          r'^($|\s|Caused by: |Traceback \(most recent call last\):|During handling of the above exception|The above exception was the direct cause|(DETAIL|HINT|CONTEXT|STATEMENT):  |([A-Za-z_$][\w$]*\.)*[A-Z][\w$]*(Exception|Error|Throwable)(: |$))')
       merge_strategies:
         message: concat_newline
         # The first line's time; without this reduce adds timestamp_end
         timestamp: discard
       expire_after_ms: 1000
       flush_period_ms: 500
-      max_events: 200
+      max_events: 500
     # Node events carry no kubernetes.* to say where they came from: node is
     # the agent's own node (the file source's .host is the agent pod's
     # hostname, so it's dropped), unit the systemd unit without .service or
@@ -158,7 +162,11 @@ spec:
         # seaweedfs-operator), then a level token after a leading timestamp
         # (Vector's text format, log4j patterns like strimzi's), Serilog's
         # "time [LVL] (Source) msg" (reflector), redis's "pid:role time sym
-        # msg", FRR's "time DAEMON: [ID] msg", Longhorn's iSCSI frontend
+        # msg", FRR's "time DAEMON: [ID] msg", MariaDB's "time [Note] msg",
+        # Python's "time - logger - LEVEL - msg", Postgres's "LEVEL:  msg"
+        # (bare from psql, or after the server's log_line_prefix), pgqd's
+        # "time TZ [pid] LEVEL msg", the Prometheus JMX exporter agent's
+        # "time | thread | LEVEL | logger | msg", Longhorn's iSCSI frontend
         # "[time] Info: msg", HTTP access lines (common/combined log format),
         # coredns's and haproxy's "[LEVEL] msg", and the kubelet's startup
         # flag deprecation notices.
@@ -189,6 +197,36 @@ spec:
             # frr-k8s doesn't set ("... notifications: BGP: ...")
             if err != null {
               parsed, err = parse_regex(line, r'^\d{4}/\d{2}/\d{2} [\d:.]+ ((?P<level>emergencies|alerts|critical|errors|warnings|notifications|informational|debugging): )?(?P<daemon>[A-Z0-9]+): (\[(?P<id>[A-Z0-9]{5}-[A-Z0-9]{5})\] )?(?P<msg>.*)$')
+            }
+            # MariaDB: the server's "2026-10-24  5:22:21 0 [Note] msg" (hour
+            # space-padded, then a thread id) and its entrypoint script's
+            # "2026-10-24 05:22:19+00:00 [Note] [Entrypoint]: msg"
+            if err != null {
+              parsed, err = parse_regex(line, r'^\d{4}-\d{2}-\d{2}\s+\d{1,2}:\d{2}:\d{2}([+-]\d{2}:\d{2}| \d+) \[(?P<level>Note|Warning|ERROR|System)\] (?P<msg>.*)$')
+            }
+            # Python's "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+            # (Spilo's bootstrap: "2026-10-24 14:48:10,123 - bootstrapping -
+            # INFO - msg")
+            if err != null {
+              parsed, err = parse_regex(line, r'^\d{4}-\d{2}-\d{2} [\d:.,]+ - (?P<logger>\S+) - (?P<level>DEBUG|INFO|WARNING|ERROR|CRITICAL) - (?P<msg>.*)$')
+            }
+            # Postgres: "NOTICE:  msg" from psql, or the server's stderr
+            # before its logging collector starts, after a log_line_prefix
+            # that begins with a timestamp ("2026-10-24 14:48:20 UTC [68]:
+            # [1-1] ... LOG:  msg"); always two spaces after the level
+            if err != null {
+              parsed, err = parse_regex(line, r'^(\d{4}-\d{2}-\d{2} [\d:.]+ [A-Z]{2,5} .*?)?(?P<level>DEBUG[1-5]|LOG|INFO|NOTICE|WARNING|ERROR|FATAL|PANIC):  (?P<msg>.*)$')
+            }
+            # pgqd (Spilo's PgQ ticker): "2026-10-24 14:54:28.123 UTC [93]
+            # LOG msg"
+            if err != null {
+              parsed, err = parse_regex(line, r'^\d{4}-\d{2}-\d{2} [\d:.]+ [A-Z]{2,5} \[\d+\] (?P<level>DEBUG|LOG|INFO|NOTICE|WARNING|ERROR|FATAL) (?P<msg>.*)$')
+            }
+            # The Prometheus JMX exporter's Java agent (in Strimzi's Kafka
+            # pods): "2026-10-24 19:29:11.627 | main | INFO |
+            # io.prometheus.jmx.JavaAgent | Starting ..."
+            if err != null {
+              parsed, err = parse_regex(line, r'^\d{4}-\d{2}-\d{2} [\d:.,]+ \| (?P<thread>[^|]+?) \| (?P<level>[A-Z]+) \| (?P<logger>[^|]+?) \| (?P<msg>.*)$')
             }
             # Longhorn's iSCSI frontend (liblonghorn, in instance-manager):
             # "[2026-10-23 03:52:23.365223] Info: msg"
@@ -234,7 +272,7 @@ spec:
             "trace"
           } else if starts_with(l, "debug") || l == "dbg" {
             "debug"
-          } else if starts_with(l, "info") || l == "inf" || l == "notice" || l == "notifications" {
+          } else if starts_with(l, "info") || l == "inf" || l == "log" || l == "notice" || l == "notifications" || l == "note" || l == "system" {
             "info"
           } else if starts_with(l, "warn") || l == "wrn" {
             "warn"
@@ -265,6 +303,13 @@ spec:
         if .level == "unknown" && .kubernetes.pod_namespace == "metallb-system" && .kubernetes.container_name == "reloader" &&
           match(line, r'^(Syntax error spotted|Failed to fully apply configuration file)') {
           .level = "error"
+        }
+        # Spilo runs its bootstrap SQL through psql, which echoes each
+        # statement's command tag ("GRANT", "CREATE FUNCTION", "INSERT 0 1")
+        # and database switches without a level: they report success.
+        if .level == "unknown" && contains(string(.kubernetes.container_image) ?? "", "/spilo-") &&
+          match(line, r'^([A-Z]+( [A-Z]+)*( \d+)*|You are now connected to database .*)$') {
+          .level = "info"
         }
         # A merged event's continuation lines (its stack trace) follow the
         # first line's msg; an unparsed event's msg is already the raw text.

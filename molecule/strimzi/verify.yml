@@ -530,6 +530,9 @@
                  | select('search', 'error generating scrapeconfig|level=error|remote_write')
                  | list }}
 
+        - name: Debug the test ingestor
+          ansible.builtin.include_tasks: ../common/verify/tasks/ingestor.yml
+
         - name: Terminate playbook
           ansible.builtin.fail:
             msg: "kafka metrics verification failed"
@@ -1645,3 +1648,6 @@
             fail_msg: "Workload pods are scheduled on control plane node {{ _strimzi_control_nodes | join(', ') }}"
           vars:
             _strimzi_control_nodes: "{{ strimzi_pods.resources | map(attribute='spec.nodeName') | unique | intersect(groups['rke2_server']) }}"
+
+- name: Verify log parsing in the local store
+  ansible.builtin.import_playbook: ../common/verify/logging.yml

@@ -406,6 +406,14 @@
               k8s.mariadb.com is not producing the series.
             success_msg: "Ingestor received {{ _ingested_crstate.stdout | trim }} kube_mariadb_created events"
 
+      rescue:
+        - name: Debug the test ingestor
+          ansible.builtin.include_tasks: ../common/verify/tasks/ingestor.yml
+
+        - name: Terminate playbook
+          ansible.builtin.fail:
+            msg: "mariadb metrics verification failed"
+
     - name: Test MariaDB Velero backup and restore
       block:
         - name: Wait for MariaDB LoadBalancer to get external IP
@@ -1075,3 +1083,6 @@
         - name: Terminate playbook
           ansible.builtin.fail:
             msg: "backup verification failed"
+
+- name: Verify log parsing in the local store
+  ansible.builtin.import_playbook: ../common/verify/logging.yml

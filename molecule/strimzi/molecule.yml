@@ -16,19 +16,19 @@ platforms:
   - name: rke2-${MOLECULE_SCENARIO_NAME}-agent-01
     image: "${MOLECULE_KVM_IMAGE}"
     cpu: 2
-    mem: 4
+    mem: 8
     groups:
       - rke2_agent
   - name: rke2-${MOLECULE_SCENARIO_NAME}-agent-02
     image: "${MOLECULE_KVM_IMAGE}"
     cpu: 2
-    mem: 4
+    mem: 8
     groups:
       - rke2_agent
   - name: rke2-${MOLECULE_SCENARIO_NAME}-agent-03
     image: "${MOLECULE_KVM_IMAGE}"
     cpu: 2
-    mem: 4
+    mem: 8
     groups:
       - rke2_agent
 provisioner:
@@ -47,6 +47,49 @@ provisioner:
     links:
       group_vars: ../common/group_vars
       hosts: ./hosts.yml
+  # Read by ../common/verify/logging.yml; see ../monitoring/molecule.yml for
+  # the fields of both lists.
+  logging_events:
+    - name: jmx-exporter-agent
+      lines:
+        - "2026-10-24 19:29:11.627 | main | INFO | io.prometheus.jmx.JavaAgent | HTTP enabled [true]"
+      expect:
+        log_format: text
+        level: info
+        msg: HTTP enabled [true]
+        log.logger: io.prometheus.jmx.JavaAgent
+        log.thread: main
+    - name: kafka-config-dump
+      lines:
+        - "2026-10-24 19:29:12,278 INFO KafkaConfig values: "
+        - "\tadvertised.listeners = REPLICATION-9091://broker-0:9091"
+        - "\tauto.create.topics.enable = false"
+      expect:
+        log_format: text
+        level: info
+        msg: "KafkaConfig values: \n\
+          \tadvertised.listeners = REPLICATION-9091://broker-0:9091\n\
+          \tauto.create.topics.enable = false"
+  logging_workloads:
+    # Every Strimzi container prints its startup script's output (the
+    # generated config, banners, keystore setup, "+ exec" traces) without a
+    # level; the broker's and the exporter's are a large share of their logs
+    - name: kafka
+      filter: 'kubernetes.pod_namespace:="molecule" kubernetes.container_name:="kafka"'
+      max_unknown_ratio: 0.25
+    # One "+ exec" trace per start, in a container that logs little else
+    - name: kafka-exporter
+      filter: 'kubernetes.pod_namespace:="molecule" kubernetes.container_name:="molecule-kafka-cluster-kafka-exporter"'
+      max_unknown_ratio: 0.5
+    - name: topic-operator
+      filter: 'kubernetes.pod_namespace:="molecule" kubernetes.container_name:="topic-operator"'
+      max_unknown_ratio: 0.1
+    - name: user-operator
+      filter: 'kubernetes.pod_namespace:="molecule" kubernetes.container_name:="user-operator"'
+      max_unknown_ratio: 0.1
+    - name: strimzi-cluster-operator
+      filter: 'kubernetes.pod_namespace:="strimzi" kubernetes.container_name:="strimzi-cluster-operator"'
+      max_unknown_ratio: 0.1
 verifier:
   name: ansible
 scenario:

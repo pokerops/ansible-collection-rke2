@@ -27,11 +27,14 @@ bump one to a version that may have changed its logging:
    A `text` line still gets a real `level` and `msg` when its format is
    leveled text the remap knows (zap console, a level token after a
    timestamp, Serilog's `[LVL] (Source)`, redis's `pid:role time sym`,
-   coredns's and haproxy's `[LEVEL]`); that is the fallback for components
-   whose JSON logging can't be enabled, not a substitute for enabling it.
-   Formats are recognized on an event's first line: pod logs pass through
-   `k8s_logs_merged` first, which folds stack-trace continuation lines into
-   the event that started them.
+   coredns's and haproxy's `[LEVEL]`, Python's `time - logger - LEVEL -
+   msg`, Postgres's `LEVEL:  msg`, pgqd's `time TZ [pid] LEVEL`, the JMX
+   exporter agent's `time | thread | LEVEL | logger | msg`); that is
+   the fallback for components whose JSON logging can't be enabled, not a
+   substitute for enabling it. Formats are recognized on an event's first
+   line: pod logs pass through `k8s_logs_merged` first, which folds
+   stack-trace continuation lines (Java, .NET, Python), blank lines and
+   Postgres's `DETAIL:`/`HINT:` follow-ups into the event that started them.
 
    Node logs (outside any pod) also carry `unit`: the systemd unit without
    `.service`, or the log file's name without `.log` (`kubelet`,

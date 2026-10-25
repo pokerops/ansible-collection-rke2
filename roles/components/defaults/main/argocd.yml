@@ -23,8 +23,10 @@ rke2_argocd_values:
       enabled: true
       ingressClassName: "{{ rke2_argocd_ingress_class }}"
       hostname: "{{ rke2_argocd_hostname }}"
-      annotations:
-        cert-manager.io/cluster-issuer: "{{ rke2_certmanager_issuer_name }}"
+      # No cert-manager.io/cluster-issuer annotation: server.certificate
+      # below already issues argocd-server-tls, and ingress-shim would add a
+      # second Certificate for the same secret; the two reissue it in a loop
+      # that every Argo CD component and the ingress controller reload.
       tls: true
     certificate:
       enabled: true
