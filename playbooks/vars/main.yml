@@ -58,6 +58,7 @@ rke2_ha_mode_keepalived: false
 rke2_cloud_provider_name: "external"
 rke2_cni:
   - cilium
+rke2_ingress_controller: none
 rke2_additional_sans:
   - "{{ _rke2_api_host }}"
 rke2_server_options: "{{ _rke2_server_options }}"

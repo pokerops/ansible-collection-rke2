@@ -119,12 +119,30 @@ provisioner:
         log_format: json
         level: info
         msg: Log level is enabled.
-  # Read by ../common/verify/logging.yml ("Verify workload logs carry real
-  # levels"): each filter selects one component's events in the local log
-  # store, of which at most max_unknown_ratio (default 0) may be at level
-  # unknown; time (default 1d) and min_events (default 1) are optional. A
-  # filter on log_format:="json" also catches a component falling back to
-  # text: none of its events match any more.
+    - name: nginx-error
+      lines:
+        - "2026/10/26 22:22:22 [error] 93#93: *1456 upstream timed out (110: Operation timed out) while connecting to upstream"
+      expect:
+        log_format: text
+        level: error
+        msg: "upstream timed out (110: Operation timed out) while connecting to upstream"
+        log.connection: 1456
+    - name: traefik-access
+      lines:
+        - '{"ClientHost":"10.42.0.9","DownstreamContentSize":19,"DownstreamStatus":404,"Duration":123456,"RequestHost":"x.example","RequestMethod":"GET","RequestPath":"/missing?q=1","RequestProtocol":"HTTP/1.1","level":"info","msg":"","time":"2026-10-27T01:00:00Z"}'
+      expect:
+        log_format: json
+        level: warn
+        msg: GET /missing?q=1 404
+        log.RequestHost: x.example
+    - name: nginx-access
+      lines:
+        - '{"time": "2026-10-27T01:00:00+00:00", "ClientHost": "10.42.0.5", "RequestHost": "argocd.example", "RequestMethod": "POST", "RequestPath": "/api/v1/session", "RequestProtocol": "HTTP/2.0", "RequestContentSize": 512, "DownstreamStatus": 502, "DownstreamContentSize": 150, "request_time": 0.004, "upstream": "argocd-argocd-server-443", "ServiceAddr": "10.42.1.2:8080", "OriginStatus": "502"}'
+      expect:
+        log_format: json
+        level: error
+        msg: POST /api/v1/session 502
+        log.upstream: argocd-argocd-server-443
   logging_workloads:
     # Kubernetes' components with logging-format=json (playbooks/cluster.yml)
     - name: kube-apiserver
@@ -170,6 +188,19 @@ provisioner:
     - name: argocd-redis
       filter: 'kubernetes.pod_namespace:="argocd" kubernetes.container_name:="redis"'
       max_unknown_ratio: 0.1
+  # Read by ../common/verify/logging.yml ("Verify ingress request logs"):
+  # each ingress class whose controller's request logs must reach the local
+  # store, that controller's Service (name.namespace), and fields its events
+  # must carry (expect).
+  logging_ingresses:
+    - name: traefik-private
+      class: traefik-private
+      service: traefik-private.traefik-private
+      expect:
+        log.request_Authorization: REDACTED
+    - name: nginx-private
+      class: nginx-private
+      service: nginx-private-ingress-nginx-controller.nginx
 verifier:
   name: ansible
 scenario:

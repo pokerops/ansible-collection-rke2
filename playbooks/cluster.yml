@@ -88,38 +88,6 @@
         rke2_static_pods: []
       when: rke2_static_pods is not defined
 
-    - name: Configure RKE2 bundled charts
-      when: inventory_hostname in groups[rke2_server_group]
-      become: true
-      vars:
-        _rke2_manifests_path: "{{ rke2_data_path | default('/var/lib/rancher/rke2') }}/server/manifests"
-      block:
-        - name: Create rke2 manifests directory
-          ansible.builtin.file:
-            path: "{{ _rke2_manifests_path }}"
-            state: directory
-            owner: root
-            group: root
-            mode: "0700"
-
-        - name: Configure Cilium
-          ansible.builtin.template:
-            src: templates/cilium.yml
-            dest: "{{ _rke2_manifests_path }}/rke2-cilium-config.yaml"
-            owner: root
-            group: root
-            mode: "0644"
-          when: "'cilium' in rke2_cni"
-
-        - name: Set metrics-server log format
-          ansible.builtin.template:
-            src: templates/metrics-server.yml
-            dest: "{{ _rke2_manifests_path }}/rke2-metrics-server-config.yaml"
-            owner: root
-            group: root
-            mode: "0644"
-          when: _rke2_logging_format | length > 0
-
     - name: Install RKE2
       ansible.builtin.include_role:
         name: pokerops.rke2.rke2

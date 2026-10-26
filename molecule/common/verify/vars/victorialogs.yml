@@ -7,6 +7,8 @@ _vl_port: 19428
 _vl_settle_retries: 30
 _vl_settle_delay: 10
 _vl_probe_image: "curlimages/curl:8.11.1"
+# Answers 200 on any path: the backend of the ingress request log checks
+_ingress_check_backend_image: "traefik/whoami:v1.12.0"
 _kubectl: "kubectl --kubeconfig {{ molecule_local_kubeconfig }}"
 # Runs one LogsQL query through a port-forward and prints the JSON lines it
 # returns; append the query as a quoted 'query=...' argument.

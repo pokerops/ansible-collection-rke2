@@ -131,10 +131,6 @@
             label_selectors:
               - "pokerops.net/logging-event={{ _logging_event_run }}"
 
-# The agents' disk buffer for the local sink must carry events logged while
-# the store is down. Argo CD's self-heal would restore the StatefulSet at
-# once, so automated sync is paused for the outage and restored after.
-
     # Real components' events must carry real levels, not unknown. Each
     # entry in molecule.yml (provisioner.logging_workloads) gives a LogsQL
     # filter selecting one component's events, and optionally how far back
@@ -192,3 +188,218 @@
             _levels: "{{ dict(_rows | map(attribute='level') | zip(_rows | map(attribute='hits') | map('int'))) }}"
             _total: "{{ _rows | map(attribute='hits') | map('int') | sum }}"
             _unknown: "{{ _levels['unknown'] | default(0) }}"
+
+    # Ingress controllers' request logs must reach the store as JSON events
+    # with a level from the status and msg "METHOD path status", their
+    # request headers, and no credentials. Each entry in molecule.yml
+    # (provisioner.logging_ingresses) names an ingress class, its
+    # controller's Service (service: name.namespace) and optionally fields
+    # the event must carry (expect, compared as for logging_events); a
+    # temporary Ingress of that class routes a check host to a whoami
+    # backend (VictoriaLogs' NetworkPolicy admits only the log shippers),
+    # and a pod requests /health through the controller, with an
+    # X-Request-Id and an Authorization header, until it answers.
+    - name: Verify ingress request logs
+      when: _logging_ingresses | length > 0
+      vars:
+        _logging_ingresses: "{{ molecule_yml.provisioner.logging_ingresses | default([]) }}"
+      block:
+        - name: Name this run's ingress checks
+          ansible.builtin.set_fact:
+            _logging_ingress_run: "{{ lookup('ansible.builtin.pipe', 'date +%s') }}"
+
+        # Sent as a credential; it must not appear anywhere in the logs
+        - name: Set this run's ingress check credential
+          ansible.builtin.set_fact:
+            _logging_ingress_secret: "logging-check-secret-{{ _logging_ingress_run }}"
+
+        - name: Start the ingress check backend
+          kubernetes.core.k8s:
+            kubeconfig: "{{ molecule_local_kubeconfig }}"
+            state: present
+            wait: true
+            definition: "{{ item }}"
+          loop:
+            - apiVersion: v1
+              kind: Pod
+              metadata:
+                name: "logging-ingress-backend-{{ _logging_ingress_run }}"
+                namespace: "{{ _vl_namespace }}"
+                labels:
+                  pokerops.net/logging-ingress: "{{ _logging_ingress_run }}"
+                  pokerops.net/logging-ingress-backend: "{{ _logging_ingress_run }}"
+              spec:
+                containers:
+                  - name: whoami
+                    image: "{{ _ingress_check_backend_image }}"
+                    ports:
+                      - containerPort: 80
+            - apiVersion: v1
+              kind: Service
+              metadata:
+                name: "logging-ingress-backend-{{ _logging_ingress_run }}"
+                namespace: "{{ _vl_namespace }}"
+                labels:
+                  pokerops.net/logging-ingress: "{{ _logging_ingress_run }}"
+              spec:
+                selector:
+                  pokerops.net/logging-ingress-backend: "{{ _logging_ingress_run }}"
+                ports:
+                  - port: 80
+          loop_control:
+            label: "{{ item.kind }}"
+
+        - name: Route a check host through each ingress class
+          kubernetes.core.k8s:
+            kubeconfig: "{{ molecule_local_kubeconfig }}"
+            state: present
+            definition:
+              apiVersion: networking.k8s.io/v1
+              kind: Ingress
+              metadata:
+                name: "logging-ingress-{{ item.name }}"
+                namespace: "{{ _vl_namespace }}"
+                labels:
+                  pokerops.net/logging-ingress: "{{ _logging_ingress_run }}"
+              spec:
+                ingressClassName: "{{ item.class }}"
+                rules:
+                  - host: "{{ item.name }}.logging-check.invalid"
+                    http:
+                      paths:
+                        - path: /health
+                          pathType: Prefix
+                          backend:
+                            service:
+                              name: "logging-ingress-backend-{{ _logging_ingress_run }}"
+                              port:
+                                number: 80
+          loop: "{{ _logging_ingresses }}"
+          loop_control:
+            label: "{{ item.name }}"
+
+        # Until the controller routes the new host it answers 404, so the
+        # pod retries until it gets the backend's 200
+        - name: Request the check host through each controller
+          kubernetes.core.k8s:
+            kubeconfig: "{{ molecule_local_kubeconfig }}"
+            state: present
+            definition:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: "logging-ingress-{{ item.name }}-{{ _logging_ingress_run }}"
+                namespace: "{{ _vl_namespace }}"
+                labels:
+                  pokerops.net/logging-ingress: "{{ _logging_ingress_run }}"
+                  pokerops.net/logging-ingress-request: "{{ _logging_ingress_run }}"
+              spec:
+                restartPolicy: Never
+                containers:
+                  - name: request
+                    image: "{{ _vl_probe_image }}"
+                    command:
+                      - sh
+                      - -c
+                      - >-
+                        for i in $(seq 1 60); do
+                        code=$(curl -s -o /dev/null -w '%{http_code}' -H "Host: $CHECK_HOST"
+                        -H "X-Request-Id: $CHECK_ID" -H "Authorization: Bearer $CHECK_SECRET" "$CHECK_URL");
+                        [ "$code" = 200 ] && exit 0; sleep 2;
+                        done; exit 1
+                    env:
+                      - name: CHECK_HOST
+                        value: "{{ item.name }}.logging-check.invalid"
+                      - name: CHECK_URL
+                        value: "http://{{ item.service }}.svc/health?logging-check={{ _logging_ingress_run }}"
+                      - name: CHECK_ID
+                        value: "logging-check-{{ _logging_ingress_run }}"
+                      - name: CHECK_SECRET
+                        value: "{{ _logging_ingress_secret }}"
+          loop: "{{ _logging_ingresses }}"
+          loop_control:
+            label: "{{ item.name }}"
+
+        - name: Wait for the requests to succeed
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ molecule_local_kubeconfig }}"
+            kind: Pod
+            namespace: "{{ _vl_namespace }}"
+            label_selectors:
+              - "pokerops.net/logging-ingress-request={{ _logging_ingress_run }}"
+          register: _logging_ingress_pods
+          retries: "{{ _vl_settle_retries }}"
+          delay: "{{ _vl_settle_delay }}"
+          until: >-
+            _logging_ingress_pods.resources | length == _logging_ingresses | length and
+            _logging_ingress_pods.resources | map(attribute='status.phase') | reject('in', ['Succeeded', 'Failed']) | list | length == 0
+          failed_when: >-
+            _logging_ingress_pods.resources | map(attribute='status.phase') | select('equalto', 'Failed') | list | length > 0
+
+        - name: Wait for each controller's request log in the local store
+          ansible.builtin.shell:
+            cmd: >-
+              {{ _vl_query }}
+              'query=_time:1h log.RequestHost:="{{ item.name }}.logging-check.invalid"
+              log.RequestPath:="/health?logging-check={{ _logging_ingress_run }}"
+              log.DownstreamStatus:=200'
+          register: _logging_ingress_results
+          changed_when: false
+          failed_when: false
+          retries: "{{ _vl_settle_retries }}"
+          delay: "{{ _vl_settle_delay }}"
+          until:
+            - _logging_ingress_results.rc == 0
+            - _logging_ingress_results.stdout_lines | length > 0
+          loop: "{{ _logging_ingresses }}"
+          loop_control:
+            label: "{{ item.name }}"
+
+        - name: Verify each controller's request log
+          ansible.builtin.assert:
+            that:
+              - _stored | length > 0
+              - _event.log_format | default('') == 'json'
+              - _event.level | default('') == 'info'
+              - _event._msg | default('') == _want_msg
+              - _event['log.request_X-Request-Id'] | default('') == 'logging-check-' ~ _logging_ingress_run
+              - _mismatches | length == 0
+              - _logging_ingress_secret not in (_stored | to_json)
+            fail_msg: >-
+              Ingress {{ item.item.name }}: expected a JSON request log at level
+              info with msg "{{ _want_msg }}", its X-Request-Id header,
+              {{ item.item.expect | default({}) }} and no credential; got
+              {{ _stored | length }} event(s), first
+              {{ _event | dict2items | selectattr('key', 'in', ['log_format', 'level', '_msg', 'log.request_X-Request-Id']) | items2dict }},
+              mismatched fields {{ _mismatches }}, credential logged:
+              {{ _logging_ingress_secret in (_stored | to_json) }}. Check the
+              controller's access log settings and the remap's ingress
+              request rule.
+            success_msg: "Ingress {{ item.item.name }} request logs arrive as JSON: {{ _event._msg | default('') }}"
+          loop: "{{ _logging_ingress_results.results }}"
+          loop_control:
+            label: "{{ item.item.name }}"
+          vars:
+            _stored: "{{ item.stdout_lines | default([]) | map('from_json') | list }}"
+            _event: "{{ _stored | first | default({}) }}"
+            _want_msg: "GET /health?logging-check={{ _logging_ingress_run }} 200"
+            _mismatches: >-
+              {%- set out = [] -%}
+              {%- for key, want in (item.item.expect | default({})).items() -%}
+              {%- set got = _event[key] | default('<missing>') -%}
+              {%- if (got | string) != (want | string) -%}
+              {%- set _ = out.append({'field': key, 'want': want, 'got': got}) -%}
+              {%- endif -%}
+              {%- endfor -%}
+              {{ out }}
+      always:
+        - name: Remove the ingress check pods and Ingresses
+          kubernetes.core.k8s:
+            kubeconfig: "{{ molecule_local_kubeconfig }}"
+            state: absent
+            kind: "{{ item }}"
+            api_version: "{{ (item == 'Ingress') | ternary('networking.k8s.io/v1', 'v1') }}"
+            namespace: "{{ _vl_namespace }}"
+            label_selectors:
+              - "pokerops.net/logging-ingress={{ _logging_ingress_run }}"
+          loop: [Pod, Service, Ingress]

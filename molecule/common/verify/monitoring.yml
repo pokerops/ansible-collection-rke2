@@ -442,6 +442,9 @@
 - name: Verify log parsing in the local store
   ansible.builtin.import_playbook: logging.yml
 
+# The agents' disk buffer for the local sink must carry events logged while
+# the store is down. Argo CD's self-heal would restore the StatefulSet at
+# once, so automated sync is paused for the outage and restored after.
 - name: Verify the local store catches up after an outage
   hosts: localhost
   connection: local

@@ -33,7 +33,6 @@ Not probed yet at the pinned versions: Hubble UI, the cloud-controller-manager.
 
 Add access logs for the following traffic flows
 
-- Ingress
 - DNS queries
 - HTTP queries
 - HTTPS queries
