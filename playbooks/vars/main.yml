@@ -45,6 +45,9 @@ _rke2_drain_pod_selectors: "{{ rke2_drain_pod_selectors | default(rke2_defaults_
 _rke2_config_hostnames: "{{ rke2_config_hostnames | default(True) | bool }}"
 _rke2_nolog: "{{ rke2_nolog | default(True) | bool }}"
 _rke2_update_skip_pod_checks: "{{ rke2_update_skip_pod_checks | default(False) | bool }}"
+# Log format of the Kubernetes components (apiserver, controller-manager,
+# scheduler, kubelet, kube-proxy) and metrics-server; "" leaves their default
+_rke2_logging_format: "{{ rke2_logging_format | default('json') }}"
 
 # Hardcoded values
 rke2_uninstall_script: /usr/local/bin/rke2-uninstall.sh

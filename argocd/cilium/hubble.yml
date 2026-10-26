@@ -5,10 +5,19 @@ metadata:
   name: rke2-cilium
   namespace: kube-system
 spec:
+  # JSON logs (rke2-cilium 1.19.100, Cilium 1.19.1): logOptions is the agent's
+  # and the operator's log-opt (both read cilium-config) and hubble-relay has
+  # its own. rke2's chart runs Envoy inside the agent (envoy.enabled: false),
+  # so envoy.log.format_json, which only reaches the standalone DaemonSet,
+  # doesn't apply. Hubble UI's logging isn't configured here.
   valuesContent: |-
+    logOptions:
+      format: json
     hubble:
       enabled: true
       relay:
         enabled: true
+        logOptions:
+          format: json
       ui:
         enabled: true

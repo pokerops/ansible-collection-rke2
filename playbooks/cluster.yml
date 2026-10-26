@@ -61,6 +61,22 @@
         rke2_kube_proxy_arg: "{{ rke2_defaults_kube_proxy_arg }}"
       when: rke2_kube_proxy_arg is not defined
 
+    # Kubernetes v1.33 components log JSON with --logging-format=json
+    # (component-base, beta and on by default since v1.24). Added to the
+    # user's own args too, unless they already pick a format. etcd 3.5
+    # already logs JSON; the rke2 supervisor itself only logs text.
+    - name: Set Kubernetes component log format
+      ansible.builtin.set_fact:
+        "{{ item }}": "{{ _args + ([] if _has_format else ['logging-format=' ~ _rke2_logging_format]) }}"
+      vars:
+        _args: "{{ lookup('ansible.builtin.vars', item, default=[]) | list }}"
+        _has_format: "{{ _args | select('match', '^-*logging-format=') | list | length > 0 }}"
+      loop: >-
+        {{ ['rke2_kubelet_arg', 'rke2_kube_proxy_arg']
+           + (['rke2_kube_apiserver_args', 'rke2_kube_controller_manager_arg', 'rke2_kube_scheduler_arg']
+              if inventory_hostname in groups[rke2_server_group] else []) }}
+      when: _rke2_logging_format | length > 0
+
     - name: Set RKE2 role defaults
       ansible.builtin.set_fact:
         rke2_etcd_snapshot_file: ""
@@ -86,3 +102,17 @@
         rke2_servers_group_name: "{{ rke2_server_group }}"
         rke2_agents_group_name: "{{ rke2_agent_group }}"
       when: _rke2_install | bool
+
+    - name: Set metrics-server log format
+      ansible.builtin.template:
+        src: templates/metrics-server.yml
+        dest: "{{ rke2_data_path | default('/var/lib/rancher/rke2') }}/server/manifests/rke2-metrics-server-config.yaml"
+        owner: root
+        group: root
+        mode: "0644"
+      become: true
+      when:
+        - _rke2_install | bool
+        - _rke2_logging_format | length > 0
+        - inventory_hostname in groups[rke2_server_group]
+        - "'rke2-metrics-server' not in (rke2_disable | default([]))"

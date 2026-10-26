@@ -107,8 +107,32 @@ provisioner:
   # Read by ../common/verify/logging.yml ("Verify workload logs carry real
   # levels"): each filter selects one component's events in the local log
   # store, of which at most max_unknown_ratio (default 0) may be at level
-  # unknown; time (default 1d) and min_events (default 1) are optional.
+  # unknown; time (default 1d) and min_events (default 1) are optional. A
+  # filter on log_format:="json" also catches a component falling back to
+  # text: none of its events match any more.
   logging_workloads:
+    # Kubernetes' components with logging-format=json (playbooks/cluster.yml)
+    - name: kube-apiserver
+      filter: 'kubernetes.pod_namespace:="kube-system" kubernetes.container_name:="kube-apiserver" log_format:="json"'
+    - name: kube-controller-manager
+      filter: 'kubernetes.pod_namespace:="kube-system" kubernetes.container_name:="kube-controller-manager" log_format:="json"'
+    - name: kube-scheduler
+      filter: 'kubernetes.pod_namespace:="kube-system" kubernetes.container_name:="kube-scheduler" log_format:="json"'
+    - name: kube-proxy
+      filter: 'kubernetes.pod_namespace:="kube-system" kubernetes.container_name:="kube-proxy" log_format:="json"'
+    - name: kubelet
+      filter: 'unit:="kubelet" log_format:="json"'
+    - name: etcd
+      filter: 'kubernetes.pod_namespace:="kube-system" kubernetes.container_name:="etcd" log_format:="json"'
+    - name: metrics-server
+      filter: 'kubernetes.pod_namespace:="kube-system" kubernetes.container_name:="metrics-server" log_format:="json"'
+    # Cilium's logOptions (argocd/cilium/hubble.yml)
+    - name: cilium-agent
+      filter: 'kubernetes.pod_namespace:="kube-system" kubernetes.container_name:="cilium-agent" log_format:="json"'
+    - name: cilium-operator
+      filter: 'kubernetes.pod_namespace:="kube-system" kubernetes.container_name:="cilium-operator" log_format:="json"'
+    - name: hubble-relay
+      filter: 'kubernetes.pod_namespace:="kube-system" kubernetes.container_name:="hubble-relay" log_format:="json"'
     - name: argocd-application-controller
       filter: 'kubernetes.pod_namespace:="argocd" kubernetes.container_name:="application-controller"'
     - name: cert-manager-controller
