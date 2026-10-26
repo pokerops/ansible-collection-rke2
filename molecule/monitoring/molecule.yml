@@ -137,7 +137,7 @@ provisioner:
         log.RequestHost: x.example
     - name: nginx-access
       lines:
-        - '{"time": "2026-10-27T01:00:00+00:00", "ClientHost": "10.42.0.5", "RequestHost": "argocd.example", "RequestMethod": "POST", "RequestPath": "/api/v1/session", "RequestProtocol": "HTTP/2.0", "RequestContentSize": 512, "DownstreamStatus": 502, "DownstreamContentSize": 150, "request_time": 0.004, "upstream": "argocd-argocd-server-443", "ServiceAddr": "10.42.1.2:8080", "OriginStatus": "502"}'
+        - '{"time":"2026-10-27T01:00:00+00:00","ClientHost":"10.42.0.5","RequestHost":"argocd.example","RequestMethod":"POST","RequestPath":"/api/v1/session","RequestProtocol":"HTTP/2.0","RequestContentSize":512,"DownstreamStatus":502,"DownstreamContentSize":150,"request_time":0.004,"upstream":"argocd-argocd-server-443","ServiceAddr":"10.42.1.2:8080","OriginStatus":"502"}'
       expect:
         log_format: json
         level: error
