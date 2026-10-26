@@ -104,6 +104,21 @@ provisioner:
         level: error
         msg: POST /v1/volumes/pvc-0000?action=attach 500
         log.status: 500
+    - name: component-base-error
+      lines:
+        - '{"ts":1792900000000.123,"caller":"secret/secret.go:122","msg":"Couldn''t get secret metallb-system/metallb-memberlist"}'
+      expect:
+        log_format: json
+        level: error
+        msg: Couldn't get secret metallb-system/metallb-memberlist
+        log.caller: secret/secret.go:122
+    - name: vector-quoted-level
+      lines:
+        - '{"timestamp":"2026-10-26T02:20:00.000Z","level":"INFO","message":"Log level is enabled.","level":"\"info\"","target":"vector::app"}'
+      expect:
+        log_format: json
+        level: info
+        msg: Log level is enabled.
   # Read by ../common/verify/logging.yml ("Verify workload logs carry real
   # levels"): each filter selects one component's events in the local log
   # store, of which at most max_unknown_ratio (default 0) may be at level
@@ -133,16 +148,20 @@ provisioner:
       filter: 'kubernetes.pod_namespace:="kube-system" kubernetes.container_name:="cilium-operator" log_format:="json"'
     - name: hubble-relay
       filter: 'kubernetes.pod_namespace:="kube-system" kubernetes.container_name:="hubble-relay" log_format:="json"'
+    # go-redis's own unleveled lines while argocd's redis restarts
     - name: argocd-application-controller
       filter: 'kubernetes.pod_namespace:="argocd" kubernetes.container_name:="application-controller"'
+      max_unknown_ratio: 0.01
     - name: cert-manager-controller
       filter: 'kubernetes.container_name:="cert-manager-controller"'
     - name: vector-agent
       filter: 'kubernetes.container_name:="vector-agent"'
     - name: reflector
       filter: 'kubernetes.pod_namespace:="kube-system" kubernetes.container_name:="reflector"'
+    # its startup script's image map and "+ exec" trace
     - name: strimzi-cluster-operator
       filter: 'kubernetes.container_name:="strimzi-cluster-operator"'
+      max_unknown_ratio: 0.2
     # tgtd's and go-iscsi-helper's lines carry no level
     - name: longhorn-instance-manager
       filter: 'kubernetes.pod_namespace:="longhorn-system" kubernetes.container_name:="instance-manager"'

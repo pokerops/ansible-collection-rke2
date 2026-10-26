@@ -260,14 +260,20 @@ spec:
           if level == null { level = fields.lvl }
           if level == null { level = fields.severity }
           if level == null { level = get(fields, ["log.level"]) ?? null }
-          # Kubernetes' component-base JSON format (cert-manager) has no
-          # level key: info lines carry their verbosity "v" (0 info, more
-          # is debug), error lines an "err" and no "v"
+          # Kubernetes' component-base JSON format (the control plane, the
+          # kubelet, metrics-server, cert-manager) has no level key: info
+          # lines carry their verbosity "v" (0 info, more is debug), error
+          # lines no "v", with an "err" (ErrorS) or without (Error, which
+          # still has the format's "ts" and "caller")
           if level == null && is_integer(fields.v) {
             level = if fields.v == 0 { "info" } else { "debug" }
           }
-          if level == null && fields.err != null && fields.v == null { level = "error" }
-          l = downcase(to_string(level) ?? "")
+          if level == null && fields.v == null && (fields.err != null || (fields.ts != null && fields.caller != null)) {
+            level = "error"
+          }
+          # Quotes stripped: Vector's own JSON can repeat "level" as a field
+          # holding a quoted value ("\"info\""), which wins in parse_json
+          l = replace(downcase(to_string(level) ?? ""), "\"", "")
           .level = if starts_with(l, "trace") || l == "vrb" {
             "trace"
           } else if starts_with(l, "debug") || l == "dbg" {
