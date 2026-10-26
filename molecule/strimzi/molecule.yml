@@ -16,19 +16,19 @@ platforms:
   - name: rke2-${MOLECULE_SCENARIO_NAME}-agent-01
     image: "${MOLECULE_KVM_IMAGE}"
     cpu: 2
-    mem: 8
+    mem: 6
     groups:
       - rke2_agent
   - name: rke2-${MOLECULE_SCENARIO_NAME}-agent-02
     image: "${MOLECULE_KVM_IMAGE}"
     cpu: 2
-    mem: 8
+    mem: 6
     groups:
       - rke2_agent
   - name: rke2-${MOLECULE_SCENARIO_NAME}-agent-03
     image: "${MOLECULE_KVM_IMAGE}"
     cpu: 2
-    mem: 8
+    mem: 6
     groups:
       - rke2_agent
 provisioner:
