@@ -20,6 +20,14 @@ message):
 - metallb's **frr** and **reloader** (no JSON option)
 - longhorn's **instance-manager** (logfmt formatter hardcoded in
   longhorn-instance-manager; its tgtd lines carry no level)
+- argocd's redis-ha **split-brain-fix** sidecar (the chart's own
+  `fix-split-brain.sh`; leveling it would mean shadowing the script)
+- the **rke2** supervisor (`rke2-server`/`rke2-agent`; k3s's log flags have
+  no format option)
+- **containerd** (JSON needs a `[debug] format` in rke2's generated
+  `config.toml`, i.e. overriding rke2's template)
+
+Not probed yet at the pinned versions: Hubble UI, the cloud-controller-manager.
 
 ## Traffic visibility
 

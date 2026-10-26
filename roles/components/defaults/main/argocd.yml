@@ -60,38 +60,6 @@ rke2_argocd_apps_directory_include: "{*.yml,*.yaml}"
 rke2_argocd_apps_directory_exclude: ""
 rke2_argocd_apps_values_base:
   applications:
-    cilium:
-      project: default
-      source:
-        repoURL: https://github.com/pokerops/ansible-collection-rke2.git
-        targetRevision: "{{ rke2_argocd_apps_pokerops_revision }}"
-        path: argocd/cilium/
-        directory:
-          recurse: false
-          include: "{{ rke2_argocd_apps_directory_include }}"
-          exclude: "{{ rke2_argocd_apps_directory_exclude }}"
-      destination:
-        server: https://kubernetes.default.svc
-        namespace: default
-      syncPolicy:
-        automated:
-          prune: true
-          selfHeal: true
-        # Argo's built-in retry for automated syncs (5 attempts, about 2.5m)
-        # gives up on a repo-server restart, and an automated sync never
-        # retries a failed revision. Same policy on every app.
-        retry:
-          limit: 10
-          backoff:
-            duration: 10s
-            factor: 2
-            maxDuration: 3m
-        syncOptions:
-          - ApplyOutOfSyncOnly=true
-      revisionHistoryLimit:
-      info:
-        - name: url
-          value: https://github.com/pokerops/ansible-collection-rke2
     cluster:
       project: default
       source:
@@ -109,6 +77,9 @@ rke2_argocd_apps_values_base:
         automated:
           prune: true
           selfHeal: true
+        # Argo's built-in retry for automated syncs (5 attempts, about 2.5m)
+        # gives up on a repo-server restart, and an automated sync never
+        # retries a failed revision. Same policy on every app.
         retry:
           limit: 10
           backoff:

@@ -141,7 +141,7 @@ provisioner:
       filter: 'kubernetes.pod_namespace:="kube-system" kubernetes.container_name:="etcd" log_format:="json"'
     - name: metrics-server
       filter: 'kubernetes.pod_namespace:="kube-system" kubernetes.container_name:="metrics-server" log_format:="json"'
-    # Cilium's logOptions (argocd/cilium/hubble.yml)
+    # Cilium's logOptions (playbooks/templates/cilium.yml)
     - name: cilium-agent
       filter: 'kubernetes.pod_namespace:="kube-system" kubernetes.container_name:="cilium-agent" log_format:="json"'
     - name: cilium-operator

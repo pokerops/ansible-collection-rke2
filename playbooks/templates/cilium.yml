@@ -1,0 +1,28 @@
+---
+# JSON logs: logOptions is the agent's and the operator's log-opt (both read
+# cilium-config) and hubble-relay has its own. rke2's chart runs Envoy inside
+# the agent (envoy.enabled: false), so envoy.log.format_json, which only
+# reaches the standalone DaemonSet, doesn't apply. Hubble UI's logging isn't
+# configured here. The chart only restarts pods on a later config change with
+# the rollOut flags, so they are set for every pod the log options reach.
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: rke2-cilium
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    rollOutCiliumPods: true
+    logOptions:
+      format: json
+    operator:
+      rollOutPods: true
+    hubble:
+      enabled: true
+      relay:
+        enabled: true
+        rollOutPods: true
+        logOptions:
+          format: json
+      ui:
+        enabled: true
