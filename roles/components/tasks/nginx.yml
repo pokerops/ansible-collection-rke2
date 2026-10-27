@@ -20,7 +20,7 @@
   vars:
     _nginx_chart_application: "{{ _nginx_chart_manifest | combine(_nginx_chart_overrides, recursive=True) }}"
     _nginx_chart_class: "{{ _nginx_class_private }}"
-    _nginx_chart_manifest: "{{ lookup('ansible.builtin.template', 'templates/nginx.yml' ) | from_yaml }}"
+    _nginx_chart_manifest: "{{ lookup('ansible.builtin.template', 'templates/nginx.yml') | from_yaml }}"
     _nginx_chart_overrides:
       metadata:
         name: "{{ _nginx_chart_class }}"
@@ -58,7 +58,7 @@
   vars:
     _nginx_chart_application: "{{ _nginx_chart_manifest | combine(_nginx_chart_overrides, recursive=True) }}"
     _nginx_chart_class: "{{ _nginx_class_public }}"
-    _nginx_chart_manifest: "{{ lookup('ansible.builtin.template', 'templates/nginx.yml' ) | from_yaml }}"
+    _nginx_chart_manifest: "{{ lookup('ansible.builtin.template', 'templates/nginx.yml') | from_yaml }}"
     _nginx_chart_overrides:
       metadata:
         name: "{{ _nginx_chart_class }}"

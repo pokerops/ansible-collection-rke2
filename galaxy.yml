@@ -9,7 +9,7 @@ description: RKE2 deployment playbooks
 license:
   - MIT
 tags:
-  - k8s
+  - infrastructure
   - rke2
 dependencies:
   "nephelaiio.plugins": "*"

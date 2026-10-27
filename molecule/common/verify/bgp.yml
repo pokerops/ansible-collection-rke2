@@ -36,7 +36,7 @@
           vars:
             _apps_count: "{{ molecule_rke2_ingress_services | int }}"
             _apps_all: "{{ _argocd_apps_query.resources }}"
-            _apps_ics: "{{ _apps_all | selectattr('spec.destination.namespace', 'in', ingress_namespaces )}}"
+            _apps_ics: "{{ _apps_all | selectattr('spec.destination.namespace', 'in', ingress_namespaces) }}"
             _apps_nostatus: "{{ _apps_ics | rejectattr('status.health.status', 'defined') }}"
             _apps_status: "{{ _apps_ics | selectattr('status.health.status', 'defined') }}"
             _apps_unhealthy: "{{ _apps_status | rejectattr('status.health.status', 'equalto', 'Healthy') }}"
@@ -62,7 +62,7 @@
             _argocd_ingress_controller_apps: "{{ _apps_ics }}"
           vars:
             _apps_all: "{{ _argocd_apps_query.resources }}"
-            _apps_ics: "{{ _apps_all | selectattr('spec.destination.namespace', 'in', ingress_namespaces )}}"
+            _apps_ics: "{{ _apps_all | selectattr('spec.destination.namespace', 'in', ingress_namespaces) }}"
 
         - name: Verify ArgocD Ingress application count
           ansible.builtin.assert:

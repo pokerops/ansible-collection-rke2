@@ -20,6 +20,10 @@ build-fix:
 update:
   ${UV} --directory . run rke2 update
 
+# Run the collection's unit tests (tests/unit: filter plugins); extra args go to pytest
+pytest *args:
+  ${UV_RUN} pytest {{ args }}
+
 # Forward the cluster-local VictoriaLogs store and open its web UI (Ctrl-C stops)
 logs port="9428":
   #!/usr/bin/env bash

@@ -246,7 +246,7 @@ spec:
               if err == null {
                 status = to_int(parsed.status) ?? 0
                 parsed.level = if status >= 500 { "error" } else if status >= 400 { "warn" } else { "info" }
-                parsed.msg = join([string(parsed.method) ?? "", string(parsed.path) ?? "", string(parsed.status) ?? ""], " ") ?? line
+                parsed.msg = (string(parsed.method) ?? "") + " " + (string(parsed.path) ?? "") + " " + (string(parsed.status) ?? "")
               }
             }
             # CoreDNS's query log (its log plugin, templates/coredns.yml) in the
@@ -260,7 +260,7 @@ spec:
               if err == null {
                 rcode = string(parsed.rcode) ?? ""
                 parsed.level = if rcode == "SERVFAIL" { "error" } else if includes(["REFUSED", "FORMERR", "NOTIMP"], rcode) { "warn" } else { "info" }
-                parsed.msg = join([string(parsed.type) ?? "", string(parsed.name) ?? "", rcode], " ") ?? line
+                parsed.msg = (string(parsed.type) ?? "") + " " + (string(parsed.name) ?? "") + " " + rcode
               }
             }
             # coredns "[INFO] msg" and haproxy "[NOTICE]   (1) : msg"
@@ -324,7 +324,7 @@ spec:
           .log = compact(fields, string: true, null: false, object: false, array: false)
           status = to_int(fields.DownstreamStatus) ?? 0
           .level = if status >= 500 { "error" } else if status >= 400 { "warn" } else { "info" }
-          .msg = join([string(fields.RequestMethod) ?? "", string(fields.RequestPath) ?? "", to_string(status)], " ") ?? raw
+          .msg = (string(fields.RequestMethod) ?? "") + " " + (string(fields.RequestPath) ?? "") + " " + to_string(status)
         }
         # Structured klog (the kubelet, most control-plane components) puts
         # a quoted message and then key="value" pairs in the message part.

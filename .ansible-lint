@@ -1,0 +1,8 @@
+---
+# Replaces the ansible-utils plugin's lint config, whose only setting (kinds:
+# inventory for molecule/*/inventory.yml) concerns the excluded molecule/ tree.
+# Molecule scenarios are test harness code: they shell out and act on the
+# cluster once on purpose, so they aren't held to the collection's rules.
+exclude_paths:
+  - .ansible/
+  - molecule/
