@@ -1,9 +1,4 @@
 ---
-# Log parsing checks against the cluster-local VictoriaLogs store, driven by
-# the scenario's molecule.yml (molecule_yml.provisioner): logging_events
-# (known lines and the event they must become) and logging_workloads (real
-# components whose events must carry real levels). Imported by every
-# scenario's verify; a scenario without either list skips them.
 - name: Verify log parsing in the local store
   hosts: localhost
   connection: local
@@ -11,18 +6,12 @@
   vars_files:
     - vars/victorialogs.yml
   tasks:
-    # Known log lines must reach the store as the events the pipeline is
-    # meant to make of them. Each entry in molecule.yml
-    # (provisioner.logging_events) gives the raw lines one container prints
-    # and the fields its single resulting event must carry: msg is the
-    # store's _msg, nested fields use their flattened names (log.caller),
-    # and every value compares as a string.
     - name: Verify logging events parse as expected
       when: _logging_events | length > 0
       vars:
         _logging_events: "{{ molecule_yml.provisioner.logging_events | default([]) }}"
       block:
-        # Fixed once: a templated timestamp would change on every use
+        # Computed once: a templated timestamp would change on every use
         - name: Name this run's logging event pods
           ansible.builtin.set_fact:
             _logging_event_run: "{{ lookup('ansible.builtin.pipe', 'date +%s') }}"
@@ -403,3 +392,82 @@
             label_selectors:
               - "pokerops.net/logging-ingress={{ _logging_ingress_run }}"
           loop: [Pod, Service, Ingress]
+
+    # CoreDNS's query log must reach the store as parsed events. Enabled by
+    # provisioner.logging_dns in molecule.yml: a pod looks up a name unique
+    # to this run under the cluster domain, which CoreDNS answers itself
+    # (NXDOMAIN) without any upstream.
+    - name: Verify DNS query logs
+      when: molecule_yml.provisioner.logging_dns | default(false) | bool
+      vars:
+        _dns_check_run: "{{ lookup('ansible.builtin.pipe', 'date +%s') }}"
+      block:
+        # Computed once: the lookup above runs again on every use
+        - name: Name this run's DNS check
+          ansible.builtin.set_fact:
+            _dns_check_name: "dns-check-{{ _dns_check_run }}.default.svc.cluster.local."
+
+        - name: Look up the check name from a pod
+          kubernetes.core.k8s:
+            kubeconfig: "{{ molecule_local_kubeconfig }}"
+            state: present
+            definition:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: "logging-dns-{{ _dns_check_name.split('.')[0] }}"
+                namespace: "{{ _vl_namespace }}"
+                labels:
+                  pokerops.net/logging-dns: "true"
+              spec:
+                restartPolicy: Never
+                containers:
+                  - name: lookup
+                    image: "{{ _vl_probe_image }}"
+                    command:
+                      ["sh", "-c", 'nslookup -type=A "$CHECK_NAME" || true']
+                    env:
+                      - name: CHECK_NAME
+                        value: "{{ _dns_check_name }}"
+
+        - name: Wait for the check query in the local store
+          ansible.builtin.shell:
+            cmd: >-
+              {{ _vl_query }}
+              'query=_time:1h kubernetes.container_name:="coredns"
+              log.name:="{{ _dns_check_name }}" log.type:="A"'
+          register: _dns_check_result
+          changed_when: false
+          failed_when: false
+          retries: "{{ _vl_settle_retries }}"
+          delay: "{{ _vl_settle_delay }}"
+          until:
+            - _dns_check_result.rc == 0
+            - _dns_check_result.stdout_lines | length > 0
+
+        - name: Verify the check query is parsed
+          ansible.builtin.assert:
+            that:
+              - _stored | length > 0
+              - _event.level | default('') == 'info'
+              - _event._msg | default('') == 'A ' ~ _dns_check_name ~ ' NXDOMAIN'
+              - _event['log.rcode'] | default('') == 'NXDOMAIN'
+            fail_msg: >-
+              Expected CoreDNS to log the query for {{ _dns_check_name }} as an
+              info event "A {{ _dns_check_name }} NXDOMAIN"; got
+              {{ _stored | length }} event(s), first
+              {{ _event | dict2items | selectattr('key', 'in', ['log_format', 'level', '_msg', 'log.rcode']) | items2dict }}.
+              Check templates/coredns.yml and the remap's CoreDNS query rule.
+            success_msg: "CoreDNS query logs arrive parsed: {{ _event._msg | default('') }}"
+          vars:
+            _stored: "{{ _dns_check_result.stdout_lines | default([]) | map('from_json') | list }}"
+            _event: "{{ _stored | first | default({}) }}"
+      always:
+        - name: Remove the DNS check pod
+          kubernetes.core.k8s:
+            kubeconfig: "{{ molecule_local_kubeconfig }}"
+            state: absent
+            kind: Pod
+            namespace: "{{ _vl_namespace }}"
+            label_selectors:
+              - "pokerops.net/logging-dns=true"

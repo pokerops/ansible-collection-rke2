@@ -27,9 +27,9 @@ bump one to a version that may have changed its logging:
    A `text` line still gets a real `level` and `msg` when its format is
    leveled text the remap knows (zap console, a level token after a
    timestamp, Serilog's `[LVL] (Source)`, redis's `pid:role time sym`,
-   coredns's and haproxy's `[LEVEL]`, nginx's `time [level] pid#tid:`,
-   Python's `time - logger - LEVEL - msg`, Postgres's `LEVEL:  msg`,
-   pgqd's `time TZ [pid] LEVEL`, the JMX
+   coredns's and haproxy's `[LEVEL]`, CoreDNS's query log, nginx's
+   `time [level] pid#tid:`, Python's `time - logger - LEVEL - msg`,
+   Postgres's `LEVEL:  msg`, pgqd's `time TZ [pid] LEVEL`, the JMX
    exporter agent's `time | thread | LEVEL | logger | msg`); that is
    the fallback for components whose JSON logging can't be enabled, not a
    substitute for enabling it. Formats are recognized on an event's first
