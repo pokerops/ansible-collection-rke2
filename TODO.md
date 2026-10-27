@@ -4,8 +4,6 @@
 
 These have no ServiceMonitor/PodMonitor and no chart metrics flag enabled:
 
-- **cert-manager** — highest value; certificate expiry is the usual reason to
-  want this at all
 - keel, reflector — operators/agents, lower value
 
 ## Logging

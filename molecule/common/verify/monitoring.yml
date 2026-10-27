@@ -314,6 +314,32 @@
              | map('regex_replace', '^.*:"(.*)"$', '\1') | unique | list }}
         _unscraped: "{{ _declared | difference(_scraped) }}"
 
+    # Certificate expiry is what cert-manager's metrics are for; the
+    # namespace check above passes on any of its series. Every cluster has
+    # certificates (the private CA, Argo CD's), so the series must exist.
+    - name: Wait for certificate expiry metrics to reach the ingestor
+      ansible.builtin.command:
+        cmd: >-
+          kubectl --kubeconfig {{ molecule_local_kubeconfig }}
+          exec -n {{ monitoring_namespace }} {{ _ingestor_pod }}
+          -- grep -c certmanager_certificate_expiration_timestamp_seconds
+          {{ monitoring_ingestor_file }}
+      register: _certificate_expiry
+      changed_when: false
+      failed_when: false
+      retries: "{{ monitoring_settle_retries }}"
+      delay: "{{ monitoring_settle_delay }}"
+      until: (_certificate_expiry.stdout | default('0') | trim | int) > 0
+
+    - name: Verify certificate expiry metrics are collected
+      ansible.builtin.assert:
+        that: (_certificate_expiry.stdout | default('0') | trim | int) > 0
+        fail_msg: >-
+          No certmanager_certificate_expiration_timestamp_seconds reached the
+          ingestor; check the cert-manager ServiceMonitor
+          (templates/certmanager/monitors.yml).
+        success_msg: "Ingestor received {{ _certificate_expiry.stdout | trim }} certificate expiry series"
+
 # The cluster-local log store (VictoriaLogs). Queried only through
 # kubectl port-forward, the admin path: its NetworkPolicy admits only the
 # Vector agents and Alloy, and port-forward traffic enters the pod over its
