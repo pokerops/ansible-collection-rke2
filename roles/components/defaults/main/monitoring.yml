@@ -37,7 +37,7 @@ rke2_logging_buffer_size: 1073741824
 # Log agent image. The operator's default is the distroless variant, which
 # has no journalctl for the journald source (rke2 and host-unit logs); the
 # debian variant ships it. Pin only, bumped by rke2 update.
-rke2_vector_agent_image: "timberio/vector:0.48.0-debian"
+rke2_vector_agent_image: "timberio/vector:0.60.0-debian"
 
 # Alloy's WAL volume; metrics in it are time-bound by the WAL itself.
 rke2_monitoring_metrics_volume_size: 2Gi

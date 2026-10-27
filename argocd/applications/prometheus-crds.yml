@@ -11,7 +11,7 @@ spec:
   source:
     chart: prometheus-operator-crds
     repoURL: https://prometheus-community.github.io/helm-charts
-    targetRevision: "31.0.1"
+    targetRevision: "32.0.2"
     helm:
       valuesObject:
         # Only the CRDs that something in this cluster actually reads.

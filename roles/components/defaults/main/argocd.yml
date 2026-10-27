@@ -5,7 +5,7 @@ rke2_argocd_chart:
   name: "argo-cd"
   namespace: "argocd"
   repo: "https://argoproj.github.io/argo-helm"
-  release: "10.10.5"
+  release: "10.11.6"
 rke2_argocd_redis_ha_enabled: true
 rke2_argocd_controller_replicas: 2
 rke2_argocd_server_replicas: 2
