@@ -119,6 +119,21 @@ provisioner:
         log_format: json
         level: info
         msg: Log level is enabled.
+    - name: coredns-query
+      lines:
+        - '[INFO] 10.42.1.109:58631 - 45105 "A IN nope-check.default.svc.cluster.local. udp 54 false 512" NXDOMAIN qr,aa,rd 147 0.000075914s'
+      expect:
+        log_format: text
+        level: info
+        msg: A nope-check.default.svc.cluster.local. NXDOMAIN
+        log.client: 10.42.1.109
+        log.rcode: NXDOMAIN
+    - name: coredns-servfail
+      lines:
+        - '[INFO] 10.42.1.109:41000 - 7 "AAAA IN broken.example. udp 40 false 512" SERVFAIL qr,rd 40 2.000312s'
+      expect:
+        level: error
+        msg: AAAA broken.example. SERVFAIL
     - name: nginx-error
       lines:
         - "2026/10/26 22:22:22 [error] 93#93: *1456 upstream timed out (110: Operation timed out) while connecting to upstream"
@@ -159,6 +174,8 @@ provisioner:
       filter: 'kubernetes.pod_namespace:="kube-system" kubernetes.container_name:="etcd" log_format:="json"'
     - name: metrics-server
       filter: 'kubernetes.pod_namespace:="kube-system" kubernetes.container_name:="metrics-server" log_format:="json"'
+    - name: coredns
+      filter: 'kubernetes.pod_namespace:="kube-system" kubernetes.container_name:="coredns"'
     # Cilium's logOptions (playbooks/templates/cilium.yml)
     - name: cilium-agent
       filter: 'kubernetes.pod_namespace:="kube-system" kubernetes.container_name:="cilium-agent" log_format:="json"'
@@ -188,10 +205,7 @@ provisioner:
     - name: argocd-redis
       filter: 'kubernetes.pod_namespace:="argocd" kubernetes.container_name:="redis"'
       max_unknown_ratio: 0.1
-  # Read by ../common/verify/logging.yml ("Verify ingress request logs"):
-  # each ingress class whose controller's request logs must reach the local
-  # store, that controller's Service (name.namespace), and fields its events
-  # must carry (expect).
+  logging_dns: true
   logging_ingresses:
     - name: traefik-private
       class: traefik-private

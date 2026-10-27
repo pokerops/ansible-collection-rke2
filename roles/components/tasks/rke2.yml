@@ -16,3 +16,11 @@
   when:
     - _rke2_logging_format | length > 0
     - "'rke2-metrics-server' not in (rke2_disable | default([]))"
+
+- name: Enable CoreDNS query logging
+  kubernetes.core.k8s:
+    kubeconfig: "{{ rke2_config_path }}"
+    state: present
+    apply: true
+    resource_definition: "{{ lookup('ansible.builtin.template', 'templates/coredns.yml') | from_yaml }}"
+  when: "'rke2-coredns' not in (rke2_disable | default([]))"

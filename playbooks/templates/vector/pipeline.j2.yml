@@ -249,6 +249,20 @@ spec:
                 parsed.msg = join([string(parsed.method) ?? "", string(parsed.path) ?? "", string(parsed.status) ?? ""], " ") ?? line
               }
             }
+            # CoreDNS's query log (its log plugin, templates/coredns.yml) in the
+            # common format: "[INFO] 10.42.1.109:58631 - 45106 "A IN name.
+            # udp 54 false 512" NXDOMAIN qr,aa,rd 147 0.000075914s". The level
+            # comes from the rcode (SERVFAIL error; REFUSED, FORMERR, NOTIMP
+            # warn; else info: NXDOMAIN is routine with search domains), msg
+            # is "TYPE name RCODE"
+            if err != null {
+              parsed, err = parse_regex(line, r'^\[INFO\] (?P<client>\[[0-9a-fA-F:.]+\]|[0-9.]+):(?P<port>\d+) - (?P<id>\d+) "(?P<type>\S+) (?P<class>\S+) (?P<name>\S+) (?P<proto>\S+) (?P<size>\d+) (?P<do>\S+) (?P<bufsize>\d+)" (?P<rcode>\S+) (?P<rflags>\S+) (?P<rsize>\d+) (?P<duration>[\d.]+)s$')
+              if err == null {
+                rcode = string(parsed.rcode) ?? ""
+                parsed.level = if rcode == "SERVFAIL" { "error" } else if includes(["REFUSED", "FORMERR", "NOTIMP"], rcode) { "warn" } else { "info" }
+                parsed.msg = join([string(parsed.type) ?? "", string(parsed.name) ?? "", rcode], " ") ?? line
+              }
+            }
             # coredns "[INFO] msg" and haproxy "[NOTICE]   (1) : msg"
             if err != null {
               parsed, err = parse_regex(line, r'^\[(?P<level>DEBUG|INFO|NOTICE|WARNING|ERROR|ALERT|EMERG|FATAL)\]\s+(\(\d+\)\s*:\s*)?(?P<msg>.*)$')
@@ -328,6 +342,18 @@ spec:
         if .level == "unknown" && .kubernetes.pod_namespace == "metallb-system" && .kubernetes.container_name == "reloader" &&
           match(line, r'^(Syntax error spotted|Failed to fully apply configuration file)') {
           .level = "error"
+        }
+        # CoreDNS prints its startup banner without a level (CoreDNS 1.14.1's
+        # coremain and dnsserver): the version, "os/arch, go version, commit",
+        # automaxprocs' "maxprocs: ..." and each server's listen address
+        # ("[proto]zone:port[ on ip]"), plus a warning for a zone that breaks
+        # RFC 1035 syntax.
+        if .level == "unknown" && .kubernetes.container_name == "coredns" {
+          if starts_with(line, "Warning: ") {
+            .level = "warn"
+          } else if match(line, r'^(CoreDNS-\S+|\w+/\w+, go\S+.*|maxprocs: .*|([a-z]+://)?\S*:\d+( on \S+)?)$') {
+            .level = "info"
+          }
         }
         # Spilo runs its bootstrap SQL through psql, which echoes each
         # statement's command tag ("GRANT", "CREATE FUNCTION", "INSERT 0 1")
