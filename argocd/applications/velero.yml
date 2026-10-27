@@ -22,6 +22,8 @@ spec:
           nodeAgentPodMonitor:
             enabled: true
         configuration:
+          # Applies to velero and node-agent
+          logFormat: json
           defaultVolumesToFsBackup: false
           backupStorageLocation: []
           volumeSnapshotLocation: []

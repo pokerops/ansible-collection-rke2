@@ -1,0 +1,18 @@
+---
+- name: Configure Cilium
+  kubernetes.core.k8s:
+    kubeconfig: "{{ rke2_config_path }}"
+    state: present
+    apply: true
+    resource_definition: "{{ lookup('ansible.builtin.template', 'templates/cilium.yml') | from_yaml }}"
+  when: "'cilium' in rke2_cni"
+
+- name: Set metrics-server log format
+  kubernetes.core.k8s:
+    kubeconfig: "{{ rke2_config_path }}"
+    state: present
+    apply: true
+    resource_definition: "{{ lookup('ansible.builtin.template', 'templates/metrics-server.yml') | from_yaml }}"
+  when:
+    - _rke2_logging_format | length > 0
+    - "'rke2-metrics-server' not in (rke2_disable | default([]))"

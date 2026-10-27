@@ -26,3 +26,10 @@
     apply: true
     kubeconfig: "{{ rke2_config_path }}"
     resource_definition: "{{ lookup('ansible.builtin.template', 'templates/zalando/monitors.yml') | from_yaml_all | list }}"
+
+- name: Deploy cert-manager monitor
+  kubernetes.core.k8s:
+    state: present
+    apply: true
+    kubeconfig: "{{ rke2_config_path }}"
+    resource_definition: "{{ lookup('ansible.builtin.template', 'templates/certmanager/monitors.yml') | from_yaml }}"

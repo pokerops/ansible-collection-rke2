@@ -26,6 +26,21 @@ spec:
             labelSelector: "{{ _traefik_label_selector }}={{ _traefik_chart_class }}"
         additionalArguments:
           - "--serversTransport.insecureSkipVerify=true"
+        log:
+          format: json
+        accessLog:
+          enabled: true
+          format: json
+          fields:
+            headers:
+              defaultMode: keep
+              names:
+                Authorization: redact
+                Proxy-Authorization: redact
+                Cookie: redact
+                Set-Cookie: redact
+                X-Api-Key: redact
+                X-Auth-Token: redact
   destination:
     server: https://kubernetes.default.svc
     namespace: traefik

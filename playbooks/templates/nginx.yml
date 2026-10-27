@@ -12,6 +12,54 @@ spec:
     chart: ingress-nginx
     repoURL: https://kubernetes.github.io/ingress-nginx
     targetRevision: "4.15.1"
+    helm:
+      valuesObject:
+        controller:
+          config:
+            # Request logs as JSON (controller 1.15.1), with Traefik's access
+            # log field names where they mean the same thing, so one query
+            # covers both controllers; query strings are kept, as Traefik's
+            # are. nginx can't log every header, only named ones: these go
+            # under Traefik's request_<Header> names, and headers carrying
+            # credentials (Authorization, Cookie, ...) are left out. Numbers
+            # are unquoted; upstream fields can be "-" or lists.
+            log-format-escape-json: "true"
+            log-format-upstream: >-
+              {"time": "$time_iso8601",
+              "ClientHost": "$remote_addr",
+              "RequestHost": "$host",
+              "RequestMethod": "$request_method",
+              "RequestPath": "$request_uri",
+              "RequestProtocol": "$server_protocol",
+              "RequestContentSize": $request_length,
+              "DownstreamStatus": $status,
+              "DownstreamContentSize": $body_bytes_sent,
+              "request_time": $request_time,
+              "request_id": "$req_id",
+              "request_Referer": "$http_referer",
+              "request_User-Agent": "$http_user_agent",
+              "request_Accept": "$http_accept",
+              "request_Accept-Encoding": "$http_accept_encoding",
+              "request_Accept-Language": "$http_accept_language",
+              "request_Content-Type": "$http_content_type",
+              "request_Origin": "$http_origin",
+              "request_Upgrade": "$http_upgrade",
+              "request_X-Forwarded-For": "$http_x_forwarded_for",
+              "request_X-Forwarded-Host": "$http_x_forwarded_host",
+              "request_X-Forwarded-Proto": "$http_x_forwarded_proto",
+              "request_X-Real-Ip": "$http_x_real_ip",
+              "request_X-Request-Id": "$http_x_request_id",
+              "request_Cf-Connecting-Ip": "$http_cf_connecting_ip",
+              "request_Cf-Ipcountry": "$http_cf_ipcountry",
+              "request_Cf-Ray": "$http_cf_ray",
+              "request_True-Client-Ip": "$http_true_client_ip",
+              "KubernetesIngressNamespace": "$namespace",
+              "KubernetesIngressName": "$ingress_name",
+              "KubernetesServiceName": "$service_name",
+              "upstream": "$proxy_upstream_name",
+              "ServiceAddr": "$upstream_addr",
+              "OriginStatus": "$upstream_status",
+              "upstream_response_time": "$upstream_response_time"}
   destination:
     server: https://kubernetes.default.svc
     namespace: nginx
@@ -19,9 +67,6 @@ spec:
     automated:
       prune: true
       selfHeal: true
-    # Argo's built-in retry for automated syncs (5 attempts, about 2.5m)
-    # gives up on a repo-server restart, and an automated sync never
-    # retries a failed revision.
     retry:
       limit: 10
       backoff:

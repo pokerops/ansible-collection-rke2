@@ -1,4 +1,7 @@
 ---
+- name: Include rke2 bundled chart tasks
+  ansible.builtin.include_tasks: rke2.yml
+
 - name: Include cert-manager tasks
   ansible.builtin.include_tasks: certmanager.yml
 

@@ -1,0 +1,13 @@
+---
+# rke2's bundled metrics-server (rke2-metrics-server 3.13.007, metrics-server
+# 0.8.0) logs JSON with --logging-format=json (component-base); the chart
+# appends args after its defaultArgs.
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: rke2-metrics-server
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    args:
+      - --logging-format={{ _rke2_logging_format }}

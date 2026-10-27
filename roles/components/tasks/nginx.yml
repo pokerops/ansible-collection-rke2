@@ -27,12 +27,9 @@
       spec:
         source:
           helm:
-            controller:
-              kind: DaemonSet
-            service:
-              externalTrafficPolicy: Local
             valuesObject:
               controller:
+                kind: DaemonSet
                 metrics:
                   enabled: true
                   serviceMonitor:
@@ -48,6 +45,7 @@
                   annotations:
                     cert-manager.io/cluster-issuer: "{{ rke2_certmanager_issuer_name }}"
                 service:
+                  externalTrafficPolicy: Local
                   annotations:
                     metallb.universe.tf/address-pool: "metallb-private"
   when: _nginx_deploy_private | bool
@@ -69,6 +67,7 @@
           helm:
             valuesObject:
               controller:
+                kind: DaemonSet
                 metrics:
                   enabled: true
                   serviceMonitor:
@@ -84,6 +83,7 @@
                   annotations:
                     cert-manager.io/cluster-issuer: "{{ rke2_certmanager_issuer_name }}"
                 service:
+                  externalTrafficPolicy: Local
                   annotations:
                     metallb.universe.tf/address-pool: "metallb-public"
   when: _nginx_deploy_public | bool

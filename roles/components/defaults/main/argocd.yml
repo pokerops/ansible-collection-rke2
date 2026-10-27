@@ -23,8 +23,10 @@ rke2_argocd_values:
       enabled: true
       ingressClassName: "{{ rke2_argocd_ingress_class }}"
       hostname: "{{ rke2_argocd_hostname }}"
-      annotations:
-        cert-manager.io/cluster-issuer: "{{ rke2_certmanager_issuer_name }}"
+      # No cert-manager.io/cluster-issuer annotation: server.certificate
+      # below already issues argocd-server-tls, and ingress-shim would add a
+      # second Certificate for the same secret; the two reissue it in a loop
+      # that every Argo CD component and the ingress controller reload.
       tls: true
     certificate:
       enabled: true
@@ -39,6 +41,10 @@ rke2_argocd_values:
   configs: "{{ rke2_argocd_values_configs | default({}) }}"
   notifications: "{{ rke2_argocd_values_notifications | default({}) }}"
   global:
+    # JSON for server, controller, repo-server, applicationset, notifications
+    # and dex (chart 10.10.5); redis has no JSON option and logs text
+    logging:
+      format: json
     env:
       - name: ARGOCD_EXEC_TIMEOUT
         value: "{{ rke2_argocd_exec_timeout }}"
@@ -48,44 +54,12 @@ rke2_argocd_apps_chart:
   namespace: "argocd"
   repo: "https://argoproj.github.io/argo-helm"
   release: "2.0.7"
-rke2_argocd_apps_pokerops_revision: 0.9.19
+rke2_argocd_apps_pokerops_revision: 0.10.0
 rke2_argocd_apps_values_extra: {}
 rke2_argocd_apps_directory_include: "{*.yml,*.yaml}"
 rke2_argocd_apps_directory_exclude: ""
 rke2_argocd_apps_values_base:
   applications:
-    cilium:
-      project: default
-      source:
-        repoURL: https://github.com/pokerops/ansible-collection-rke2.git
-        targetRevision: "{{ rke2_argocd_apps_pokerops_revision }}"
-        path: argocd/cilium/
-        directory:
-          recurse: false
-          include: "{{ rke2_argocd_apps_directory_include }}"
-          exclude: "{{ rke2_argocd_apps_directory_exclude }}"
-      destination:
-        server: https://kubernetes.default.svc
-        namespace: default
-      syncPolicy:
-        automated:
-          prune: true
-          selfHeal: true
-        # Argo's built-in retry for automated syncs (5 attempts, about 2.5m)
-        # gives up on a repo-server restart, and an automated sync never
-        # retries a failed revision. Same policy on every app.
-        retry:
-          limit: 10
-          backoff:
-            duration: 10s
-            factor: 2
-            maxDuration: 3m
-        syncOptions:
-          - ApplyOutOfSyncOnly=true
-      revisionHistoryLimit:
-      info:
-        - name: url
-          value: https://github.com/pokerops/ansible-collection-rke2
     cluster:
       project: default
       source:
@@ -103,6 +77,9 @@ rke2_argocd_apps_values_base:
         automated:
           prune: true
           selfHeal: true
+        # Argo's built-in retry for automated syncs (5 attempts, about 2.5m)
+        # gives up on a repo-server restart, and an automated sync never
+        # retries a failed revision. Same policy on every app.
         retry:
           limit: 10
           backoff:

@@ -49,6 +49,33 @@ spec:
         source: >-
           !(.kubernetes.pod_namespace == "longhorn-system" &&
           contains(string(.message) ?? "", "v1 Endpoints is deprecated"))
+    # A pod's multi-line events (Java, .NET and Python stack traces, Caused
+    # by: chains) arrive one line per event; kubernetes_logs has no multiline
+    # option, so lines are merged here, per container log file. A blank
+    # line, or one that starts with whitespace, "Caused by: ", Python's
+    # traceback header and chaining notes, an exception name (dotted, or a
+    # bare Python builtin like "KeyError: ") or Postgres's follow-ups
+    # ("DETAIL:  ", "HINT:  ") joins the event before it; anything else
+    # starts a new one. Each event waits for its container's next line or 1s
+    # of quiet, and max_events caps a container that only ever prints
+    # indented lines (above Kafka's ~300-line "KafkaConfig values:" dump,
+    # which a lower cap split into an unparsed tail).
+    k8s_logs_merged:
+      type: reduce
+      inputs: [k8s_logs_filtered]
+      group_by: [file]
+      starts_when:
+        type: vrl
+        source: >-
+          !match(string(.message) ?? "",
+          r'^($|\s|Caused by: |Traceback \(most recent call last\):|During handling of the above exception|The above exception was the direct cause|(DETAIL|HINT|CONTEXT|STATEMENT):  |([A-Za-z_$][\w$]*\.)*[A-Z][\w$]*(Exception|Error|Throwable)(: |$))')
+      merge_strategies:
+        message: concat_newline
+        # The first line's time; without this reduce adds timestamp_end
+        timestamp: discard
+      expire_after_ms: 1000
+      flush_period_ms: 500
+      max_events: 500
     # Node events carry no kubernetes.* to say where they came from: node is
     # the agent's own node (the file source's .host is the agent pod's
     # hostname, so it's dropped), unit the systemd unit without .service or
@@ -75,23 +102,28 @@ spec:
     # entry, or file read) time.
     logs_normalized:
       type: remap
-      inputs: [k8s_logs_filtered, node_logs_labeled]
+      inputs: [k8s_logs_merged, node_logs_labeled]
       source: |
         if .node == null { .node = .kubernetes.pod_node_name }
         raw = string(.message) ?? ""
+        # Formats are recognized on the first line; the rest of a merged
+        # event (k8s_logs_merged: a stack trace) is appended to msg below.
+        lines = split(raw, "\n", limit: 2)
+        line = string(lines[0]) ?? raw
+        rest = string(lines[1]) ?? ""
         .log_format = "text"
         .level = "unknown"
         .msg = raw
         fields = {}
-        if starts_with(raw, "{") {
-          parsed, err = parse_json(raw)
+        if starts_with(line, "{") {
+          parsed, err = parse_json(line)
           if err == null && is_object(parsed) {
             fields = object!(parsed)
             .log_format = "json"
           }
         }
-        if .log_format == "text" && match(raw, r'^[IWEF]\d{4} \d{2}:\d{2}:\d{2}\.\d+\s+\d+ ') {
-          parsed, err = parse_klog(raw)
+        if .log_format == "text" && match(line, r'^[IWEF]\d{4} \d{2}:\d{2}:\d{2}\.\d+\s+\d+ ') {
+          parsed, err = parse_klog(line)
           if err == null {
             fields = parsed
             .log_format = "klog"
@@ -100,7 +132,7 @@ spec:
         # SeaweedFS's glog fork drops klog's thread id and "]", which
         # parse_klog rejects: "E1018 19:43:53.060246 mount_common.go:166 msg".
         if .log_format == "text" {
-          parsed, err = parse_regex(raw, r'^(?P<severity>[IWEF])(?P<time>\d{4} \d{2}:\d{2}:\d{2}\.\d+) (?P<file>[\w.-]+):(?P<line>\d+)\]? (?P<message>.*)$')
+          parsed, err = parse_regex(line, r'^(?P<severity>[IWEF])(?P<time>\d{4} \d{2}:\d{2}:\d{2}\.\d+) (?P<file>[\w.-]+):(?P<line>\d+)\]? (?P<message>.*)$')
           if err == null {
             parsed.level = get(
               {"I": "info", "W": "warning", "E": "error", "F": "fatal"},
@@ -110,9 +142,15 @@ spec:
             .log_format = "klog"
           }
         }
-        if .log_format == "text" && match(raw, r'(^|\s)(level|lvl)=\S') {
-          parsed, err = parse_logfmt(raw)
+        # Longhorn's instance-manager prefixes each process's logfmt line
+        # with its name ("[pvc-...-r-21cdfbed] time=... level=..."); parsed
+        # as is, the name became a field of its own per process.
+        if .log_format == "text" && match(line, r'(^|\s)(level|lvl)=\S') {
+          prefix, perr = parse_regex(line, r'^\[(?P<process>[\w.-]+)\] (?P<rest>.*)$')
+          body = if perr == null { string(prefix.rest) ?? line } else { line }
+          parsed, err = parse_logfmt(body)
           if err == null {
+            if perr == null { parsed.process = prefix.process }
             fields = parsed
             .log_format = "logfmt"
           }
@@ -122,10 +160,19 @@ spec:
         # come from the line. zap's console encoder first (time, level,
         # logger, msg and an optional JSON object, tab-separated - e.g.
         # seaweedfs-operator), then a level token after a leading timestamp
-        # (Vector's text format, log4j patterns like strimzi's), coredns's
-        # "[LEVEL] msg", and the kubelet's startup flag deprecation notices.
+        # (Vector's text format, log4j patterns like strimzi's), Serilog's
+        # "time [LVL] (Source) msg" (reflector), redis's "pid:role time sym
+        # msg", FRR's "time DAEMON: [ID] msg", nginx's "time [level] pid#tid:
+        # msg", MariaDB's "time [Note] msg",
+        # Python's "time - logger - LEVEL - msg", Postgres's "LEVEL:  msg"
+        # (bare from psql, or after the server's log_line_prefix), pgqd's
+        # "time TZ [pid] LEVEL msg", the Prometheus JMX exporter agent's
+        # "time | thread | LEVEL | logger | msg", Longhorn's iSCSI frontend
+        # "[time] Info: msg", HTTP access lines (common/combined log format),
+        # coredns's and haproxy's "[LEVEL] msg", and the kubelet's startup
+        # flag deprecation notices.
         if .log_format == "text" {
-          parsed, err = parse_regex(raw, r'^(?P<time>\d{4}-\d{2}-\d{2}T\S+)\t(?P<level>[A-Z]+)\t(?P<logger>[^\t]*)\t(?P<msg>[^\t]*)\t?(?P<extra>.*)$')
+          parsed, err = parse_regex(line, r'^(?P<time>\d{4}-\d{2}-\d{2}T\S+)\t(?P<level>[A-Z]+)\t(?P<logger>[^\t]*)\t(?P<msg>[^\t]*)\t?(?P<extra>.*)$')
           if err == null {
             extra = {}
             if parsed.extra != "" {
@@ -133,12 +180,81 @@ spec:
             }
             fields = merge(extra, {"time": parsed.time, "level": parsed.level, "logger": parsed.logger, "msg": parsed.msg})
           } else {
-            parsed, err = parse_regex(raw, r'^\d{4}-\d{2}-\d{2}[T ][\d:.,]+Z?\s+(?P<level>TRACE|DEBUG|INFO|WARN|WARNING|ERROR|FATAL)\s+(?P<msg>.*)$')
+            parsed, err = parse_regex(line, r'^\d{4}-\d{2}-\d{2}[T ][\d:.,]+Z?\s+(?P<level>TRACE|DEBUG|INFO|WARN|WARNING|ERROR|CRITICAL|FATAL):?\s+(?P<msg>.*)$')
             if err != null {
-              parsed, err = parse_regex(raw, r'^\[(?P<level>DEBUG|INFO|WARNING|ERROR|FATAL)\] (?P<msg>.*)$')
+              parsed, err = parse_regex(line, r'^\d{4}-\d{2}-\d{2} [\d:.]+ [+-]\d{2}:\d{2} \[(?P<level>VRB|DBG|INF|WRN|ERR|FTL)\] \((?P<logger>[^)]*)\) (?P<msg>.*)$')
             }
-            if err != null && match(raw, r'^Flag --\S+ has been deprecated') {
-              parsed = {"level": "warning", "msg": raw}
+            # redis and sentinel: "1:M 23 Oct 2026 03:44:35.339 * msg", the
+            # symbol is the level ("." debug, "-" verbose, "*" notice, "#"
+            # warning)
+            if err != null {
+              parsed, err = parse_regex(line, r'^\d+:[XCSM] \d{1,2} \w{3} \d{4} [\d:.]+ (?P<sym>[.*#-]) (?P<msg>.*)$')
+              if err == null {
+                parsed.level = get({".": "debug", "-": "debug", "*": "notice", "#": "warning"}, [string(parsed.sym) ?? ""]) ?? null
+              }
+            }
+            # FRR (MetalLB's frr-k8s): "2026/10/24 02:20:41.890 BGP: [ID] msg";
+            # the level is only there with FRR's log record-priority, which
+            # frr-k8s doesn't set ("... notifications: BGP: ...")
+            if err != null {
+              parsed, err = parse_regex(line, r'^\d{4}/\d{2}/\d{2} [\d:.]+ ((?P<level>emergencies|alerts|critical|errors|warnings|notifications|informational|debugging): )?(?P<daemon>[A-Z0-9]+): (\[(?P<id>[A-Z0-9]{5}-[A-Z0-9]{5})\] )?(?P<msg>.*)$')
+            }
+            # nginx's error log (ingress-nginx's controller): "2026/10/26
+            # 22:22:22 [error] 93#93: *1456 msg", the "*N" a connection id
+            if err != null {
+              parsed, err = parse_regex(line, r'^\d{4}/\d{2}/\d{2} [\d:]+ \[(?P<level>debug|info|notice|warn|error|crit|alert|emerg)\] \d+#\d+: (\*(?P<connection>\d+) )?(?P<msg>.*)$')
+            }
+            # MariaDB: the server's "2026-10-24  5:22:21 0 [Note] msg" (hour
+            # space-padded, then a thread id) and its entrypoint script's
+            # "2026-10-24 05:22:19+00:00 [Note] [Entrypoint]: msg"
+            if err != null {
+              parsed, err = parse_regex(line, r'^\d{4}-\d{2}-\d{2}\s+\d{1,2}:\d{2}:\d{2}([+-]\d{2}:\d{2}| \d+) \[(?P<level>Note|Warning|ERROR|System)\] (?P<msg>.*)$')
+            }
+            # Python's "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+            # (Spilo's bootstrap: "2026-10-24 14:48:10,123 - bootstrapping -
+            # INFO - msg")
+            if err != null {
+              parsed, err = parse_regex(line, r'^\d{4}-\d{2}-\d{2} [\d:.,]+ - (?P<logger>\S+) - (?P<level>DEBUG|INFO|WARNING|ERROR|CRITICAL) - (?P<msg>.*)$')
+            }
+            # Postgres: "NOTICE:  msg" from psql, or the server's stderr
+            # before its logging collector starts, after a log_line_prefix
+            # that begins with a timestamp ("2026-10-24 14:48:20 UTC [68]:
+            # [1-1] ... LOG:  msg"); always two spaces after the level
+            if err != null {
+              parsed, err = parse_regex(line, r'^(\d{4}-\d{2}-\d{2} [\d:.]+ [A-Z]{2,5} .*?)?(?P<level>DEBUG[1-5]|LOG|INFO|NOTICE|WARNING|ERROR|FATAL|PANIC):  (?P<msg>.*)$')
+            }
+            # pgqd (Spilo's PgQ ticker): "2026-10-24 14:54:28.123 UTC [93]
+            # LOG msg"
+            if err != null {
+              parsed, err = parse_regex(line, r'^\d{4}-\d{2}-\d{2} [\d:.]+ [A-Z]{2,5} \[\d+\] (?P<level>DEBUG|LOG|INFO|NOTICE|WARNING|ERROR|FATAL) (?P<msg>.*)$')
+            }
+            # The Prometheus JMX exporter's Java agent (in Strimzi's Kafka
+            # pods): "2026-10-24 19:29:11.627 | main | INFO |
+            # io.prometheus.jmx.JavaAgent | Starting ..."
+            if err != null {
+              parsed, err = parse_regex(line, r'^\d{4}-\d{2}-\d{2} [\d:.,]+ \| (?P<thread>[^|]+?) \| (?P<level>[A-Z]+) \| (?P<logger>[^|]+?) \| (?P<msg>.*)$')
+            }
+            # Longhorn's iSCSI frontend (liblonghorn, in instance-manager):
+            # "[2026-10-23 03:52:23.365223] Info: msg"
+            if err != null {
+              parsed, err = parse_regex(line, r'^\[\d{4}-\d{2}-\d{2} [\d:.]+\] (?P<level>Debug|Info|Warn|Warning|Error): (?P<msg>.*)$')
+            }
+            # HTTP access lines in common/combined log format
+            # (longhorn-manager's API, ingress-nginx): level from the status
+            if err != null {
+              parsed, err = parse_regex(line, r'^(?P<client>\S+) \S+ (?P<user>\S+) \[(?P<time>[^\]]+)\] "(?P<method>[A-Z]+) (?P<path>\S+) (?P<protocol>[^"]*)" (?P<status>\d{3}) (?P<bytes>\S+)')
+              if err == null {
+                status = to_int(parsed.status) ?? 0
+                parsed.level = if status >= 500 { "error" } else if status >= 400 { "warn" } else { "info" }
+                parsed.msg = join([string(parsed.method) ?? "", string(parsed.path) ?? "", string(parsed.status) ?? ""], " ") ?? line
+              }
+            }
+            # coredns "[INFO] msg" and haproxy "[NOTICE]   (1) : msg"
+            if err != null {
+              parsed, err = parse_regex(line, r'^\[(?P<level>DEBUG|INFO|NOTICE|WARNING|ERROR|ALERT|EMERG|FATAL)\]\s+(\(\d+\)\s*:\s*)?(?P<msg>.*)$')
+            }
+            if err != null && match(line, r'^Flag --\S+ has been deprecated') {
+              parsed = {"level": "warning", "msg": line}
               err = null
             }
             if err == null { fields = parsed }
@@ -150,18 +266,31 @@ spec:
           if level == null { level = fields.lvl }
           if level == null { level = fields.severity }
           if level == null { level = get(fields, ["log.level"]) ?? null }
-          l = downcase(to_string(level) ?? "")
-          .level = if starts_with(l, "trace") {
+          # Kubernetes' component-base JSON format (the control plane, the
+          # kubelet, metrics-server, cert-manager) has no level key: info
+          # lines carry their verbosity "v" (0 info, more is debug), error
+          # lines no "v", with an "err" (ErrorS) or without (Error, which
+          # still has the format's "ts" and "caller")
+          if level == null && is_integer(fields.v) {
+            level = if fields.v == 0 { "info" } else { "debug" }
+          }
+          if level == null && fields.v == null && (fields.err != null || (fields.ts != null && fields.caller != null)) {
+            level = "error"
+          }
+          # Quotes stripped: Vector's own JSON can repeat "level" as a field
+          # holding a quoted value ("\"info\""), which wins in parse_json
+          l = replace(downcase(to_string(level) ?? ""), "\"", "")
+          .level = if starts_with(l, "trace") || l == "vrb" {
             "trace"
           } else if starts_with(l, "debug") || l == "dbg" {
             "debug"
-          } else if starts_with(l, "info") || l == "inf" || l == "notice" {
+          } else if starts_with(l, "info") || l == "inf" || l == "log" || l == "notice" || l == "notifications" || l == "note" || l == "system" {
             "info"
           } else if starts_with(l, "warn") || l == "wrn" {
             "warn"
           } else if starts_with(l, "err") || l == "eror" {
             "error"
-          } else if starts_with(l, "fatal") || starts_with(l, "crit") || starts_with(l, "panic") || l == "dpanic" || l == "ftl" {
+          } else if starts_with(l, "fatal") || starts_with(l, "crit") || starts_with(l, "panic") || starts_with(l, "alert") || starts_with(l, "emerg") || l == "dpanic" || l == "ftl" {
             "fatal"
           } else {
             "unknown"
@@ -169,6 +298,19 @@ spec:
           message = fields.msg
           if message == null { message = fields.message }
           if message != null { .msg = to_string(message) ?? raw }
+        }
+        # Ingress request logs: Traefik's JSON access log, and ingress-nginx's
+        # log-format-upstream (playbooks/templates/nginx.yml), which uses
+        # Traefik's field names. Neither has a level of its own (Traefik
+        # writes "info" and an empty msg): the level comes from the status, as
+        # for the text access lines above, and msg is "METHOD path status".
+        # nginx logs headers and upstream fields it hasn't got as "" (Traefik
+        # leaves them out); those are dropped, so both read the same.
+        if .log_format == "json" && fields.DownstreamStatus != null && fields.RequestMethod != null {
+          .log = compact(fields, string: true, null: false, object: false, array: false)
+          status = to_int(fields.DownstreamStatus) ?? 0
+          .level = if status >= 500 { "error" } else if status >= 400 { "warn" } else { "info" }
+          .msg = join([string(fields.RequestMethod) ?? "", string(fields.RequestPath) ?? "", to_string(status)], " ") ?? raw
         }
         # Structured klog (the kubelet, most control-plane components) puts
         # a quoted message and then key="value" pairs in the message part.
@@ -180,6 +322,24 @@ spec:
             kv = parse_logfmt(parts.kv) ?? {}
             .log = merge(kv, object(.log) ?? {})
           }
+        }
+        # MetalLB's FRR reloader wrapper (a shell script) reports a config it
+        # could not apply without any level.
+        if .level == "unknown" && .kubernetes.pod_namespace == "metallb-system" && .kubernetes.container_name == "reloader" &&
+          match(line, r'^(Syntax error spotted|Failed to fully apply configuration file)') {
+          .level = "error"
+        }
+        # Spilo runs its bootstrap SQL through psql, which echoes each
+        # statement's command tag ("GRANT", "CREATE FUNCTION", "INSERT 0 1")
+        # and database switches without a level: they report success.
+        if .level == "unknown" && contains(string(.kubernetes.container_image) ?? "", "/spilo-") &&
+          match(line, r'^([A-Z]+( [A-Z]+)*( \d+)*|You are now connected to database .*)$') {
+          .level = "info"
+        }
+        # A merged event's continuation lines (its stack trace) follow the
+        # first line's msg; an unparsed event's msg is already the raw text.
+        if rest != "" && .msg != raw {
+          .msg = to_string(.msg) + "\n" + rest
         }
         # Plain-text journal lines still have the syslog priority the unit
         # logged them at (stdout defaults to info).

@@ -15,19 +15,19 @@ platforms:
       - rke2_server
   - name: rke2-${MOLECULE_SCENARIO_NAME}-agent-01
     image: "${MOLECULE_KVM_IMAGE}"
-    cpu: 1
+    cpu: 2
     mem: 4
     groups:
       - rke2_agent
   - name: rke2-${MOLECULE_SCENARIO_NAME}-agent-02
     image: "${MOLECULE_KVM_IMAGE}"
-    cpu: 1
+    cpu: 2
     mem: 4
     groups:
       - rke2_agent
   - name: rke2-${MOLECULE_SCENARIO_NAME}-agent-03
     image: "${MOLECULE_KVM_IMAGE}"
-    cpu: 1
+    cpu: 2
     mem: 4
     groups:
       - rke2_agent
@@ -47,6 +47,66 @@ provisioner:
     links:
       group_vars: ../common/group_vars
       hosts: ./hosts.yml
+  # Read by ../common/verify/logging.yml; see ../monitoring/molecule.yml for
+  # the fields of both lists.
+  logging_events:
+    - name: spilo-bootstrap
+      lines:
+        - "2026-10-24 14:48:10,123 - bootstrapping - INFO - Configuring patroni"
+      expect:
+        log_format: text
+        level: info
+        msg: Configuring patroni
+        log.logger: bootstrapping
+    - name: postgres-notice
+      lines:
+        - 'NOTICE:  extension "pg_stat_statements" already exists, skipping'
+        - "DETAIL:  shown for the extension's schema"
+      expect:
+        log_format: text
+        level: info
+        msg: "extension \"pg_stat_statements\" already exists, skipping\n\
+          DETAIL:  shown for the extension's schema"
+    - name: pgqd
+      lines:
+        - "2026-10-24 14:54:28.123 UTC [93] WARNING [pagila]: default timeout"
+      expect:
+        log_format: text
+        level: warn
+        msg: "[pagila]: default timeout"
+    - name: python-traceback
+      lines:
+        - "2026-10-24 14:54:28,573 ERROR: Can not fetch local timeline and lsn from replication connection"
+        - "Traceback (most recent call last):"
+        - '  File "/usr/local/lib/python3.10/dist-packages/patroni/psycopg.py", line 123, in connect'
+        - "psycopg2.OperationalError: connection to server failed"
+        - ""
+        - "During handling of the above exception, another exception occurred:"
+        - ""
+        - "Traceback (most recent call last):"
+        - "KeyError: 'x'"
+      expect:
+        log_format: text
+        level: error
+        msg: "Can not fetch local timeline and lsn from replication connection\n\
+          Traceback (most recent call last):\n\
+          \  File \"/usr/local/lib/python3.10/dist-packages/patroni/psycopg.py\", line 123, in connect\n\
+          psycopg2.OperationalError: connection to server failed\n\
+          \n\
+          During handling of the above exception, another exception occurred:\n\
+          \n\
+          Traceback (most recent call last):\n\
+          KeyError: 'x'"
+  logging_workloads:
+    # Spilo's container also carries initdb's, runit's and pg_isready's
+    # unleveled output; Patroni, the bootstrap, psql and pgqd are parsed
+    - name: spilo
+      filter: 'kubernetes.pod_namespace:="molecule" kubernetes.container_name:="postgres"'
+      max_unknown_ratio: 0.15
+    - name: postgres-exporter
+      filter: 'kubernetes.pod_namespace:="molecule" kubernetes.container_name:="postgres-exporter"'
+    - name: postgres-operator
+      filter: 'kubernetes.pod_namespace:="postgres-operator" kubernetes.container_name:="postgres-operator"'
 verifier:
   name: ansible
 scenario:

@@ -18,6 +18,20 @@
         valuesContent: |-
           crds:
             enabled: true
+          # JSON for the controller, webhook and cainjector (v1.21.2). This
+          # format carries no level key: info lines have a verbosity "v",
+          # errors an "err" (the remap in vector/pipeline.j2.yml maps both)
+          config:
+            logging:
+              format: json
+          webhook:
+            config:
+              logging:
+                format: json
+          cainjector:
+            config:
+              logging:
+                format: json
           podDnsPolicy: None
           podDnsConfig:
             nameservers:

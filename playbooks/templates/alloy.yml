@@ -30,6 +30,10 @@ spec:
       varlog: false
     configMap:
       content: |
+        logging {
+          format = "json"
+        }
+
         // Targets declared by charts as ServiceMonitors. metallb authenticates
         // with a ServiceAccount token from disk, which Alloy refuses by default
         // and skips with only a log line; these charts are ours, so allow it.

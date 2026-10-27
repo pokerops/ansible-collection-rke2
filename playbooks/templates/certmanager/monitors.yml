@@ -1,0 +1,29 @@
+---
+# cert-manager's controller, cainjector and webhook serve metrics on 9402
+# (prometheus.enabled, on by default in chart v1.21.2); this is the chart's
+# own ServiceMonitor (prometheus.servicemonitor). It is applied here instead
+# because cert-manager installs before Argo CD brings the ServiceMonitor CRD,
+# and Argo CD needs cert-manager first.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: cert-manager
+  namespace: "{{ rke2_certmanager_chart.namespace }}"
+spec:
+  jobLabel: app.kubernetes.io/name
+  selector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values: [cainjector, cert-manager, webhook]
+      - key: app.kubernetes.io/instance
+        operator: In
+        values: [cert-manager]
+      - key: app.kubernetes.io/component
+        operator: In
+        values: [cainjector, controller, webhook]
+  endpoints:
+    - targetPort: http-metrics
+      path: /metrics
+      interval: 60s
+      scrapeTimeout: 30s

@@ -314,6 +314,32 @@
              | map('regex_replace', '^.*:"(.*)"$', '\1') | unique | list }}
         _unscraped: "{{ _declared | difference(_scraped) }}"
 
+    # Certificate expiry is what cert-manager's metrics are for; the
+    # namespace check above passes on any of its series. Every cluster has
+    # certificates (the private CA, Argo CD's), so the series must exist.
+    - name: Wait for certificate expiry metrics to reach the ingestor
+      ansible.builtin.command:
+        cmd: >-
+          kubectl --kubeconfig {{ molecule_local_kubeconfig }}
+          exec -n {{ monitoring_namespace }} {{ _ingestor_pod }}
+          -- grep -c certmanager_certificate_expiration_timestamp_seconds
+          {{ monitoring_ingestor_file }}
+      register: _certificate_expiry
+      changed_when: false
+      failed_when: false
+      retries: "{{ monitoring_settle_retries }}"
+      delay: "{{ monitoring_settle_delay }}"
+      until: (_certificate_expiry.stdout | default('0') | trim | int) > 0
+
+    - name: Verify certificate expiry metrics are collected
+      ansible.builtin.assert:
+        that: (_certificate_expiry.stdout | default('0') | trim | int) > 0
+        fail_msg: >-
+          No certmanager_certificate_expiration_timestamp_seconds reached the
+          ingestor; check the cert-manager ServiceMonitor
+          (templates/certmanager/monitors.yml).
+        success_msg: "Ingestor received {{ _certificate_expiry.stdout | trim }} certificate expiry series"
+
 # The cluster-local log store (VictoriaLogs). Queried only through
 # kubectl port-forward, the admin path: its NetworkPolicy admits only the
 # Vector agents and Alloy, and port-forward traffic enters the pod over its
@@ -322,24 +348,10 @@
   hosts: localhost
   connection: local
   gather_facts: false
+  vars_files:
+    - vars/victorialogs.yml
   vars:
-    _vl_namespace: monitoring
-    _vl_name: victoria-logs
-    _vl_port: 19428
-    _vl_settle_retries: 30
-    _vl_settle_delay: 10
-    _vl_probe_image: "curlimages/curl:8.11.1"
-    _kubectl: "kubectl --kubeconfig {{ molecule_local_kubeconfig }}"
     _node_count: "{{ query('ansible.builtin.inventory_hostnames', 'rke2_server:rke2_agent') | length }}"
-    # Runs one LogsQL query through a port-forward and prints the JSON
-    # lines it returns.
-    _vl_query: >-
-      {{ _kubectl }} -n {{ _vl_namespace }} port-forward svc/{{ _vl_name }}
-      {{ _vl_port }}:9428 >/dev/null 2>&1 & pf=$!; trap 'kill $pf' EXIT;
-      for i in $(seq 1 40); do
-      curl -sf http://127.0.0.1:{{ _vl_port }}/health >/dev/null && break; sleep 0.25;
-      done;
-      curl -sf http://127.0.0.1:{{ _vl_port }}/select/logsql/query --data-urlencode
   tasks:
     - name: Wait for VictoriaLogs to become ready
       kubernetes.core.k8s_info:
@@ -453,6 +465,9 @@
           enforces it.
         success_msg: "The NetworkPolicy blocks other pods ({{ _vl_probe.stdout | default('no response', true) }})"
 
+- name: Verify log parsing in the local store
+  ansible.builtin.import_playbook: logging.yml
+
 # The agents' disk buffer for the local sink must carry events logged while
 # the store is down. Argo CD's self-heal would restore the StatefulSet at
 # once, so automated sync is paused for the outage and restored after.
@@ -460,21 +475,8 @@
   hosts: localhost
   connection: local
   gather_facts: false
-  vars:
-    _vl_namespace: monitoring
-    _vl_name: victoria-logs
-    _vl_port: 19428
-    _vl_settle_retries: 30
-    _vl_settle_delay: 10
-    _vl_probe_image: "curlimages/curl:8.11.1"
-    _kubectl: "kubectl --kubeconfig {{ molecule_local_kubeconfig }}"
-    _vl_query: >-
-      {{ _kubectl }} -n {{ _vl_namespace }} port-forward svc/{{ _vl_name }}
-      {{ _vl_port }}:9428 >/dev/null 2>&1 & pf=$!; trap 'kill $pf' EXIT;
-      for i in $(seq 1 40); do
-      curl -sf http://127.0.0.1:{{ _vl_port }}/health >/dev/null && break; sleep 0.25;
-      done;
-      curl -sf http://127.0.0.1:{{ _vl_port }}/select/logsql/query --data-urlencode
+  vars_files:
+    - vars/victorialogs.yml
   tasks:
     - name: Name the outage marker
       ansible.builtin.set_fact:

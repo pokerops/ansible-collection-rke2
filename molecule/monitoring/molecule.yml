@@ -42,6 +42,165 @@ provisioner:
     links:
       group_vars: ../common/group_vars
       hosts: ./hosts.yml
+  logging_events:
+    - name: json
+      lines:
+        - '{"level":"warning","msg":"volume nearly full","volume":"data","usage":91}'
+      expect:
+        log_format: json
+        level: warn
+        msg: volume nearly full
+        log.volume: data
+        log.usage: 91
+    - name: java-stack-trace
+      lines:
+        - "2026-01-01 00:00:00 ERROR Probe:1 - Reconciliation failed"
+        - "java.lang.IllegalStateException: boom"
+        - "\tat io.example.Probe.run(Probe.java:10)"
+        - "Caused by: java.io.IOException: nope"
+        - "\t... 3 more"
+      expect:
+        log_format: text
+        level: error
+        msg: "Probe:1 - Reconciliation failed\n\
+          java.lang.IllegalStateException: boom\n\
+          \tat io.example.Probe.run(Probe.java:10)\n\
+          Caused by: java.io.IOException: nope\n\
+          \t... 3 more"
+    - name: frr
+      lines:
+        - "2026/10/24 02:20:41.890 notifications: BGP: [M7Q4P-46WDR] vty[23]@> enable"
+      expect:
+        log_format: text
+        level: info
+        msg: vty[23]@> enable
+        log.daemon: BGP
+        log.id: M7Q4P-46WDR
+    - name: python-logging
+      lines:
+        - "2026-10-24 01:00:00,123  INFO: Loading Config object from vtysh show running"
+      expect:
+        log_format: text
+        level: info
+        msg: Loading Config object from vtysh show running
+    - name: logfmt-process-prefix
+      lines:
+        - >-
+          [pvc-0000-r-21cdfbed] time="2026-10-24T01:01:11.129Z" level=warning
+          msg="Failed to write" func="dataconn.(*Server).write" file="server.go:141"
+      expect:
+        log_format: logfmt
+        level: warn
+        msg: Failed to write
+        log.process: pvc-0000-r-21cdfbed
+        log.func: dataconn.(*Server).write
+    - name: http-access
+      lines:
+        - >-
+          10.42.0.12 - - [24/Oct/2026:01:00:00 +0000]
+          "POST /v1/volumes/pvc-0000?action=attach HTTP/1.1" 500 120 "" "Go-http-client/1.1"
+      expect:
+        log_format: text
+        level: error
+        msg: POST /v1/volumes/pvc-0000?action=attach 500
+        log.status: 500
+    - name: component-base-error
+      lines:
+        - '{"ts":1792900000000.123,"caller":"secret/secret.go:122","msg":"Couldn''t get secret metallb-system/metallb-memberlist"}'
+      expect:
+        log_format: json
+        level: error
+        msg: Couldn't get secret metallb-system/metallb-memberlist
+        log.caller: secret/secret.go:122
+    - name: vector-quoted-level
+      lines:
+        - '{"timestamp":"2026-10-26T02:20:00.000Z","level":"INFO","message":"Log level is enabled.","level":"\"info\"","target":"vector::app"}'
+      expect:
+        log_format: json
+        level: info
+        msg: Log level is enabled.
+    - name: nginx-error
+      lines:
+        - "2026/10/26 22:22:22 [error] 93#93: *1456 upstream timed out (110: Operation timed out) while connecting to upstream"
+      expect:
+        log_format: text
+        level: error
+        msg: "upstream timed out (110: Operation timed out) while connecting to upstream"
+        log.connection: 1456
+    - name: traefik-access
+      lines:
+        - '{"ClientHost":"10.42.0.9","DownstreamContentSize":19,"DownstreamStatus":404,"Duration":123456,"RequestHost":"x.example","RequestMethod":"GET","RequestPath":"/missing?q=1","RequestProtocol":"HTTP/1.1","level":"info","msg":"","time":"2026-10-27T01:00:00Z"}'
+      expect:
+        log_format: json
+        level: warn
+        msg: GET /missing?q=1 404
+        log.RequestHost: x.example
+    - name: nginx-access
+      lines:
+        - '{"time":"2026-10-27T01:00:00+00:00","ClientHost":"10.42.0.5","RequestHost":"argocd.example","RequestMethod":"POST","RequestPath":"/api/v1/session","RequestProtocol":"HTTP/2.0","RequestContentSize":512,"DownstreamStatus":502,"DownstreamContentSize":150,"request_time":0.004,"upstream":"argocd-argocd-server-443","ServiceAddr":"10.42.1.2:8080","OriginStatus":"502"}'
+      expect:
+        log_format: json
+        level: error
+        msg: POST /api/v1/session 502
+        log.upstream: argocd-argocd-server-443
+  logging_workloads:
+    # Kubernetes' components with logging-format=json (playbooks/cluster.yml)
+    - name: kube-apiserver
+      filter: 'kubernetes.pod_namespace:="kube-system" kubernetes.container_name:="kube-apiserver" log_format:="json"'
+    - name: kube-controller-manager
+      filter: 'kubernetes.pod_namespace:="kube-system" kubernetes.container_name:="kube-controller-manager" log_format:="json"'
+    - name: kube-scheduler
+      filter: 'kubernetes.pod_namespace:="kube-system" kubernetes.container_name:="kube-scheduler" log_format:="json"'
+    - name: kube-proxy
+      filter: 'kubernetes.pod_namespace:="kube-system" kubernetes.container_name:="kube-proxy" log_format:="json"'
+    - name: kubelet
+      filter: 'unit:="kubelet" log_format:="json"'
+    - name: etcd
+      filter: 'kubernetes.pod_namespace:="kube-system" kubernetes.container_name:="etcd" log_format:="json"'
+    - name: metrics-server
+      filter: 'kubernetes.pod_namespace:="kube-system" kubernetes.container_name:="metrics-server" log_format:="json"'
+    # Cilium's logOptions (playbooks/templates/cilium.yml)
+    - name: cilium-agent
+      filter: 'kubernetes.pod_namespace:="kube-system" kubernetes.container_name:="cilium-agent" log_format:="json"'
+    - name: cilium-operator
+      filter: 'kubernetes.pod_namespace:="kube-system" kubernetes.container_name:="cilium-operator" log_format:="json"'
+    - name: hubble-relay
+      filter: 'kubernetes.pod_namespace:="kube-system" kubernetes.container_name:="hubble-relay" log_format:="json"'
+    # go-redis's own unleveled lines while argocd's redis restarts
+    - name: argocd-application-controller
+      filter: 'kubernetes.pod_namespace:="argocd" kubernetes.container_name:="application-controller"'
+      max_unknown_ratio: 0.01
+    - name: cert-manager-controller
+      filter: 'kubernetes.container_name:="cert-manager-controller"'
+    - name: vector-agent
+      filter: 'kubernetes.container_name:="vector-agent"'
+    - name: reflector
+      filter: 'kubernetes.pod_namespace:="kube-system" kubernetes.container_name:="reflector"'
+    # its startup script's image map and "+ exec" trace
+    - name: strimzi-cluster-operator
+      filter: 'kubernetes.container_name:="strimzi-cluster-operator"'
+      max_unknown_ratio: 0.2
+    # tgtd's and go-iscsi-helper's lines carry no level
+    - name: longhorn-instance-manager
+      filter: 'kubernetes.pod_namespace:="longhorn-system" kubernetes.container_name:="instance-manager"'
+      max_unknown_ratio: 0.1
+    # the entrypoint's "Starting Redis Server" and the shutdown notice
+    - name: argocd-redis
+      filter: 'kubernetes.pod_namespace:="argocd" kubernetes.container_name:="redis"'
+      max_unknown_ratio: 0.1
+  # Read by ../common/verify/logging.yml ("Verify ingress request logs"):
+  # each ingress class whose controller's request logs must reach the local
+  # store, that controller's Service (name.namespace), and fields its events
+  # must carry (expect).
+  logging_ingresses:
+    - name: traefik-private
+      class: traefik-private
+      service: traefik-private.traefik-private
+      expect:
+        log.request_Authorization: REDACTED
+    - name: nginx-private
+      class: nginx-private
+      service: nginx-private-ingress-nginx-controller.nginx
 verifier:
   name: ansible
 scenario:

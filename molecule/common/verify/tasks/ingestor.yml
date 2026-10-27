@@ -1,0 +1,57 @@
+---
+# Why the test ingestor is not receiving: its pods' phase, readiness and
+# restarts (lastState shows an OOM kill or a crash), whether its Service
+# has ready endpoints, and its vector container's logs, the previous run's
+# too when it restarted. Included from the scenarios' metrics rescues;
+# expects kubeconfig_path.
+- name: Query ingestor pods
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig_path }}"
+    kind: Pod
+    namespace: monitoring
+    label_selectors:
+      - app=vector-ingestor
+  register: _ingestor_pods
+  failed_when: false
+
+- name: Debug ingestor pods
+  ansible.builtin.debug:
+    msg: >-
+      {{ _ingestor_pods.resources | default([])
+         | json_query('[].{pod: metadata.name, node: spec.nodeName, phase: status.phase,
+           containers: status.containerStatuses[].{name: name, ready: ready, restarts: restartCount,
+           state: state, last: lastState}}') }}
+
+- name: Query ingestor endpoints
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig_path }}"
+    api_version: discovery.k8s.io/v1
+    kind: EndpointSlice
+    namespace: monitoring
+    label_selectors:
+      - kubernetes.io/service-name=vector-ingestor
+  register: _ingestor_endpoints
+  failed_when: false
+
+- name: Debug ingestor endpoints
+  ansible.builtin.debug:
+    msg: >-
+      {{ _ingestor_endpoints.resources | default([])
+         | json_query('[].{ports: ports[].port, endpoints: endpoints[].{addresses: addresses, conditions: conditions}}') }}
+
+- name: Capture ingestor logs
+  ansible.builtin.command:
+    cmd: >-
+      kubectl --kubeconfig {{ kubeconfig_path }} logs -n monitoring
+      -l app=vector-ingestor -c vector --tail=100 {{ item }}
+  register: _ingestor_logs
+  changed_when: false
+  failed_when: false
+  loop: ["", "--previous"]
+
+- name: Debug ingestor logs
+  ansible.builtin.debug:
+    msg: "{{ item.stdout_lines | default([]) + item.stderr_lines | default([]) }}"
+  loop: "{{ _ingestor_logs.results }}"
+  loop_control:
+    label: "{{ item.item | default('current', true) }}"
