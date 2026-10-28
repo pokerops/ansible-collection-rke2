@@ -11,6 +11,9 @@ An opinionated [ansible collection](https://galaxy.ansible.com/ui/repo/published
 - [Ingress Nginx](https://kubernetes.github.io/ingress-nginx/)
 - [Traefik Ingress](https://doc.traefik.io/traefik/reference/install-configuration/providers/kubernetes/kubernetes-ingress/)
 - [ArgoCD](https://argo-cd.readthedocs.io/en/stable/)
+- [KSM](https://github.com/kubernetes/kube-state-metrics)
+- [Vector](https://vector.dev/)
+- [VictoriaLogs](https://github.com/VictoriaMetrics/VictoriaLogs)
 
 Default installation uses [ArgoCD Applications](https://argo-cd.readthedocs.io/en/stable/user-guide/auto_sync/) to deploy and manage the following components:
 
@@ -20,9 +23,10 @@ Default installation uses [ArgoCD Applications](https://argo-cd.readthedocs.io/e
 - [Sealed Secrets](https://github.com/bitnami-labs/sealed-secrets)
 - [Strimzi Operator](https://strimzi.io/)
 - [Velero](https://velero.io/)
-- [Zalando Operator](https://github.com/zalando/postgres-operator)
+- [Zalando Postgres Operator](https://github.com/zalando/postgres-operator)
 - [Kube State Metrics](https://github.com/kubernetes/kube-state-metrics)
 - [Grafana Alloy Operator](https://github.com/grafana/alloy-operator)
+- [SeaweedFS Operator](https://github.com/seaweedfs/seaweedfs-operator)
 
 ## Collection Variables
 
@@ -58,6 +62,7 @@ Cluster wide parameters
 | rke2_argocd_applicationset_replicas |                                  2 | int    | ArgoCD applicationset replicas, override for default ArgoCD chart values         | no       |
 | rke2_argocd_apps_pokerops_revision  |                               HEAD | string | PokerOps ArgoCD revision, used to deploy base cluster assets                     | no       |
 | rke2_longhorn_hostname              | "longhorn.{{ rke2_cluster_name }}" | string | Longhorn UI hostname                                                             | no       |
+| rke2_monitoring_vector_memory       |                                1Gi | string | Memory limit for Vector.dev                                                      |
 | rke2_nolog                          |                               true | bool   | Toggle flag for logging sensitive statements                                     | no       |
 
 [1] rke2_certmanager_acme_email is required whenever rke2_certmanager_acme_secret is set
