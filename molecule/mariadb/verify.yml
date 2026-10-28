@@ -442,7 +442,7 @@
             timeout: 300
 
         - name: Create test database
-          community.mysql.mysql_db:
+          ansible.mysql.mysql_db:
             login_host: "{{ mariadb_external_ip }}"
             login_port: "{{ mariadb_port }}"
             login_user: root
@@ -451,7 +451,7 @@
             state: present
 
         - name: Create test table
-          community.mysql.mysql_query:
+          ansible.mysql.mysql_query:
             login_host: "{{ mariadb_external_ip }}"
             login_port: "{{ mariadb_port }}"
             login_user: root
@@ -462,7 +462,7 @@
               (id INT AUTO_INCREMENT PRIMARY KEY, value VARCHAR(255) NOT NULL)
 
         - name: Insert test rows
-          community.mysql.mysql_query:
+          ansible.mysql.mysql_query:
             login_host: "{{ mariadb_external_ip }}"
             login_port: "{{ mariadb_port }}"
             login_user: root
@@ -474,7 +474,7 @@
               ('row-06'),('row-07'),('row-08'),('row-09'),('row-10')
 
         - name: Get pre-backup row count
-          community.mysql.mysql_query:
+          ansible.mysql.mysql_query:
             login_host: "{{ mariadb_external_ip }}"
             login_port: "{{ mariadb_port }}"
             login_user: root
@@ -850,7 +850,7 @@
             timeout: 300
 
         - name: Get post-restore row count
-          community.mysql.mysql_query:
+          ansible.mysql.mysql_query:
             login_host: "{{ mariadb_external_ip }}"
             login_port: "{{ mariadb_port }}"
             login_user: root

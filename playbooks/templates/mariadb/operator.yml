@@ -11,7 +11,7 @@ spec:
   source:
     chart: mariadb-operator
     repoURL: ghcr.io/mariadb-operator/charts
-    targetRevision: "26.6.0"
+    targetRevision: "26.10.2"
   destination:
     server: https://kubernetes.default.svc
     namespace: mariadb-operator

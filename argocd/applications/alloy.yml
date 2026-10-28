@@ -11,7 +11,7 @@ spec:
   source:
     chart: alloy-operator
     repoURL: https://grafana.github.io/helm-charts
-    targetRevision: "0.7.1"
+    targetRevision: "0.9.3"
     helm:
       valuesObject:
         serviceMonitor:

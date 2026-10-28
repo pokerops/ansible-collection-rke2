@@ -1,0 +1,16 @@
+---
+name: pytest
+permissions:
+  contents: read
+on:
+  pull_request:
+    branches: ["main", "master"]
+jobs:
+  pytest:
+    name: pytest
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run unit tests
+        uses: pokerops/ansible-utils@master
+        with:
+          run: just pytest

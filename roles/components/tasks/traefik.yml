@@ -21,7 +21,7 @@
     resource_definition: "{{ _traefik_chart_application }}"
   vars:
     _traefik_chart_application: "{{ _traefik_chart_manifest | combine(_traefik_chart_overrides, recursive=True) }}"
-    _traefik_chart_manifest: "{{ lookup('ansible.builtin.template', 'templates/traefik.yml' ) | from_yaml }}"
+    _traefik_chart_manifest: "{{ lookup('ansible.builtin.template', 'templates/traefik.yml') | from_yaml }}"
     _traefik_chart_class: "{{ _traefik_class_private }}"
     _traefik_chart_overrides:
       metadata:
@@ -66,7 +66,7 @@
   vars:
     _traefik_chart_application: "{{ _traefik_chart_manifest | combine(_traefik_chart_overrides, recursive=True) }}"
     _traefik_chart_class: "{{ _traefik_class_public }}"
-    _traefik_chart_manifest: "{{ lookup('ansible.builtin.template', 'templates/traefik.yml' ) | from_yaml }}"
+    _traefik_chart_manifest: "{{ lookup('ansible.builtin.template', 'templates/traefik.yml') | from_yaml }}"
     _traefik_chart_overrides:
       metadata:
         name: "{{ _traefik_chart_class }}"
@@ -113,4 +113,4 @@
   kubernetes.core.k8s:
     state: "{{ rke2_traefik_controller_deploy | bool | ternary('present', 'absent') }}"
     kubeconfig: "{{ rke2_config_path }}"
-    resource_definition: "{{ lookup('ansible.builtin.template', 'templates/traefik/vap.yml' ) | from_yaml_all | list }}"
+    resource_definition: "{{ lookup('ansible.builtin.template', 'templates/traefik/vap.yml') | from_yaml_all | list }}"

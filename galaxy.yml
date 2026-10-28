@@ -1,7 +1,7 @@
 ---
 namespace: pokerops
 name: rke2
-version: 0.10.1
+version: 0.10.2
 readme: README.md
 authors:
   - Ted Cook <358176+teddyphreak@users.noreply.github.com>
@@ -9,7 +9,7 @@ description: RKE2 deployment playbooks
 license:
   - MIT
 tags:
-  - k8s
+  - infrastructure
   - rke2
 dependencies:
   "nephelaiio.plugins": "*"

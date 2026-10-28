@@ -161,13 +161,11 @@
               Workload {{ item.item.name }} has {{ _total }} event(s) in the last
               {{ item.item.time | default('1d') }}, expected at least
               {{ item.item.min_events | default(1) }}: check its filter
-              ({{ item.item.filter }}) and that its pods ran.
-              {%- else -%}
+              ({{ item.item.filter }}) and that its pods ran.{%- else -%}
               Workload {{ item.item.name }} has {{ _unknown }} of {{ _total }} events
               at level unknown (at most {{ item.item.max_unknown_ratio | default(0) }}
               of them may be); levels {{ _levels }}. Sample its unknown lines in
-              the local store and extend the remap in vector/pipeline.j2.yml.
-              {%- endif -%}
+              the local store and extend the remap in vector/pipeline.j2.yml.{%- endif -%}
             success_msg: "Workload {{ item.item.name }}: {{ _total }} events, levels {{ _levels }}"
           loop: "{{ _logging_workload_levels.results }}"
           loop_control:

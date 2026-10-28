@@ -11,6 +11,7 @@ dev = [
   "pokerops-ansible-utils@git+https://github.com/pokerops/ansible-utils@master",
   "jmespath>=1.1.0",
   "pymysql>=1.2.0",
+  "pytest>=8.0",
 ]
 
 [project.scripts]
@@ -25,6 +26,9 @@ packages = ["rke2"]
 
 [tool.hatch.build]
 include = ["rke2/*.py"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests/unit"]
 
 [tool.ruff]
 line-length = 160

@@ -70,6 +70,7 @@
         cmd: "{{ _rke2_bin_path }}/kubectl label node {{ item }} node-role.kubernetes.io/worker=true --overwrite"
       loop: "{{ groups[rke2_agent_group] | default([]) }}"
       run_once: true
+      changed_when: false
 
     - name: Query node taints
       ansible.builtin.command:
@@ -91,6 +92,7 @@
         agents: "{{ groups[rke2_agent_group] | default([]) }}"
         taint: "{{ taint_name }}:{{ taint_effect }}{{ '-' if (is_tainted and (agents | length == 0)) else '' }}"
       when: (not is_tainted and (agents | length > 0)) or (is_tainted and (agents | length == 0))
+      changed_when: false
 
     - name: Delete unsupported server node taint
       ansible.builtin.command:
@@ -105,3 +107,4 @@
         is_tainted: "{{ taint_effect in taint_list }}"
         taint: "{{ taint_name }}:{{ taint_effect }}-"
       when: is_tainted
+      changed_when: false
