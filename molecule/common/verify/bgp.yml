@@ -286,7 +286,7 @@
       always:
         - name: Parse BGP IPv4 unicast data
           ansible.builtin.set_fact:
-            _bgp_routes: "{{ _bgp_route_query.stdout }}"
+            _bgp_routes: "{{ _bgp_route_query.stdout | from_json }}"
             _ingress_routes: "{{ _ingress_ips | product(['32']) | map('join', '/') }}"
 
         - name: Verify route validity
