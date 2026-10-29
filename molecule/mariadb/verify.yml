@@ -730,7 +730,13 @@
 
         - name: Verify restore completed successfully
           ansible.builtin.assert:
-            that: _restore_query.resources[0].status.phase == "Completed"
+            that:
+              - _restore_query.resources[0].status.phase == "Completed"
+              # A warning-level item failure (e.g. the MariaDB CR itself
+              # rejected on create) still leaves phase "Completed" - only
+              # surfacing as a timeout several tasks later. Catch it here.
+              - _restore_query.resources[0].status.warnings | default(0) == 0
+              - _restore_query.resources[0].status.errors | default(0) == 0
             fail_msg: >-
               Restore phase is {{ _restore_query.resources[0].status.phase }}.
               Errors: {{ _restore_query.resources[0].status.errors | default('n/a') }}
