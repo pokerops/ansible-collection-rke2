@@ -24,6 +24,10 @@ molecule_net_prefix: "{{ libvirt_address | ansible.utils.ipaddr('prefix') }}"
 molecule_pool_prefix: "{{ (molecule_net_prefix | int) + 2 }}"
 molecule_pool_private: "{{ libvirt_address | ansible.utils.ipsubnet(molecule_pool_prefix, 2) }}"
 molecule_pool_public: "{{ libvirt_address | ansible.utils.ipsubnet(molecule_pool_prefix, 3) }}"
+# A control plane VIP for scenarios testing kube-vip: the first address of the
+# block between the guests (consecutive from .2) and the pools above
+molecule_pool_api: "{{ {{ libvirt_address | ansible.utils.ipsubnet(molecule_pool_prefix, 1) }}"
+molecule_api_vip: "{{ molecule_pool_api | ansible.utils.ipaddr('1') | ansible.utils.ipaddr('address') }}"
 
 # Molecule paths
 molecule_logdir: "{{ lookup('ansible.builtin.env', 'MOLECULE_LOGDIR', default='/tmp/logs') }}"
