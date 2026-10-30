@@ -21,7 +21,6 @@
     # DataUpload clone 3x the volume before the backup pod can start.
     mariadb_storage_class: "{{ molecule_storage_class | default('mariadb') }}"
   tasks:
-
     # Checked before anything is deployed: unset, converge skipped the whole
     # monitoring stack, so the assertions below cannot pass and failing here
     # costs seconds instead of a cluster build plus two ten minute waits.
@@ -786,6 +785,29 @@
           retries: 30
           delay: 10
 
+        - name: Query MariaDB resources after restore
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ kubeconfig_path }}"
+            api_version: k8s.mariadb.com/v1alpha1
+            kind: MariaDB
+            name: "{{ mariadb_name }}"
+            namespace: "{{ mariadb_namespace }}"
+          register: _restored_mariadb
+
+        - name: Debug MariaDB resources after restore
+          ansible.builtin.debug:
+            msg: "{{ _restored_mariadb.resources | map(attribute='metadata') | map('ansible.utils.keep_keys', target=_keys) }}"
+          vars:
+            _keys:
+              [
+                "uid",
+                "creationTimestamp",
+                "deletionTimestamp",
+                "finalizers",
+                "ownerReferences",
+                "labels",
+              ]
+
         - name: Scale up mariadb-operator
           kubernetes.core.k8s_scale:
             kubeconfig: "{{ kubeconfig_path }}"
@@ -897,6 +919,67 @@
               All verification tests passed!
 
       rescue:
+        # Velero's per-item restore results and log name what happened to
+        # the MariaDB resource; the namespace events and the operator's log
+        # show whether something removed it afterwards
+        - name: Describe the Velero restore
+          ansible.builtin.command:
+            cmd: >-
+              kubectl --kubeconfig {{ kubeconfig_path }} -n velero exec deploy/velero --
+              /velero restore describe {{ restore_name }} --details
+          register: _restore_describe
+          changed_when: false
+          failed_when: false
+
+        - name: Debug the Velero restore
+          ansible.builtin.debug:
+            msg: "{{ _restore_describe.stdout_lines | default([]) + _restore_describe.stderr_lines | default([]) }}"
+
+        - name: Query the Velero restore log for MariaDB
+          ansible.builtin.shell:
+            cmd: >-
+              set -o pipefail;
+              kubectl --kubeconfig {{ kubeconfig_path }} -n velero exec deploy/velero --
+              /velero restore logs {{ restore_name }} | grep -i mariadb
+          args:
+            executable: /bin/bash
+          register: _restore_log
+          changed_when: false
+          failed_when: false
+
+        - name: Debug the Velero restore log
+          ansible.builtin.debug:
+            msg: "{{ _restore_log.stdout_lines | default([]) }}"
+
+        - name: Query the namespace events
+          ansible.builtin.command:
+            cmd: >-
+              kubectl --kubeconfig {{ kubeconfig_path }} -n {{ mariadb_namespace }}
+              get events --sort-by=.lastTimestamp
+          register: _namespace_events
+          changed_when: false
+          failed_when: false
+
+        - name: Debug the namespace events
+          ansible.builtin.debug:
+            msg: "{{ _namespace_events.stdout_lines | default([]) }}"
+
+        - name: Query the operator log for the MariaDB
+          ansible.builtin.shell:
+            cmd: >-
+              set -o pipefail;
+              kubectl --kubeconfig {{ kubeconfig_path }} -n {{ mariadb_operator_namespace }}
+              logs deploy/{{ mariadb_operator_deployment }} --since=30m | grep {{ mariadb_name }} | tail -100
+          args:
+            executable: /bin/bash
+          register: _operator_log
+          changed_when: false
+          failed_when: false
+
+        - name: Debug the operator log
+          ansible.builtin.debug:
+            msg: "{{ _operator_log.stdout_lines | default([]) }}"
+
         - name: Query MariaDB operator pods
           kubernetes.core.k8s_info:
             kubeconfig: "{{ kubeconfig_path }}"
