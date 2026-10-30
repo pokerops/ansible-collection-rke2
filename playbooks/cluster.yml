@@ -95,6 +95,27 @@
             _network: "{{ ansible_facts.default_ipv4.network }}/{{ ansible_facts.default_ipv4.prefix }}"
           when: inventory_hostname in groups[rke2_server_group]
 
+    # rke2 role's kubevip.yml creates server/manifests with mode 0700
+    # before rke2 first starts, locking non-root users out of rke2's bin directory.
+    # Creating the parents first, with rke2's own modes
+    - name: Create RKE2 data directories for kube-vip
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "{{ item.mode | default(omit) }}"
+      loop:
+        - path: "{{ _rke2_data_path }}"
+        - path: "{{ _rke2_data_path }}/server"
+          mode: "0700"
+      vars:
+        _rke2_data_path: "{{ rke2_data_path | default('/var/lib/rancher/rke2') }}"
+      become: true
+      when:
+        - _rke2_kubevip_address | length > 0
+        - inventory_hostname in groups[rke2_server_group]
+
     - name: Set RKE2 snapshot file default
       ansible.builtin.set_fact:
         rke2_etcd_snapshot_file: ""

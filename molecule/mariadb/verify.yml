@@ -9,8 +9,8 @@
     mariadb_port: 3306
     mariadb_root_secret_name: "mariadb-root-secret"
     mariadb_root_password: "molecule-password"
-    backup_name: "molecule-mariadb-backup-{{ ansible_date_time.epoch }}"
-    restore_name: "molecule-mariadb-restore-{{ ansible_date_time.epoch }}"
+    backup_name: "molecule-mariadb-backup-{{ ansible_facts.date_time.epoch }}"
+    restore_name: "molecule-mariadb-restore-{{ ansible_facts.date_time.epoch }}"
     kubeconfig_path: "{{ molecule_local_kubeconfig }}"
     mariadb_operator_namespace: "mariadb-operator"
     mariadb_operator_deployment: "mariadb-operator"

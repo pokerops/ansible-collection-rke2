@@ -41,8 +41,8 @@
 
     - name: Verify swap is disabled
       ansible.builtin.assert:
-        that: ansible_swaptotal_mb == 0
-        fail_msg: "Swap is enabled with {{ ansible_swaptotal_mb }}MB"
+        that: ansible_facts.swaptotal_mb == 0
+        fail_msg: "Swap is enabled with {{ ansible_facts.swaptotal_mb }}MB"
 
     - name: Reset connection
       ansible.builtin.meta: reset_connection
