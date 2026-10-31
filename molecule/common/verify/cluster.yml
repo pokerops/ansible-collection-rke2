@@ -10,7 +10,7 @@
 
     - name: Check multipath service
       ansible.builtin.assert:
-        that: _multipath_service in services
+        that: _multipath_service in ansible_facts.services
 
     - name: Check multipath service status
       ansible.builtin.assert:
@@ -19,7 +19,7 @@
           - _service.status == _masked
         fail_msg: "Expected service state {{ _stopped }} and status {{ _masked }}. Got {{ _service.state }}, {{ _service.status }}"
       vars:
-        _service: "{{ services[_multipath_service] }}"
+        _service: "{{ ansible_facts.services[_multipath_service] }}"
         _stopped: "stopped"
         _masked: "masked"
 

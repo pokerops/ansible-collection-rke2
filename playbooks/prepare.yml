@@ -49,7 +49,7 @@
         masked: true
       vars:
         rke2_multipath_daemon: multipathd.service
-      when: rke2_multipath_daemon in services
+      when: rke2_multipath_daemon in ansible_facts.services
 
     - name: Disable swap
       ansible.builtin.command:

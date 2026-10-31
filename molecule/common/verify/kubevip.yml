@@ -2,10 +2,11 @@
 # kube-vip's control plane VIP (rke2_kubevip_address) must answer the
 # Kubernetes API and move to another server when its holder goes down.
 # kube-vip's leader election lease (plndr-cp-lock in kube-system) names the
-# node holding the VIP. Skipped unless the scenario sets a VIP.
+# node holding the VIP. Skipped unless the scenario sets a VIP. The play runs
+# on the implicit localhost, which connects locally; no play-level connection,
+# as one would also apply to the tasks delegated to the servers.
 - name: Verify the kube-vip control plane VIP
   hosts: localhost
-  connection: local
   gather_facts: false
   vars:
     _kubevip_address: "{{ rke2_kubevip_address | default('') }}"
