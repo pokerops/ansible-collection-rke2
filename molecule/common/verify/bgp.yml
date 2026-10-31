@@ -11,7 +11,7 @@
     ingress_namespaces: ["nginx", "traefik-public", "traefik-private"]
     bgp_peer_names: "{{ groups['all'] }}"
     bgp_hop_names: "{{ groups[molecule_bgp_group] }}"
-    bgp_hop_addrs: "{{ bgp_hop_names | map('extract', hostvars, ['ansible_default_ipv4', 'address']) }}"
+    bgp_hop_addrs: "{{ bgp_hop_names | map('extract', hostvars, ['ansible_facts', 'default_ipv4', 'address']) }}"
     _retries: 15
     _delay: 20
     # ArgoCD app health converges on its own schedule and is the slowest wait

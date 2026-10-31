@@ -90,7 +90,7 @@
 
                 - name: Create cluster configuration archive
                   ansible.builtin.copy:
-                    dest: "{{ _logfile }}.{{ inventory_hostname }}.config.yaml.{{ ansible_date_time.iso8601_basic_short }}"
+                    dest: "{{ _logfile }}.{{ inventory_hostname }}.config.yaml.{{ ansible_facts.date_time.iso8601_basic_short }}"
                     content: "{{ _rke2_clusterconfig_slurp['content'] | b64decode }}"
                     mode: "u=rw,go=r"
                   delegate_to: localhost
@@ -102,7 +102,7 @@
 
             - name: Create systemd log archive
               ansible.builtin.copy:
-                dest: "{{ _logfile }}.{{ inventory_hostname }}.journalctl.{{ ansible_date_time.iso8601_basic_short }}"
+                dest: "{{ _logfile }}.{{ inventory_hostname }}.journalctl.{{ ansible_facts.date_time.iso8601_basic_short }}"
                 content: "{{ _rke2_journalctl.stdout }}"
                 mode: "u=rw,go=r"
               delegate_to: localhost
@@ -122,14 +122,14 @@
 
                 - name: Create install kubeconfig archive
                   ansible.builtin.copy:
-                    dest: "{{ _logfile }}.{{ inventory_hostname }}.kubeconfig.install.{{ ansible_date_time.iso8601_basic_short }}"
+                    dest: "{{ _logfile }}.{{ inventory_hostname }}.kubeconfig.install.{{ ansible_facts.date_time.iso8601_basic_short }}"
                     content: "{{ _rke2_kubeconfig_slurp['content'] | b64decode }}"
                     mode: "u=rw,go=r"
                   delegate_to: localhost
 
             - name: Stat user kubeconfig
               ansible.builtin.stat:
-                path: "~{{ ansible_user_id }}/.kube/config"
+                path: "~{{ ansible_facts.user_id }}/.kube/config"
               register: _rke2_kubeconfig_stat
 
             - name: Archive user kubeconfig
@@ -137,12 +137,12 @@
               block:
                 - name: Slurp user kubeconfig
                   ansible.builtin.slurp:
-                    src: "~{{ ansible_user_id }}/.kube/config"
+                    src: "~{{ ansible_facts.user_id }}/.kube/config"
                   register: _rke2_kubeconfig_slurp
 
                 - name: Create install kubeconfig archive
                   ansible.builtin.copy:
-                    dest: "{{ _logfile }}.{{ inventory_hostname }}.kubeconfig.user.{{ ansible_date_time.iso8601_basic_short }}"
+                    dest: "{{ _logfile }}.{{ inventory_hostname }}.kubeconfig.user.{{ ansible_facts.date_time.iso8601_basic_short }}"
                     content: "{{ _rke2_kubeconfig_slurp['content'] | b64decode }}"
                     mode: "u=rw,go=r"
                   delegate_to: localhost

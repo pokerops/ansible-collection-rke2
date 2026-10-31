@@ -1,0 +1,111 @@
+---
+# kube-vip's control plane VIP (rke2_kubevip_address) must answer the
+# Kubernetes API and move to another server when its holder goes down.
+# kube-vip's leader election lease (plndr-cp-lock in kube-system) names the
+# node holding the VIP. Skipped unless the scenario sets a VIP. The play runs
+# on the implicit localhost, which connects locally; no play-level connection,
+# as one would also apply to the tasks delegated to the servers.
+- name: Verify the kube-vip control plane VIP
+  hosts: localhost
+  gather_facts: false
+  vars:
+    _kubevip_address: "{{ rke2_kubevip_address | default('') }}"
+    _kubevip_lease: plndr-cp-lock
+    _kubevip_namespace: kube-system
+    _kubevip_retries: 30
+    _kubevip_delay: 10
+    _kubectl: "kubectl --kubeconfig {{ molecule_local_kubeconfig }}"
+  tasks:
+    - name: Verify the kube-vip VIP
+      when: _kubevip_address | length > 0
+      block:
+        # Unauthenticated, so any HTTP answer from the apiserver will do
+        - name: Wait for the API on the VIP
+          ansible.builtin.uri:
+            url: "https://{{ _kubevip_address }}:6443/readyz"
+            validate_certs: false
+            status_code: [200, 401, 403]
+          register: _kubevip_api
+          retries: "{{ _kubevip_retries }}"
+          delay: "{{ _kubevip_delay }}"
+          until: _kubevip_api.status in [200, 401, 403]
+
+        - name: Query the VIP holder
+          ansible.builtin.command:
+            cmd: >-
+              {{ _kubectl }} -n {{ _kubevip_namespace }} get lease {{ _kubevip_lease }}
+              -o jsonpath={.spec.holderIdentity}
+          register: _kubevip_holder
+          changed_when: false
+          retries: "{{ _kubevip_retries }}"
+          delay: "{{ _kubevip_delay }}"
+          until: _kubevip_holder.rc == 0 and _kubevip_holder.stdout | length > 0
+
+        - name: Verify the VIP holder is a server
+          ansible.builtin.assert:
+            that: _kubevip_holder.stdout in groups['rke2_server']
+            fail_msg: "kube-vip lease holder {{ _kubevip_holder.stdout }} is not a server"
+            success_msg: "{{ _kubevip_holder.stdout }} holds {{ _kubevip_address }}"
+
+        - name: Stop rke2 on the VIP holder
+          ansible.builtin.systemd:
+            name: rke2-server
+            state: stopped
+          become: true
+          delegate_to: "{{ _kubevip_holder.stdout }}"
+
+        - name: Wait for another server to take the VIP
+          ansible.builtin.command:
+            cmd: >-
+              {{ _kubectl }} -n {{ _kubevip_namespace }} get lease {{ _kubevip_lease }}
+              -o jsonpath={.spec.holderIdentity}
+          register: _kubevip_failover
+          changed_when: false
+          failed_when: false
+          retries: "{{ _kubevip_retries }}"
+          delay: "{{ _kubevip_delay }}"
+          until:
+            - _kubevip_failover.rc == 0
+            - _kubevip_failover.stdout | length > 0
+            - _kubevip_failover.stdout != _kubevip_holder.stdout
+
+        - name: Wait for the API on the VIP after failover
+          ansible.builtin.uri:
+            url: "https://{{ _kubevip_address }}:6443/readyz"
+            validate_certs: false
+            status_code: [200, 401, 403]
+          register: _kubevip_api_failover
+          retries: "{{ _kubevip_retries }}"
+          delay: "{{ _kubevip_delay }}"
+          until: _kubevip_api_failover.status in [200, 401, 403]
+
+        - name: Verify the VIP moved to another server
+          ansible.builtin.assert:
+            that:
+              - _kubevip_failover.stdout in groups['rke2_server']
+              - _kubevip_failover.stdout != _kubevip_holder.stdout
+            fail_msg: >-
+              The VIP stayed with {{ _kubevip_holder.stdout }} or moved off the
+              servers ({{ _kubevip_failover.stdout | default('no holder') }})
+            success_msg: >-
+              {{ _kubevip_address }} moved from {{ _kubevip_holder.stdout }} to
+              {{ _kubevip_failover.stdout }} and the API answers on it
+
+      always:
+        - name: Start rke2 on the former VIP holder
+          ansible.builtin.systemd:
+            name: rke2-server
+            state: started
+          become: true
+          delegate_to: "{{ _kubevip_holder.stdout }}"
+          when: _kubevip_holder.stdout | default('') | length > 0
+
+        - name: Wait for every node to be ready again
+          ansible.builtin.command:
+            cmd: "{{ _kubectl }} wait --for=condition=Ready nodes --all --timeout=60s"
+          register: _kubevip_nodes
+          changed_when: false
+          retries: "{{ _kubevip_retries }}"
+          delay: "{{ _kubevip_delay }}"
+          until: _kubevip_nodes.rc == 0
+          when: _kubevip_holder.stdout | default('') | length > 0
