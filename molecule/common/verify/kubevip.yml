@@ -14,6 +14,7 @@
     _kubevip_namespace: kube-system
     _kubevip_retries: 30
     _kubevip_delay: 10
+    _kubevip_killall: /usr/local/bin/rke2-killall.sh
     _kubectl: "kubectl --kubeconfig {{ molecule_local_kubeconfig }}"
   tasks:
     - name: Verify the kube-vip VIP
@@ -47,11 +48,11 @@
             fail_msg: "kube-vip lease holder {{ _kubevip_holder.stdout }} is not a server"
             success_msg: "{{ _kubevip_holder.stdout }} holds {{ _kubevip_address }}"
 
-        - name: Stop rke2 on the VIP holder
-          ansible.builtin.systemd:
-            name: rke2-server
-            state: stopped
+        - name: Take down rke2 on the VIP holder
+          ansible.builtin.command:
+            cmd: "{{ _kubevip_killall }}"
           become: true
+          changed_when: true
           delegate_to: "{{ _kubevip_holder.stdout }}"
 
         - name: Wait for another server to take the VIP
