@@ -9,8 +9,8 @@
     postgres_service_name: "{{ postgres_cluster_name }}"
     postgres_service_port: 5432
     postgres_user: postgres
-    backup_name: "molecule-backup-{{ ansible_date_time.epoch }}"
-    restore_name: "molecule-restore-{{ ansible_date_time.epoch }}"
+    backup_name: "molecule-backup-{{ ansible_facts.date_time.epoch }}"
+    restore_name: "molecule-restore-{{ ansible_facts.date_time.epoch }}"
     kubeconfig_path: "{{ molecule_local_kubeconfig }}"
     # Single-replica Longhorn class. Velero's CSI data mover provisions its backup
     # PVC from the source PVC's storage class, so a 3-replica class makes every

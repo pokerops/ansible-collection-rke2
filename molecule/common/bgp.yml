@@ -51,7 +51,7 @@
             content: |
               frr version 10.5.3
               frr defaults traditional
-              hostname {{ ansible_hostname }}
+              hostname {{ ansible_facts.hostname }}
               log syslog informational
               service integrated-vtysh-config
               !

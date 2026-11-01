@@ -43,6 +43,7 @@ Cluster wide parameters
 | rke2_retry_num                      |                                 10 | bool   | Max number of task retries                                                       | no       |
 | rke2_retry_delay                    |                                 30 | bool   | Task delay on retries                                                            | no       |
 | rke2_logging_format                 |                               json | string | Log format of the Kubernetes components and metrics-server; "" for their default | no       |
+| rke2_kubevip_address                |                                 "" | string | Control plane floating IP held by kube-vip (L2/ARP); "" disables kube-vip        | no       |
 | rke2_evict_timeout                  |                                300 | bool   | Node drain eviction timeout in seconds                                           | no       |
 | rke2_ippool_private                 |                                n/a | string | Private IP pool CIDR                                                             | yes      |
 | rke2_ippool_public                  |                                n/a | string | Public IP pool CIDR                                                              | no       |

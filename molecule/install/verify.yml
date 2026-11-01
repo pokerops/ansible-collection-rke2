@@ -4,3 +4,6 @@
   vars:
     rke2_update_check: false
     rke2_component_check: false
+
+- name: Import kube-vip verification playbook
+  ansible.builtin.import_playbook: ../common/verify/kubevip.yml

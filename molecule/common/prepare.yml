@@ -7,18 +7,18 @@
       ansible.builtin.apt:
         update_cache: true
       changed_when: false
-      when: ansible_os_family == 'Debian'
+      when: ansible_facts.os_family == 'Debian'
 
     - name: Install gpg agent
       ansible.builtin.apt:
         package: gpg-agent
       changed_when: false
-      when: ansible_os_family == 'Debian'
+      when: ansible_facts.os_family == 'Debian'
 
     - name: Install python3 binary redirection
       ansible.builtin.apt:
         name: python-is-python3
-      when: ansible_os_family == 'Debian'
+      when: ansible_facts.os_family == 'Debian'
 
     - name: Disable ipv6
       ansible.posix.sysctl:
@@ -32,7 +32,7 @@
 
     - name: Install multipath tools
       ansible.builtin.package:
-        name: "{{ (ansible_os_family == 'Debian') | ternary(_multipath_deb, _multipath_rpm) }}"
+        name: "{{ (ansible_facts.os_family == 'Debian') | ternary(_multipath_deb, _multipath_rpm) }}"
       vars:
         _multipath_deb: multipath-tools
         _multipath_rpm: device-mapper-multipath
@@ -46,7 +46,7 @@
       ansible.builtin.lineinfile:
         path: /etc/hosts
         regexp: ".*{{ _api_hostname }}.*"
-        line: "{{ ansible_default_ipv4.address }} {{ _api_hostname }}"
+        line: "{{ ansible_facts.default_ipv4.address }} {{ _api_hostname }}"
       vars:
         _api_hostname: "{{ rke2_api_url | urlsplit('hostname') }}"
 
@@ -60,5 +60,7 @@
         regexp: ".*{{ _api_hostname }}.*"
         line: "{{ _api_address }} {{ _api_hostname }}"
       vars:
+        _api_server_facts: "{{ hostvars[groups['rke2_server'] | first] }}"
+        _api_server_addr: "{{  _api_server_facts['ansible_facts']['default_ipv4']['address'] }}"
         _api_hostname: "{{ rke2_api_url | urlsplit('hostname') }}"
-        _api_address: "{{ hostvars[groups['rke2_server'].0]['ansible_default_ipv4']['address'] }}"
+        _api_address: "{{ rke2_kubevip_address | default(_api_server_addr) }}"
