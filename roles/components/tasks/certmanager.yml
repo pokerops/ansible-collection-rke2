@@ -46,7 +46,7 @@
   retries: "{{ _rke2_retry_num }}"
   delay: "{{ _rke2_retry_delay }}"
   register: certmanager_crd
-  until: certmanager_crd.resources | length > 0
+  until: certmanager_crd.resources | default([]) | length > 0
 
 - name: Wait for certitificate crd
   kubernetes.core.k8s_info:
@@ -56,7 +56,7 @@
   retries: "{{ _rke2_retry_num }}"
   delay: "{{ _rke2_retry_delay }}"
   register: certmanager_crd
-  until: certmanager_crd.resources | length > 0
+  until: certmanager_crd.resources | default([]) | length > 0
 
 - name: Deploy Cloudflare cluster issuer
   when: rke2_certmanager_acme_secret is defined

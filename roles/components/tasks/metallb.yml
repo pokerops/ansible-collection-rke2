@@ -37,7 +37,7 @@
   retries: "{{ _rke2_retry_num }}"
   delay: "{{ _rke2_retry_delay }}"
   register: metallb_crd
-  until: metallb_crd.resources | length > 0
+  until: metallb_crd.resources | default([]) | length > 0
 
 - name: Create MetalLB private pool
   kubernetes.core.k8s:

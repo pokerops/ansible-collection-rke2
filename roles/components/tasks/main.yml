@@ -18,7 +18,7 @@
   register: _servicemonitor_crd
   retries: "{{ _rke2_retry_num }}"
   delay: "{{ _rke2_retry_delay }}"
-  until: _servicemonitor_crd.resources | length > 0
+  until: _servicemonitor_crd.resources | default([]) | length > 0
   when: _rke2_monitoring_deploy | bool
 
 - name: Include metallb tasks

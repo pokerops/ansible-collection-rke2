@@ -54,7 +54,7 @@
   retries: "{{ _rke2_retry_num }}"
   delay: "{{ _rke2_retry_delay }}"
   register: argocd_crd
-  until: argocd_crd.resources | length > 0
+  until: argocd_crd.resources | default([]) | length > 0
 
 - name: Deploy argocd apps
   when: rke2_argocd_apps_deploy
