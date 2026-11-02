@@ -16,7 +16,7 @@
   register: _vector_crd
   retries: "{{ _rke2_retry_num }}"
   delay: "{{ _rke2_retry_delay }}"
-  until: _vector_crd.resources | length > 0
+  until: _vector_crd.resources | default([]) | length > 0
 
 - name: Wait for clustervectorpipeline crd
   kubernetes.core.k8s_info:
@@ -26,7 +26,7 @@
   register: _vectorpipeline_crd
   retries: "{{ _rke2_retry_num }}"
   delay: "{{ _rke2_retry_delay }}"
-  until: _vectorpipeline_crd.resources | length > 0
+  until: _vectorpipeline_crd.resources | default([]) | length > 0
 
 - name: Deploy VictoriaLogs application
   kubernetes.core.k8s:
