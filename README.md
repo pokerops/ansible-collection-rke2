@@ -115,10 +115,52 @@ global:
 - pokerops.rke2.secrets: Deploy cluster secrets
 - pokerops.rke2.init: Deploy base cluster components
 - pokerops.rke2.update: Update OS for rke2 cluster members
+- pokerops.rke2.frr: Run an FRR BGP router for MetalLB peers on a test host (see below)
+
+## FRR test router
+
+`pokerops.rke2.frr` runs [FRR](https://frrouting.org/) in a Docker container on the host
+running your test environment (`localhost` unless `rke2_frr_host` is set). It accepts BGP
+sessions from every address on the test network, so MetalLB speakers on the cluster members
+peer with it and LoadBalancer addresses become routes on that host. It is the router this
+collection's own `converged` and `full` scenarios test against. It does nothing unless
+`rke2_metallb_mode` is `bgp`.
+
+Import it before `pokerops.rke2.install`, and again with `rke2_frr_state: absent` on teardown:
+
+```yaml
+- name: Configure FRR router
+  import_playbook: pokerops.rke2.frr
+```
+
+```yaml
+- name: Destroy FRR router
+  import_playbook: pokerops.rke2.frr
+  vars:
+    rke2_frr_state: absent
+```
+
+| Parameter               |                      Default | Type   | Description                                                    | Required |
+| :---------------------- | ---------------------------: | :----- | :------------------------------------------------------------- | :------- |
+| rke2_frr_address        |              libvirt_address | string | Host address CIDR on the network cluster members peer over     | yes [3]  |
+| rke2_frr_asn            |         rke2_metallb_bgp_asn | int    | ASN shared with MetalLB peers (iBGP)                           | yes [3]  |
+| rke2_frr_state          |                      present | string | `present` to deploy, `absent` to remove container and config   | no       |
+| rke2_frr_host           |                    localhost | string | Inventory host that runs the router                            | no       |
+| rke2_frr_group          | rke2_agent, else rke2_server | string | Group whose hosts the router balances routes over (ECMP paths) | no       |
+| rke2_frr_version        |                       10.5.3 | string | FRR image tag                                                  | no       |
+| rke2_frr_image          |        quay.io/frrouting/frr | string | FRR image repository                                           | no       |
+| rke2_frr_container      |                          frr | string | Container name                                                 | no       |
+| rke2_frr_config_dir     |            /var/lib/rke2-frr | string | Host directory mounted as the container's `/etc/frr`           | no       |
+| rke2_frr_install_docker |                         true | bool   | Install and start `docker.io` first (apt based hosts)          | no       |
+
+[3] Not required when the default is defined
+
+Cluster members must be able to reach `rke2_frr_address`, and the collection
+`community.docker` must be installed on the controller.
 
 ## Testing
 
-You can test the collection directly from sources using command `make test`
+You can test the collection directly from sources using command `just test`
 
 Role releases are ci/cd tested against the following distributions:
 
