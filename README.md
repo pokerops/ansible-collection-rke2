@@ -46,7 +46,7 @@ Cluster wide parameters
 | rke2_logging_endpoint                     |                                    | string | Optional remote log destination (host:port); logs always go to the local store too                               | no       |
 | rke2_logging_buffer_size                  |                         1073741824 | int    | Per-node disk buffer (bytes) for unsent remote logs; survives agent restarts                                     | no       |
 | rke2_logging_retention_days               |                                  3 | int    | Days the local log store (VictoriaLogs) keeps logs; the oldest go first past 85% disk use                        | no       |
-| rke2_logging_volume_size                  |                               20Gi | string | Local log store volume size                                                                                      | no       |
+| rke2_logging_volume_size                  |                               50Gi | string | Local log store volume size                                                                                      | no       |
 | rke2_logging_storage_class                |                                    | string | Local log store storage class; empty uses the cluster default                                                    | no       |
 | rke2_kubevip_address                      |                                 "" | string | Control plane floating IP held by kube-vip (L2/ARP); "" disables kube-vip                                        | no       |
 | rke2_evict_timeout                        |                                300 | bool   | Node drain eviction timeout in seconds                                                                           | no       |
