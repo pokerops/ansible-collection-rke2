@@ -1,4 +1,9 @@
 ---
+- name: Destroy FRR router on KVM host
+  import_playbook: pokerops.rke2.frr
+  vars:
+    rke2_frr_state: absent
+
 - name: Restore KVM host
   hosts: rke2_server
   gather_facts: false
@@ -8,27 +13,12 @@
     - ../../playbooks/vars/main.yml
   become: true
   tasks:
-    - name: Destroy FRR container
+    - name: Destroy api host file entry
       delegate_to: localhost
-      block:
-        - name: Stop and remove FRR container
-          community.docker.docker_container:
-            name: frr
-            state: absent
-          failed_when: false
-
-        - name: Destroy FRR configuration directory
-          ansible.builtin.file:
-            path: "{{ _frr_config_dir }}"
-            state: absent
-          vars:
-            _frr_config_dir: "{{ lookup('ansible.builtin.env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/frr"
-
-        - name: Destroy api host file entry
-          ansible.builtin.lineinfile:
-            path: /etc/hosts
-            regexp: ".*{{ _rke2_api_url | urlsplit('hostname') }}.*"
-            state: absent
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        regexp: ".*{{ _rke2_api_url | urlsplit('hostname') }}.*"
+        state: absent
 
 - name: Archive RKE2 install logs
   hosts: rke2_server

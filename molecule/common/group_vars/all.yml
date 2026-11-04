@@ -34,6 +34,9 @@ molecule_logdir: "{{ lookup('ansible.builtin.env', 'MOLECULE_LOGDIR', default='/
 molecule_install_log: "{{ molecule_logdir }}/{{ lookup('ansible.builtin.env', 'MOLECULE_SCENARIO_NAME') }}"
 molecule_local_kubeconfig: "{{ lookup('ansible.builtin.env', 'MOLECULE_PROJECT_DIRECTORY') }}/.kubeconfig"
 
+# FRR router for the bgp scenarios, kept with the rest of the scenario state
+rke2_frr_config_dir: "{{ lookup('ansible.builtin.env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/frr"
+
 # RKE2
 rke2_registry_enable: false
 rke2_retry_num: 30

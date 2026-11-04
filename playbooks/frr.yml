@@ -1,0 +1,117 @@
+---
+# Run an FRR BGP route reflector for MetalLB peers
+#
+# Set rke2_frr_state=absent to tear it down.
+#
+# Required (or derived from the metallb settings the cluster already uses):
+#   rke2_frr_address  CIDR of the host's address on the network cluster members
+#                     peer over; defaults to libvirt_address
+#   rke2_frr_asn      ASN shared with MetalLB peers; defaults to rke2_metallb_bgp_asn
+#
+- name: Configure FRR BGP router
+  hosts: "{{ rke2_frr_host | default('localhost') }}"
+  become: true
+  vars:
+    _frr_state: "{{ rke2_frr_state | default('present') }}"
+    _frr_version: "{{ rke2_frr_version | default('10.5.3') }}"
+    _frr_image: "{{ rke2_frr_image | default('quay.io/frrouting/frr') }}"
+    _frr_container: "{{ rke2_frr_container | default('frr') }}"
+    _frr_config_dir: "{{ rke2_frr_config_dir | default('/var/lib/rke2-frr') }}"
+    _frr_install_docker: "{{ rke2_frr_install_docker | default(true) }}"
+    _frr_asn: "{{ rke2_frr_asn | default(rke2_metallb_bgp_asn | default('')) }}"
+    _frr_address: "{{ rke2_frr_address | default(libvirt_address | default('')) }}"
+    _frr_group: "{{ rke2_frr_group | default('rke2_agent' if 'rke2_agent' in groups else 'rke2_server') }}"
+  tasks:
+    - name: Skip unless MetalLB is configured for BGP
+      ansible.builtin.meta: end_host
+      when: rke2_metallb_mode | default("l2") != "bgp"
+
+    - name: Destroy FRR router
+      when: _frr_state == "absent"
+      block:
+        - name: Stop and remove FRR container
+          community.docker.docker_container:
+            name: "{{ _frr_container }}"
+            state: absent
+          failed_when: false
+
+        - name: Destroy FRR configuration directory
+          ansible.builtin.file:
+            path: "{{ _frr_config_dir }}"
+            state: absent
+
+    - name: Deploy FRR router
+      when: _frr_state == "present"
+      block:
+        - name: Check FRR parameters
+          ansible.builtin.assert:
+            that:
+              - _frr_asn | string | length > 0
+              - (_frr_address | ansible.utils.ipaddr('network/prefix')) is string
+              - groups[_frr_group] | default([]) | length > 0
+            fail_msg: >-
+              Set rke2_frr_asn (or rke2_metallb_bgp_asn) and rke2_frr_address
+              (or libvirt_address) to a CIDR, and make sure group {{ _frr_group }} has hosts
+
+        - name: Install Docker
+          when: _frr_install_docker | bool
+          block:
+            - name: Locate Docker
+              ansible.builtin.command: which docker
+              register: _frr_docker_query
+              changed_when: false
+              failed_when: false
+
+            - name: Install docker.io
+              when: _frr_docker_query.rc != 0
+              block:
+                - name: Update apt cache
+                  ansible.builtin.apt:
+                    update_cache: true
+                  when: ansible_facts.pkg_mgr == 'apt'
+
+                - name: Ensure Docker is installed
+                  ansible.builtin.package:
+                    name: docker.io
+                    state: present
+
+            - name: Start Docker service
+              ansible.builtin.systemd:
+                name: docker
+                state: started
+                enabled: true
+
+        - name: Create FRR configuration directory
+          ansible.builtin.file:
+            path: "{{ _frr_config_dir }}"
+            state: directory
+            mode: "0755"
+
+        - name: Create FRR daemons configuration
+          ansible.builtin.template:
+            src: frr/daemons.j2
+            dest: "{{ _frr_config_dir }}/daemons"
+            mode: "0640"
+
+        - name: Create FRR BGP configuration
+          ansible.builtin.template:
+            src: frr/frr.j2.conf
+            dest: "{{ _frr_config_dir }}/frr.conf"
+            mode: "0640"
+
+        - name: Start FRR container
+          community.docker.docker_container:
+            name: "{{ _frr_container }}"
+            image: "{{ _frr_image }}:{{ _frr_version }}"
+            state: started
+            restart: true
+            restart_policy: unless-stopped
+            network_mode: host
+            privileged: true
+            capabilities:
+              - NET_ADMIN
+              - NET_RAW
+              - SYS_ADMIN
+            volumes:
+              - "{{ _frr_config_dir }}:/etc/frr"
+            command: ["/sbin/tini", "--", "/usr/lib/frr/docker-start"]
