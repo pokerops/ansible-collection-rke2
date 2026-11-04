@@ -525,6 +525,25 @@
               loop_control:
                 label: "{{ item.metadata.name }}"
 
+        # Velero has completed a backup that never saw the MariaDB CR. This is
+        # the CR's state at the moment the backup starts, to compare against
+        # the backup's own item list if that happens again.
+        - name: Query MariaDB resource before backup
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ kubeconfig_path }}"
+            api_version: k8s.mariadb.com/v1alpha1
+            kind: MariaDB
+            name: "{{ mariadb_name }}"
+            namespace: "{{ mariadb_namespace }}"
+          register: _premariadb_query
+
+        - name: Debug MariaDB resource before backup
+          ansible.builtin.debug:
+            msg:
+              resourceVersion: "{{ _premariadb_query.resources | map(attribute='metadata.resourceVersion') | list }}"
+              generation: "{{ _premariadb_query.resources | map(attribute='metadata.generation') | list }}"
+              conditions: "{{ _premariadb_query.resources | map(attribute='status.conditions', default=[]) | list }}"
+
         - name: Create Velero backup
           block:
             - name: Create Velero backup of MariaDB namespace
@@ -582,7 +601,8 @@
                 cmd: >-
                   set -o pipefail;
                   kubectl --kubeconfig {{ kubeconfig_path }} -n velero exec deploy/velero --
-                  /velero backup logs {{ backup_name }} | grep -c 'mariadbs.k8s.mariadb.com'
+                  /velero backup logs {{ backup_name }}
+                  | grep -cE '"namespace":"{{ mariadb_namespace }}".*"resource":"mariadbs\.k8s\.mariadb\.com"'
               args:
                 executable: /bin/bash
               register: _backup_mariadb_log
@@ -596,9 +616,10 @@
               ansible.builtin.assert:
                 that: _backup_mariadb_log.stdout | default('0') | trim | int > 0
                 fail_msg: >-
-                  Backup {{ backup_name }} completed but its log never mentions
-                  mariadbs.k8s.mariadb.com, so the MariaDB CR is not in the
-                  backup and a restore cannot recreate it.
+                  Backup {{ backup_name }} completed but its log has no
+                  {{ mariadb_namespace }} item of resource mariadbs.k8s.mariadb.com,
+                  so the MariaDB CR is not in the backup and a restore cannot
+                  recreate it. The CRD and APIService of that name do not count.
                 success_msg: "MariaDB resource is in backup {{ backup_name }}"
 
             - name: Verify backup moved volume data to object storage
@@ -984,6 +1005,23 @@
           ansible.builtin.debug:
             msg: "{{ _backup_log.stdout_lines | default([]) }}"
 
+        - name: Describe the Velero backup items
+          ansible.builtin.shell:
+            cmd: >-
+              set -o pipefail;
+              kubectl --kubeconfig {{ kubeconfig_path }} -n velero exec deploy/velero --
+              /velero backup describe {{ backup_name }} --details
+              | sed -n '/^Resource List:/,/^Backup Volumes:/p'
+          args:
+            executable: /bin/bash
+          register: _backup_items
+          changed_when: false
+          failed_when: false
+
+        - name: Debug the Velero backup items
+          ansible.builtin.debug:
+            msg: "{{ _backup_items.stdout_lines | default([]) }}"
+
         - name: Query namespace events
           ansible.builtin.command:
             cmd: >-
@@ -1200,7 +1238,7 @@
           ansible.builtin.debug:
             msg: >-
               {{ _velero_log.log_lines | default([])
-                 | select('search', 'level=warning|skip|snapshot|VolumeSnapshot') | list }}
+                 | select('search', 'level=warning|skip|snapshot|VolumeSnapshot|mariadb') | list }}
 
         - name: Terminate playbook
           ansible.builtin.fail:
