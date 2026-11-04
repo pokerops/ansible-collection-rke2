@@ -43,11 +43,10 @@ Cluster wide parameters
 | rke2_retry_num                            |                                 10 | bool   | Max number of task retries                                                                                       | no       |
 | rke2_retry_delay                          |                                 30 | bool   | Task delay on retries                                                                                            | no       |
 | rke2_logging_format                       |                               json | string | Log format of the Kubernetes components and metrics-server; "" for their default                                 | no       |
-| rke2_logging_volume_size                  |                                    | string | Log format of the Kubernetes components and metrics-server; "" for their default                                 | no       |
 | rke2_logging_endpoint                     |                                    | string | Optional remote log destination (host:port); logs always go to the local store too                               | no       |
 | rke2_logging_buffer_size                  |                         1073741824 | int    | Per-node disk buffer (bytes) for unsent remote logs; survives agent restarts                                     | no       |
 | rke2_logging_retention_days               |                                  3 | int    | Days the local log store (VictoriaLogs) keeps logs; the oldest go first past 85% disk use                        | no       |
-| rke2_logging_volume_size                  |                                5Gi | string | Local log store volume size                                                                                      | no       |
+| rke2_logging_volume_size                  |                               20Gi | string | Local log store volume size                                                                                      | no       |
 | rke2_logging_storage_class                |                                    | string | Local log store storage class; empty uses the cluster default                                                    | no       |
 | rke2_kubevip_address                      |                                 "" | string | Control plane floating IP held by kube-vip (L2/ARP); "" disables kube-vip                                        | no       |
 | rke2_evict_timeout                        |                                300 | bool   | Node drain eviction timeout in seconds                                                                           | no       |
@@ -74,13 +73,12 @@ Cluster wide parameters
 | rke2_monitoring_cluster_id                |            {{ rke2_cluster_name }} | string | Cluster label stamped on every metric and log record                                                             | no       |
 | rke2_monitoring_tls_enabled               |                              false | bool   | Use mTLS to reach the remote ingestor                                                                            | no       |
 | rke2_monitoring_vector_memory             |                                1Gi | string | Memory limit for Vector.dev                                                                                      |
-| rke2_monitoring_vector_image              |      timberio/vector:0.48.0-debian | string | Vector agent image; the debian variant carries journalctl for node journal logs. Pinned, bumped by `rke2 update` | no       |
+| rke2_monitoring_vector_image              |      timberio/vector:0.60.0-debian | string | Vector agent image; the debian variant carries journalctl for node journal logs. Pinned, bumped by `rke2 update` | no       |
 | rke2_coredns_cpu_limit                    |                               500m | string | CoreDNS per-pod CPU limit, override for default rke2-coredns chart values                                        | no       |
 | rke2_coredns_memory_limit                 |                              512Mi | string | CoreDNS per-pod memory limit, override for default rke2-coredns chart values                                     | no       |
 | rke2_coredns_autoscaler_cores_per_replica |                                128 | int    | Cluster cores per CoreDNS replica, override for default rke2-coredns autoscaler                                  | no       |
 | rke2_coredns_autoscaler_nodes_per_replica |                                  8 | int    | Cluster nodes per CoreDNS replica, override for default rke2-coredns autoscaler                                  | no       |
 | rke2_coredns_autoscaler_min_replicas      |                                  2 | int    | Minimum CoreDNS replicas, override for default rke2-coredns autoscaler                                           | no       |
-| rke2_nolog                                |                               true | bool   | Toggle flag for logging sensitive statements                                                                     | no       |
 
 [1] rke2_certmanager_acme_email is required whenever rke2_certmanager_acme_secret is set
 [2] rke2_argocd_values default is as follows:

@@ -75,7 +75,7 @@ rke2_logging_endpoint: ""
 # Retention is by age, and by size as a safety net: the oldest days go first
 # once the volume is 85% full. An empty storage class uses the cluster default.
 rke2_logging_retention_days: 3
-rke2_logging_volume_size: 5Gi
+rke2_logging_volume_size: 20Gi
 rke2_logging_storage_class: ""
 
 # Disk buffer for logs bound for rke2_logging_endpoint, per node, in bytes
