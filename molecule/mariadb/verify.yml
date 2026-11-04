@@ -27,10 +27,7 @@
     - name: Verify the monitoring collector is enabled
       ansible.builtin.assert:
         that: rke2_monitoring_endpoint | default('') | length > 0
-        fail_msg: >-
-          rke2_monitoring_endpoint is unset, so converge skipped the monitoring
-          stack and nothing ships to the ingestor. Set it in the scenario
-          inventory.
+        fail_msg: "rke2_monitoring_endpoint parameter is required"
         success_msg: "Collector ships to {{ rke2_monitoring_endpoint }}"
 
     # Setup rather than backup coverage, so it sits outside the Velero block: a
@@ -366,7 +363,7 @@
           ansible.builtin.assert:
             that: (_ingested_mysql.stdout | trim | int) > 0
             fail_msg: >-
-              The exporter serves metrics but none reached the ingestor.
+              Exporter serves metrics but none reached the ingestor.
               Alloy is not scraping the ServiceMonitor the operator created.
             success_msg: "Ingestor received {{ _ingested_mysql.stdout | trim }} mysql_up events"
 
@@ -390,11 +387,7 @@
         - name: Verify MariaDB CR state metrics are collected end to end
           ansible.builtin.assert:
             that: (_ingested_crstate.stdout | trim | int) > 0
-            fail_msg: >-
-              No kube_mariadb_created series reached the ingestor although a
-              MariaDB cluster exists. Either the kube-state-metrics
-              customResourceState config or its RBAC rule for
-              k8s.mariadb.com is not producing the series.
+            fail_msg: No kube_mariadb_created series reached the ingestor
             success_msg: "Ingestor received {{ _ingested_crstate.stdout | trim }} kube_mariadb_created events"
 
       rescue:
@@ -525,6 +518,39 @@
               loop_control:
                 label: "{{ item.metadata.name }}"
 
+        # Velero builds its API discovery at startup and refreshes it on a
+        # timer, so a backup started shortly after the operator installed its
+        # CRDs can skip their groups and complete without the CRs
+        - name: Restart Velero deployment
+          ansible.builtin.command:
+            cmd: >-
+              kubectl --kubeconfig {{ kubeconfig_path }} -n velero
+              rollout restart deploy/velero
+          changed_when: true
+
+        - name: Wait for the Velero rollout to complete
+          ansible.builtin.command:
+            cmd: >-
+              kubectl --kubeconfig {{ kubeconfig_path }} -n velero
+              rollout status deploy/velero --timeout=300s
+          changed_when: false
+
+        - name: Query MariaDB resource before backup
+          kubernetes.core.k8s_info:
+            kubeconfig: "{{ kubeconfig_path }}"
+            api_version: k8s.mariadb.com/v1alpha1
+            kind: MariaDB
+            name: "{{ mariadb_name }}"
+            namespace: "{{ mariadb_namespace }}"
+          register: _premariadb_query
+
+        - name: Debug MariaDB resource before backup
+          ansible.builtin.debug:
+            msg:
+              resourceVersion: "{{ _premariadb_query.resources | map(attribute='metadata.resourceVersion') | list }}"
+              generation: "{{ _premariadb_query.resources | map(attribute='metadata.generation') | list }}"
+              conditions: "{{ _premariadb_query.resources | map(attribute='status.conditions', default=[]) | list }}"
+
         - name: Create Velero backup
           block:
             - name: Create Velero backup of MariaDB namespace
@@ -582,7 +608,8 @@
                 cmd: >-
                   set -o pipefail;
                   kubectl --kubeconfig {{ kubeconfig_path }} -n velero exec deploy/velero --
-                  /velero backup logs {{ backup_name }} | grep -c 'mariadbs.k8s.mariadb.com'
+                  /velero backup logs {{ backup_name }}
+                  | grep -cE '"namespace":"{{ mariadb_namespace }}".*"resource":"mariadbs\.k8s\.mariadb\.com"'
               args:
                 executable: /bin/bash
               register: _backup_mariadb_log
@@ -595,11 +622,7 @@
             - name: Verify the MariaDB resource was backed up
               ansible.builtin.assert:
                 that: _backup_mariadb_log.stdout | default('0') | trim | int > 0
-                fail_msg: >-
-                  Backup {{ backup_name }} completed but its log never mentions
-                  mariadbs.k8s.mariadb.com, so the MariaDB CR is not in the
-                  backup and a restore cannot recreate it.
-                success_msg: "MariaDB resource is in backup {{ backup_name }}"
+                fail_msg: "Backup {{ backup_name }} completed without any mariadbs.k8s.mariadb.com resource"
 
             - name: Verify backup moved volume data to object storage
               kubernetes.core.k8s_info:
@@ -626,7 +649,7 @@
                   - _upload_query.resources
                     | selectattr('status.phase', 'equalto', 'Completed')
                     | list | length > 0
-                fail_msg: No DataUpload completed for backup {{ backup_name }}
+                fail_msg: "No DataUpload completed for backup {{ backup_name }}"
 
         - name: Display backup completion details
           ansible.builtin.debug:
@@ -782,9 +805,7 @@
               - _download_query.resources
                 | selectattr('status.phase', 'equalto', 'Completed')
                 | list | length > 0
-            fail_msg: >-
-              No completed DataDownload for restore {{ restore_name }} — the PVC may
-              have been recreated empty instead of restored from object storage.
+            fail_msg: "No completed DataDownload for restore {{ restore_name }}"
 
         - name: Verify restored PVCs are bound
           kubernetes.core.k8s_info:
@@ -915,7 +936,7 @@
             that:
               - mariadb_row_count_before == mariadb_row_count_after
             fail_msg: >-
-              Row count mismatch after restore!
+              Row count mismatch after restore
               Before backup: {{ mariadb_row_count_before }}
               After restore: {{ mariadb_row_count_after }}
             success_msg: "Data integrity verified: {{ mariadb_row_count_after }} rows restored successfully."
@@ -923,16 +944,12 @@
         - name: Display verification summary
           ansible.builtin.debug:
             msg: |
-              MariaDB Velero Backup and Restore Verification Completed Successfully!
-
               Summary:
               - Backup Name: {{ backup_name }}
               - Restore Name: {{ restore_name }}
               - Database: {{ mariadb_database }}
               - Rows Before Backup: {{ mariadb_row_count_before }}
               - Rows After Restore: {{ mariadb_row_count_after }}
-
-              All verification tests passed!
 
       rescue:
         # Velero's per-item restore results and log name what happened to
@@ -983,6 +1000,23 @@
         - name: Debug the Velero backup log
           ansible.builtin.debug:
             msg: "{{ _backup_log.stdout_lines | default([]) }}"
+
+        - name: Describe the Velero backup items
+          ansible.builtin.shell:
+            cmd: >-
+              set -o pipefail;
+              kubectl --kubeconfig {{ kubeconfig_path }} -n velero exec deploy/velero --
+              /velero backup describe {{ backup_name }} --details
+              | sed -n '/^Resource List:/,/^Backup Volumes:/p'
+          args:
+            executable: /bin/bash
+          register: _backup_items
+          changed_when: false
+          failed_when: false
+
+        - name: Debug the Velero backup items
+          ansible.builtin.debug:
+            msg: "{{ _backup_items.stdout_lines | default([]) }}"
 
         - name: Query namespace events
           ansible.builtin.command:
@@ -1200,7 +1234,7 @@
           ansible.builtin.debug:
             msg: >-
               {{ _velero_log.log_lines | default([])
-                 | select('search', 'level=warning|skip|snapshot|VolumeSnapshot') | list }}
+                 | select('search', 'level=warning|skip|snapshot|VolumeSnapshot|mariadb') | list }}
 
         - name: Terminate playbook
           ansible.builtin.fail:

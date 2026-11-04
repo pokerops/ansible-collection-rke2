@@ -39,3 +39,11 @@ spec:
           - name: loop
           - name: reload
           - name: loadbalance
+    resources:
+      limits:
+        cpu: "{{ rke2_coredns_cpu_limit }}"
+        memory: "{{ rke2_coredns_memory_limit }}"
+    autoscaler:
+      coresPerReplica: "{{ rke2_coredns_autoscaler_cores_per_replica }}"
+      nodesPerReplica: "{{ rke2_coredns_autoscaler_nodes_per_replica }}"
+      min: "{{ rke2_coredns_autoscaler_min_replicas }}"

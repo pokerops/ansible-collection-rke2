@@ -1,0 +1,16 @@
+---
+# rke2-coredns 1.45.201 ships each pod at 100m/128Mi request+limit, sized for
+# a small cluster - reported too tight on larger ones (OOMKilled), especially
+# with the query log plugin enabled. Request stays at the chart default since
+# it only affects scheduling; only the limits move.
+rke2_coredns_cpu_limit: 500m
+rke2_coredns_memory_limit: 512Mi
+
+# The chart's own cluster-proportional autoscaler is enabled by default
+# (coresPerReplica: 256, nodesPerReplica: 16, min: 0), so a small cluster
+# already runs a single replica. Tightening the ratios adds replicas sooner
+# as a cluster grows, spreading query load across pods instead of relying
+# solely on a higher per-pod ceiling; min holds a floor of 2 for HA.
+rke2_coredns_autoscaler_cores_per_replica: 128
+rke2_coredns_autoscaler_nodes_per_replica: 8
+rke2_coredns_autoscaler_min_replicas: 2

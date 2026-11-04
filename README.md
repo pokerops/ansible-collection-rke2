@@ -64,6 +64,11 @@ Cluster wide parameters
 | rke2_argocd_apps_pokerops_revision  |                               HEAD | string | PokerOps ArgoCD revision, used to deploy base cluster assets                     | no       |
 | rke2_longhorn_hostname              | "longhorn.{{ rke2_cluster_name }}" | string | Longhorn UI hostname                                                             | no       |
 | rke2_monitoring_vector_memory       |                                1Gi | string | Memory limit for Vector.dev                                                      |
+| rke2_coredns_cpu_limit               |                               500m | string | CoreDNS per-pod CPU limit, override for default rke2-coredns chart values        | no       |
+| rke2_coredns_memory_limit            |                              512Mi | string | CoreDNS per-pod memory limit, override for default rke2-coredns chart values     | no       |
+| rke2_coredns_autoscaler_cores_per_replica |                         128 | int    | Cluster cores per CoreDNS replica, override for default rke2-coredns autoscaler  | no       |
+| rke2_coredns_autoscaler_nodes_per_replica |                           8 | int    | Cluster nodes per CoreDNS replica, override for default rke2-coredns autoscaler  | no       |
+| rke2_coredns_autoscaler_min_replicas  |                               2 | int    | Minimum CoreDNS replicas, override for default rke2-coredns autoscaler           | no       |
 | rke2_nolog                          |                               true | bool   | Toggle flag for logging sensitive statements                                     | no       |
 
 [1] rke2_certmanager_acme_email is required whenever rke2_certmanager_acme_secret is set
