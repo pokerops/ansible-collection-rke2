@@ -51,3 +51,6 @@ rke2_argocd_controller_replicas: 1
 rke2_argocd_server_replicas: 1
 rke2_argocd_reposerver_replicas: 1
 rke2_argocd_applicationset_replicas: 1
+
+# Monitoring
+rke2_logging_volume_size: 5Gi
