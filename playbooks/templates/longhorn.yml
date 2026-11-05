@@ -11,6 +11,7 @@ spec:
   source:
     chart: longhorn
     repoURL: https://charts.longhorn.io
+    # Child clusters must be running v1.34 before updating to 1.13.0
     targetRevision: "1.12.1"
     helm:
       valuesObject:
@@ -25,10 +26,10 @@ spec:
           secureBackends: true
         enablePSP: false
         concurrentAutomaticEngineUpgradePerNodeLimit: 1
-        # JSON for longhorn-manager and the driver deployer (chart 1.12.1).
+        # JSON for longhorn-manager and the driver deployer
+        # KLOG for CSI sidecars
         # longhorn-csi-plugin stays logfmt: the deployer hardcodes its args
-        # without -j (longhorn-manager csi/deployment.go); the CSI sidecars
-        # log klog
+        # without -j (longhorn-manager csi/deployment.go)
         longhornManager:
           log:
             format: json
