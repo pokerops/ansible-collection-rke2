@@ -22,7 +22,7 @@ rke2_monitoring_metrics_volume_size: 2Gi
 # Log agent image. The operator's default is the distroless variant, which
 # has no journalctl for the journald source (rke2 and host-unit logs); the
 # debian variant ships it. Pin only, bumped by rke2 update.
-rke2_monitoring_vector_image: "timberio/vector:0.60.0-debian"
+rke2_monitoring_vector_image: "timberio/vector:0.61.0-debian"
 
 # Cardinality control, applied by Alloy as metric_relabel_configs. Measured
 # against real scrapes, not inherited: together these cut ~45% of active series.
