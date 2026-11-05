@@ -16,31 +16,13 @@ rke2_monitoring_tls_ca_secret: ""
 # Remote ingestor to ship metrics to. Empty disables monitoring entirely.
 rke2_monitoring_endpoint: ""
 
-# Remote ingestor to ship logs to, as a bare host:port (Vector's native
-# protocol, not an HTTP URL). Optional: logging always ships to the
-# cluster-local VictoriaLogs store; this adds the remote destination.
-rke2_logging_endpoint: ""
-
-# Cluster-local log store (VictoriaLogs, playbooks/templates/victorialogs.yml).
-# Retention is by age, and by size as a safety net: the oldest days go first
-# once the volume is 85% full. An empty storage class uses the cluster default.
-rke2_logging_retention_days: 3
-rke2_logging_volume_size: 5Gi
-rke2_logging_storage_class: ""
-
-# Disk buffer for logs bound for rke2_logging_endpoint, per node, in bytes
-# (Vector's minimum is 256 MiB). Unsent events wait here across agent
-# restarts while the remote is unreachable; when it fills, reading stops
-# until the remote catches up. 1 GiB is roughly an hour of a busy node.
-rke2_logging_buffer_size: 1073741824
+# Alloy's WAL volume; metrics in it are time-bound by the WAL itself.
+rke2_monitoring_metrics_volume_size: 2Gi
 
 # Log agent image. The operator's default is the distroless variant, which
 # has no journalctl for the journald source (rke2 and host-unit logs); the
 # debian variant ships it. Pin only, bumped by rke2 update.
-rke2_vector_agent_image: "timberio/vector:0.60.0-debian"
-
-# Alloy's WAL volume; metrics in it are time-bound by the WAL itself.
-rke2_monitoring_metrics_volume_size: 2Gi
+rke2_monitoring_vector_image: "timberio/vector:0.60.0-debian"
 
 # Cardinality control, applied by Alloy as metric_relabel_configs. Measured
 # against real scrapes, not inherited: together these cut ~45% of active series.
@@ -83,3 +65,21 @@ rke2_monitoring_drop_labels_cadvisor:
   - id # cgroup path
   - name # duplicates the container label
   - image # available from kube_pod_container_info
+
+# Remote ingestor to ship logs to, as a bare host:port (Vector's native
+# protocol, not an HTTP URL). Optional: logging always ships to the
+# cluster-local VictoriaLogs store; this adds the remote destination.
+rke2_logging_endpoint: ""
+
+# Cluster-local log store (VictoriaLogs, playbooks/templates/victorialogs.yml).
+# Retention is by age, and by size as a safety net: the oldest days go first
+# once the volume is 85% full. An empty storage class uses the cluster default.
+rke2_logging_retention_days: 3
+rke2_logging_volume_size: 5Gi
+rke2_logging_storage_class: ""
+
+# Disk buffer for logs bound for rke2_logging_endpoint, per node, in bytes
+# (Vector's minimum is 256 MiB). Unsent events wait here across agent
+# restarts while the remote is unreachable; when it fills, reading stops
+# until the remote catches up. 1 GiB is roughly an hour of a busy node.
+rke2_logging_buffer_size: 1073741824

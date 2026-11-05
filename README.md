@@ -34,42 +34,51 @@ The following is the list of parameters intended for end-user manipulation:
 
 Cluster wide parameters
 
-| Parameter                           |                            Default | Type   | Description                                                                      | Required |
-| :---------------------------------- | ---------------------------------: | :----- | :------------------------------------------------------------------------------- | :------- |
-| rke2_cluster_name                   |                                n/a | string | Cluster name, immutable after creation                                           | yes      |
-| rke2_version                        |                     v1.33.9+rke2r1 | string | RKE2 version to deploy                                                           | no       |
-| rke2_nolog                          |                               true | bool   | Toggle flag for logging sensitive statements                                     | no       |
-| rke2_config_hostnames               |                               true | bool   | Toggle flag for cluster hostfile entry configuration                             | no       |
-| rke2_retry_num                      |                                 10 | bool   | Max number of task retries                                                       | no       |
-| rke2_retry_delay                    |                                 30 | bool   | Task delay on retries                                                            | no       |
-| rke2_logging_format                 |                               json | string | Log format of the Kubernetes components and metrics-server; "" for their default | no       |
-| rke2_kubevip_address                |                                 "" | string | Control plane floating IP held by kube-vip (L2/ARP); "" disables kube-vip        | no       |
-| rke2_evict_timeout                  |                                300 | bool   | Node drain eviction timeout in seconds                                           | no       |
-| rke2_ippool_private                 |                                n/a | string | Private IP pool CIDR                                                             | yes      |
-| rke2_ippool_public                  |                                n/a | string | Public IP pool CIDR                                                              | no       |
-| rke2_certmanager_acme_secret        |                                n/a | string | Secret name for ACME challenge                                                   | no       |
-| rke2_certmanager_acme_email         |                                n/a | string | Email for ACME challenge                                                         | no [1]   |
-| rke2_argocd_hostname                |   "argocd.{{ rke2_cluster_name }}" | string | ArgoCD hostname                                                                  | no       |
-| rke2_argocd_values                  |                         object [2] | dict   | Helm chart values for ArgoCD chart                                               | no       |
-| rke2_argocd_apps_deploy             |                               true | dict   | Toggle flag for ArgoCD Applications chart deployment                             | no       |
-| rke2_argocd_apps_values             |                                n/a | dict   | Helm chart values for ArgoCD Applications chart                                  | no       |
-| rke2_argocd_values_configs          |                                 {} | dict   | ArgoCD configs, override for default ArgoCD chart values                         | no       |
-| rke2_argocd_values_notifications    |                                 {} | dict   | ArgoCD notifications, override for default ArgoCD chart values                   | no       |
-| rke2_argocd_exec_timeout            |                                 3m | string | ArgoCD exec timeout, override for default ArgoCD chart values                    | no       |
-| rke2_argocd_redis_ha_enabled        |                               true | bool   | ArgoCD Redis HA toggle, override for default ArgoCD chart values                 | no       |
-| rke2_argocd_controller_replicas     |                                  2 | int    | ArgoCD controller replicas, override for default ArgoCD chart values             | no       |
-| rke2_argocd_server_replicas         |                                  2 | int    | ArgoCD server replicas, override for default ArgoCD chart values                 | no       |
-| rke2_argocd_reposerver_replicas     |                                  2 | int    | ArgoCD repo server replicas, override for default ArgoCD chart values            | no       |
-| rke2_argocd_applicationset_replicas |                                  2 | int    | ArgoCD applicationset replicas, override for default ArgoCD chart values         | no       |
-| rke2_argocd_apps_pokerops_revision  |                               HEAD | string | PokerOps ArgoCD revision, used to deploy base cluster assets                     | no       |
-| rke2_longhorn_hostname              | "longhorn.{{ rke2_cluster_name }}" | string | Longhorn UI hostname                                                             | no       |
-| rke2_monitoring_vector_memory       |                                1Gi | string | Memory limit for Vector.dev                                                      |
-| rke2_coredns_cpu_limit               |                               500m | string | CoreDNS per-pod CPU limit, override for default rke2-coredns chart values        | no       |
-| rke2_coredns_memory_limit            |                              512Mi | string | CoreDNS per-pod memory limit, override for default rke2-coredns chart values     | no       |
-| rke2_coredns_autoscaler_cores_per_replica |                         128 | int    | Cluster cores per CoreDNS replica, override for default rke2-coredns autoscaler  | no       |
-| rke2_coredns_autoscaler_nodes_per_replica |                           8 | int    | Cluster nodes per CoreDNS replica, override for default rke2-coredns autoscaler  | no       |
-| rke2_coredns_autoscaler_min_replicas  |                               2 | int    | Minimum CoreDNS replicas, override for default rke2-coredns autoscaler           | no       |
-| rke2_nolog                          |                               true | bool   | Toggle flag for logging sensitive statements                                     | no       |
+| Parameter                                 |                            Default | Type   | Description                                                                                                      | Required |
+| :---------------------------------------- | ---------------------------------: | :----- | :--------------------------------------------------------------------------------------------------------------- | :------- |
+| rke2_cluster_name                         |                                n/a | string | Cluster name, immutable after creation                                                                           | yes      |
+| rke2_version                              |                     v1.33.9+rke2r1 | string | RKE2 version to deploy                                                                                           | no       |
+| rke2_nolog                                |                               true | bool   | Toggle flag for logging sensitive statements                                                                     | no       |
+| rke2_config_hostnames                     |                               true | bool   | Toggle flag for cluster hostfile entry configuration                                                             | no       |
+| rke2_retry_num                            |                                 10 | bool   | Max number of task retries                                                                                       | no       |
+| rke2_retry_delay                          |                                 30 | bool   | Task delay on retries                                                                                            | no       |
+| rke2_logging_format                       |                               json | string | Log format of the Kubernetes components and metrics-server; "" for their default                                 | no       |
+| rke2_logging_endpoint                     |                                    | string | Optional remote log destination (host:port); logs always go to the local store too                               | no       |
+| rke2_logging_buffer_size                  |                         1073741824 | int    | Per-node disk buffer (bytes) for unsent remote logs; survives agent restarts                                     | no       |
+| rke2_logging_retention_days               |                                  3 | int    | Days the local log store (VictoriaLogs) keeps logs; the oldest go first past 85% disk use                        | no       |
+| rke2_logging_volume_size                  |                               50Gi | string | Local log store volume size                                                                                      | no       |
+| rke2_logging_storage_class                |                                    | string | Local log store storage class; empty uses the cluster default                                                    | no       |
+| rke2_kubevip_address                      |                                 "" | string | Control plane floating IP held by kube-vip (L2/ARP); "" disables kube-vip                                        | no       |
+| rke2_evict_timeout                        |                                300 | bool   | Node drain eviction timeout in seconds                                                                           | no       |
+| rke2_ippool_private                       |                                n/a | string | Private IP pool CIDR                                                                                             | yes      |
+| rke2_ippool_public                        |                                n/a | string | Public IP pool CIDR                                                                                              | no       |
+| rke2_certmanager_issuer_name              |                     cluster-issuer | string | Name of the cert-manager cluster issuer                                                                          | no       |
+| rke2_certmanager_acme_secret              |                                n/a | string | Secret name for ACME challenge                                                                                   | no       |
+| rke2_certmanager_acme_email               |                                n/a | string | Email for ACME challenge                                                                                         | no [1]   |
+| rke2_argocd_hostname                      |   "argocd.{{ rke2_cluster_name }}" | string | ArgoCD hostname                                                                                                  | no       |
+| rke2_argocd_values                        |                         object [2] | dict   | Helm chart values for ArgoCD chart                                                                               | no       |
+| rke2_argocd_apps_deploy                   |                               true | dict   | Toggle flag for ArgoCD Applications chart deployment                                                             | no       |
+| rke2_argocd_apps_values                   |                                n/a | dict   | Helm chart values for ArgoCD Applications chart                                                                  | no       |
+| rke2_argocd_values_configs                |                                 {} | dict   | ArgoCD configs, override for default ArgoCD chart values                                                         | no       |
+| rke2_argocd_values_notifications          |                                 {} | dict   | ArgoCD notifications, override for default ArgoCD chart values                                                   | no       |
+| rke2_argocd_exec_timeout                  |                                 3m | string | ArgoCD exec timeout, override for default ArgoCD chart values                                                    | no       |
+| rke2_argocd_redis_ha_enabled              |                               true | bool   | ArgoCD Redis HA toggle, override for default ArgoCD chart values                                                 | no       |
+| rke2_argocd_controller_replicas           |                                  2 | int    | ArgoCD controller replicas, override for default ArgoCD chart values                                             | no       |
+| rke2_argocd_server_replicas               |                                  2 | int    | ArgoCD server replicas, override for default ArgoCD chart values                                                 | no       |
+| rke2_argocd_reposerver_replicas           |                                  2 | int    | ArgoCD repo server replicas, override for default ArgoCD chart values                                            | no       |
+| rke2_argocd_applicationset_replicas       |                                  2 | int    | ArgoCD applicationset replicas, override for default ArgoCD chart values                                         | no       |
+| rke2_argocd_apps_pokerops_revision        |                               HEAD | string | PokerOps ArgoCD revision, used to deploy base cluster assets                                                     | no       |
+| rke2_longhorn_hostname                    | "longhorn.{{ rke2_cluster_name }}" | string | Longhorn UI hostname                                                                                             | no       |
+| rke2_monitoring_endpoint                  |                                    | string | Remote ingestor URL; setting it enables monitoring                                                               | no       |
+| rke2_monitoring_cluster_id                |            {{ rke2_cluster_name }} | string | Cluster label stamped on every metric and log record                                                             | no       |
+| rke2_monitoring_tls_enabled               |                              false | bool   | Use mTLS to reach the remote ingestor                                                                            | no       |
+| rke2_monitoring_vector_memory             |                                1Gi | string | Memory limit for Vector.dev                                                                                      |
+| rke2_monitoring_vector_image              |      timberio/vector:0.60.0-debian | string | Vector agent image; the debian variant carries journalctl for node journal logs. Pinned, bumped by `rke2 update` | no       |
+| rke2_coredns_cpu_limit                    |                               500m | string | CoreDNS per-pod CPU limit, override for default rke2-coredns chart values                                        | no       |
+| rke2_coredns_memory_limit                 |                              512Mi | string | CoreDNS per-pod memory limit, override for default rke2-coredns chart values                                     | no       |
+| rke2_coredns_autoscaler_cores_per_replica |                                128 | int    | Cluster cores per CoreDNS replica, override for default rke2-coredns autoscaler                                  | no       |
+| rke2_coredns_autoscaler_nodes_per_replica |                                  8 | int    | Cluster nodes per CoreDNS replica, override for default rke2-coredns autoscaler                                  | no       |
+| rke2_coredns_autoscaler_min_replicas      |                                  2 | int    | Minimum CoreDNS replicas, override for default rke2-coredns autoscaler                                           | no       |
 
 [1] rke2_certmanager_acme_email is required whenever rke2_certmanager_acme_secret is set
 [2] rke2_argocd_values default is as follows:
@@ -121,6 +130,38 @@ global:
 - pokerops.rke2.init: Deploy base cluster components
 - pokerops.rke2.update: Update OS for rke2 cluster members
 - pokerops.rke2.frr: Run an FRR BGP router for MetalLB peers on a test host (see below)
+
+## Local logs
+
+Every node's pod and node logs (kubelet, containerd, rke2) also go to a
+cluster-local VictoriaLogs store in the `monitoring` namespace, kept for
+`rke2_logging_retention_days`, for troubleshooting when the remote endpoint is
+unreachable or not set. It has no Ingress, and its NetworkPolicy admits only the
+log agents and Alloy; reach it through a port-forward:
+
+```sh
+kubectl -n monitoring port-forward svc/victoria-logs 9428:9428
+```
+
+Then open <http://localhost:9428/select/vmui/> for the web UI (from this
+repository, `just logs` does both: it forwards and opens the browser), or query
+[LogsQL](https://docs.victoriametrics.com/victorialogs/logsql/) directly:
+
+```sh
+# Errors from every pod in the last hour, by namespace
+curl -s localhost:9428/select/logsql/query \
+  --data-urlencode 'query=_time:1h level:error | stats by (kubernetes.pod_namespace) count()'
+# One node's kubelet log, newest last
+curl -s localhost:9428/select/logsql/query \
+  --data-urlencode 'query=_time:30m node:="my-node" unit:="kubelet" | sort by (_time)'
+# Follow a namespace live
+curl -sN localhost:9428/select/logsql/tail \
+  --data-urlencode 'query=kubernetes.pod_namespace:="argocd"'
+```
+
+Fields are the pipeline's normalized ones (`node`, `unit`, `level`, `msg`,
+`log.*`, `kubernetes.*`). Anyone with cluster-admin can alter this store; it is
+for speed, not a record of evidence.
 
 ## FRR test router
 
