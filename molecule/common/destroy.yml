@@ -86,7 +86,7 @@
                   delegate_to: localhost
 
             - name: Query systemd logs
-              ansible.builtin.shell: journalctl -rxu rke2-server
+              ansible.builtin.command: journalctl -rxu rke2-server
               register: _rke2_journalctl
               changed_when: false
 
@@ -136,6 +136,122 @@
                     content: "{{ _rke2_kubeconfig_slurp['content'] | b64decode }}"
                     mode: "u=rw,go=r"
                   delegate_to: localhost
+
+- name: Archive node diagnostics
+  hosts: rke2_server:rke2_agent
+  gather_facts: false
+  become: true
+  vars:
+    _logfile: "{{ molecule_install_log | default('/tmp/install') }}"
+  tasks:
+    - name: Ping host
+      ansible.builtin.ping:
+      register: _ping_check
+      ignore_unreachable: true
+      failed_when: false
+
+    - name: Archive node diagnostics
+      when: _ping_check is not unreachable
+      block:
+        - name: Query node diagnostics
+          ansible.builtin.shell:
+            executable: /bin/bash
+            cmd: |
+              set -o pipefail
+              section() { printf '\n##### %s\n' "$*"; }
+              section uname; uname -a
+              section memory; free -m
+              section "oom and kernel errors"
+              journalctl -k --no-pager 2>/dev/null \
+                | grep -iE 'oom|out of memory|killed process|segfault|apparmor.*denied|call trace|blocked for more' \
+                | tail -n 200
+              section "limits"
+              sysctl fs.inotify.max_user_instances fs.inotify.max_user_watches fs.file-max 2>&1
+              section "failed units"
+              systemctl --failed --no-pager 2>&1
+              section "rke2 agent journal"
+              journalctl -u rke2-agent --no-pager -n 300 2>&1
+              section "kubelet log"
+              tail -n 1000 /var/lib/rancher/rke2/agent/logs/kubelet.log 2>&1
+              section "containerd log"
+              tail -n 500 /var/lib/rancher/rke2/agent/containerd/containerd.log 2>&1
+              section "resolv.conf"
+              cat /etc/resolv.conf 2>&1
+              section "dmesg tail"
+              dmesg 2>&1 | tail -n 200
+          register: _node_diagnostics
+          changed_when: false
+          failed_when: false
+
+        - name: Create node diagnostics archive
+          ansible.builtin.copy:
+            dest: "{{ _logfile }}.{{ inventory_hostname }}.diagnostics"
+            content: "{{ _node_diagnostics.stdout }}"
+            mode: "u=rw,go=r"
+          delegate_to: localhost
+
+      rescue:
+        - name: Report diagnostics failure
+          ansible.builtin.debug:
+            msg: "Could not archive diagnostics: {{ ansible_failed_result.msg | default('unknown error') }}"
+
+- name: Archive cluster diagnostics
+  hosts: rke2_server
+  gather_facts: false
+  run_once: true
+  become: true
+  vars_files:
+    - ../../playbooks/vars/main.yml
+  vars:
+    _logfile: "{{ molecule_install_log | default('/tmp/install') }}"
+    _kubectl: "{{ _rke2_bin_path }}/kubectl --kubeconfig {{ _rke2_config_path }}/rke2.yaml"
+  tasks:
+    - name: Ping host
+      ansible.builtin.ping:
+      register: _ping_check
+      ignore_unreachable: true
+      failed_when: false
+
+    - name: Archive cluster diagnostics
+      when: _ping_check is not unreachable
+      block:
+        - name: Query cluster diagnostics
+          ansible.builtin.shell:
+            executable: /bin/bash
+            cmd: |
+              set -o pipefail
+              section() { printf '\n##### %s\n' "$*"; }
+              K="{{ _kubectl }} --request-timeout=30s"
+              section nodes; $K get nodes -o wide 2>&1
+              section "node resource usage"; $K top nodes 2>&1
+              section "pods"; $K get pods -A -o wide 2>&1
+              section "events"; $K get events -A --sort-by=.lastTimestamp 2>&1 | tail -n 300
+              section "persistent volume claims"; $K get pvc -A 2>&1
+              section "longhorn volumes"; $K get volumes.longhorn.io -n longhorn-system 2>&1
+              # Pods that are not Ready, are not finished jobs, or have restarted
+              $K get pods -A --no-headers 2>/dev/null | awk '
+                { split($3, r, "/") }
+                ($4 != "Completed" && $4 != "Succeeded" && (r[1] != r[2] || $4 != "Running")) || $5 + 0 > 0 { print $1, $2 }
+              ' | while read -r ns pod; do
+                section "describe $ns/$pod"; $K describe pod -n "$ns" "$pod" 2>&1
+                section "logs $ns/$pod"; $K logs -n "$ns" "$pod" --all-containers --prefix --tail=200 --ignore-errors 2>&1
+                section "previous logs $ns/$pod"; $K logs -n "$ns" "$pod" --all-containers --prefix --tail=200 --previous --ignore-errors 2>&1
+              done
+          register: _cluster_diagnostics
+          changed_when: false
+          failed_when: false
+
+        - name: Create cluster diagnostics archive
+          ansible.builtin.copy:
+            dest: "{{ _logfile }}.cluster.diagnostics"
+            content: "{{ _cluster_diagnostics.stdout }}"
+            mode: "u=rw,go=r"
+          delegate_to: localhost
+
+      rescue:
+        - name: Report diagnostics failure
+          ansible.builtin.debug:
+            msg: "Could not archive diagnostics: {{ ansible_failed_result.msg | default('unknown error') }}"
 
 - name: Clean ingress hostfile entries
   hosts: rke2_server
