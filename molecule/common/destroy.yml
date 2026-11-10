@@ -161,6 +161,11 @@
               section() { printf '\n##### %s\n' "$*"; }
               section uname; uname -a
               section memory; free -m
+              section "load and pressure"; uptime
+              for f in cpu io memory; do echo "$f:"; cat "/proc/pressure/$f" 2>&1; done
+              section "top processes by cpu"; top -b -n 1 -w 200 -o %CPU 2>&1 | head -n 30
+              section "cpu sample"; vmstat 1 5 2>&1
+              section "timers"; systemctl list-timers --all --no-pager 2>&1
               section "oom and kernel errors"
               journalctl -k --no-pager 2>/dev/null \
                 | grep -iE 'oom|out of memory|killed process|segfault|apparmor.*denied|call trace|blocked for more' \
@@ -224,6 +229,8 @@
               K="{{ _kubectl }} --request-timeout=30s"
               section nodes; $K get nodes -o wide 2>&1
               section "node resource usage"; $K top nodes 2>&1
+              section "pod resource usage by cpu"; $K top pods -A --sort-by=cpu 2>&1 | head -n 30
+              section "pod resource usage by memory"; $K top pods -A --sort-by=memory 2>&1 | head -n 30
               section "pods"; $K get pods -A -o wide 2>&1
               section "events"; $K get events -A --sort-by=.lastTimestamp 2>&1 | tail -n 300
               section "persistent volume claims"; $K get pvc -A 2>&1

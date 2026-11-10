@@ -307,24 +307,35 @@
           ansible.builtin.set_fact:
             _config_path: "{{ molecule_local_kubeconfig }}"
 
-        - name: Verify hubble pods
-          ansible.builtin.fail:
-            msg: "The following pods are in failed state {{ _pods_hubble_ko_names }}"
+        - name: Query hubble pods
+          kubernetes.core.k8s_info:
+            kind: Pod
+            namespace: kube-system
+            kubeconfig: "{{ _config_path }}"
+          register: _hubble_query
           vars:
             _query_ok: "[?status.conditions[?type=='Ready' && status=='True']]"
-            _pods_all: "{{ query('kubernetes.core.k8s', kind='Pod', namespace='kube-system', kubeconfig=_config_path) }}"
-            _pods_hubble: "{{ _pods_all | selectattr('metadata.name', 'match', '^hubble.*') }}"
+            _pods_hubble: "{{ _hubble_query.resources | selectattr('metadata.name', 'match', '^hubble.*') | list }}"
             _pods_hubble_ok: "{{ _pods_hubble | json_query(_query_ok) }}"
-            _pods_hubble_ko: "{{ _pods_hubble | difference(_pods_hubble_ok) }}"
-            _pods_hubble_ok_names: "{{ _pods_hubble_ok | map(attribute='metadata.name') }}"
-            _pods_hubble_ko_names: "{{ _pods_hubble_ko | map(attribute='metadata.name') }}"
-            _pods_hubble_failed:
-              - _pods_hubble_ok_names | length > 0
-              - _pods_hubble_ko_names | length == 0
           retries: "{{ _retries }}"
           delay: "{{ _delay }}"
-          until: not _pods_hubble_failed | bool
-          when: _pods_hubble_failed | bool
+          until:
+            - _pods_hubble_ok | length > 0
+            - _pods_hubble_ok | length == _pods_hubble | length
+          delegate_to: localhost
+
+        - name: Verify hubble pods
+          ansible.builtin.assert:
+            that:
+              - _pods_hubble_ok | length > 0
+              - _pods_hubble_ko_names | length == 0
+            fail_msg: "The following pods are in failed state {{ _pods_hubble_ko_names }}"
+          vars:
+            _query_ok: "[?status.conditions[?type=='Ready' && status=='True']]"
+            _pods_hubble: "{{ _hubble_query.resources | selectattr('metadata.name', 'match', '^hubble.*') | list }}"
+            _pods_hubble_ok: "{{ _pods_hubble | json_query(_query_ok) }}"
+            _pods_hubble_ko: "{{ _pods_hubble | difference(_pods_hubble_ok) }}"
+            _pods_hubble_ko_names: "{{ _pods_hubble_ko | map(attribute='metadata.name') | list }}"
 
         - name: Validate secret namespaces
           ansible.builtin.assert:
