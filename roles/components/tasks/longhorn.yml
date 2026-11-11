@@ -1,4 +1,40 @@
 ---
+- name: Set longhorn node scheduling facts
+  ansible.builtin.set_fact:
+    _longhorn_cluster_hosts: "{{ _hosts_cluster }}"
+    _longhorn_scheduling: "{{ dict(_hosts_cluster | zip(_hosts_values)) | dict2items }}"
+  vars:
+    _scheduling: "rke2_longhorn_allow_scheduling"
+    _hosts_cluster: "{{ groups[rke2_cluster_group] | default([]) }}"
+    _hosts_scheduling: "{{ _hosts_cluster | map('extract', hostvars, _scheduling) | map('default', true) }}"
+    _hosts_values: "{{ _hosts_scheduling | map('string') | map('lower') }}"
+
+- name: Set longhorn cluster scheduling facts
+  ansible.builtin.set_fact:
+    _longhorn_storage_hosts: "{{ _hosts_storage }}"
+    _longhorn_invalid_hosts: "{{ _hosts_invalid }}"
+    _longhorn_disabled_hosts: "{{ _hosts_disabled }}"
+    _longhorn_schedulable_hosts: "{{ _hosts_storage | difference(_hosts_disabled) }}"
+  vars:
+    _hosts_agent: "{{ groups[rke2_agent_group] | default([]) }}"
+    _hosts_storage: "{{ _hosts_agent if _hosts_agent | length > 0 else groups[rke2_server_group] | default([]) }}"
+    _hosts_invalid: "{{ _longhorn_scheduling | rejectattr('value', 'in', ['true', 'false']) | map(attribute='key') | list }}"
+    _hosts_disabled: "{{ _longhorn_scheduling | selectattr('value', 'equalto', 'false') | map(attribute='key') | list }}"
+
+- name: Verify longhorn scheduling variable values
+  ansible.builtin.assert:
+    that: _longhorn_invalid_hosts | length == 0
+    fail_msg: >-
+      rke2_longhorn_allow_scheduling must be true or false,
+      invalid on: {{ _longhorn_invalid_hosts | join(', ') }}
+    quiet: true
+
+- name: Verify longhorn scheduling is compatible with the replica count
+  ansible.builtin.assert:
+    that: (_longhorn_schedulable_hosts | length) >= (rke2_longhorn_replica_count | int)
+    fail_msg: schedulable host count must not be lower than default replica count
+    quiet: true
+
 - name: Deploy longhorn application
   kubernetes.core.k8s:
     state: present
@@ -13,6 +49,51 @@
         source:
           helm:
             valuesObject: "{{ rke2_longhorn_values }}"
+
+- name: Query node info # Wait until every host to disable has registered its longhorn node
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ rke2_config_path }}"
+    api_version: longhorn.io/v1beta2
+    kind: Node
+    namespace: longhorn-system
+  register: _longhorn_nodes
+  retries: "{{ _rke2_retry_num }}"
+  delay: "{{ _rke2_retry_delay }}"
+  failed_when: false
+  until: >-
+    _longhorn_disabled_hosts
+    | difference(_longhorn_nodes.resources | default([]) | map(attribute='metadata.name') | list)
+    | length == 0
+
+- name: Set longhorn node scheduling changes
+  ansible.builtin.set_fact:
+    _longhorn_scheduling_changes: "{{ _changes_disable | combine(_changes_enable) }}"
+  vars:
+    _nodes: "{{ _longhorn_nodes.resources | default([]) | selectattr('metadata.name', 'in', _longhorn_cluster_hosts) | list }}"
+    _nodes_names: "{{ _nodes | map(attribute='metadata.name') | list }}"
+    _nodes_allowed: "{{ _nodes | map(attribute='spec.allowScheduling', default=true) | list }}"
+    _nodes_state: "{{ dict(_nodes_names | zip(_nodes_allowed) | list) | dict2items }}"
+    _nodes_disable: "{{ _nodes_state | selectattr('value', 'equalto', true) | map(attribute='key') | select('in', _longhorn_disabled_hosts) | list }}"
+    _nodes_enable: "{{ _nodes_state | selectattr('value', 'equalto', false) | map(attribute='key') | reject('in', _longhorn_disabled_hosts) | list }}"
+    _changes_disable: "{{ dict(_nodes_disable | product([false]) | list) }}"
+    _changes_enable: "{{ dict(_nodes_enable | product([true]) | list) }}"
+
+- name: Set longhorn node scheduling
+  kubernetes.core.k8s:
+    state: patched
+    merge_type: merge
+    kubeconfig: "{{ rke2_config_path }}"
+    resource_definition:
+      apiVersion: longhorn.io/v1beta2
+      kind: Node
+      metadata:
+        name: "{{ item.key }}"
+        namespace: longhorn-system
+      spec:
+        allowScheduling: "{{ item.value | bool }}"
+  loop: "{{ _longhorn_scheduling_changes | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}: allowScheduling={{ item.value }}"
 
 - name: Deploy longhorn snapshotclass
   kubernetes.core.k8s:

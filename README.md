@@ -72,6 +72,8 @@ Cluster wide parameters
 | rke2_argocd_applicationset_replicas       |                                  2 | int    | ArgoCD applicationset replicas, override for default ArgoCD chart values                                         | no       |
 | rke2_argocd_apps_pokerops_revision        |                               HEAD | string | PokerOps ArgoCD revision, used to deploy base cluster assets                                                     | no       |
 | rke2_longhorn_hostname                    | "longhorn.{{ rke2_cluster_name }}" | string | Longhorn UI hostname                                                                                             | no       |
+| rke2_longhorn_replica_count               |                                  3 | int    | Default Longhorn volume replica count; needs at least this many hosts with scheduling allowed                    | no       |
+| rke2_longhorn_allow_scheduling            |                               true | bool   | Per-host: false keeps Longhorn replicas off this host; checked against rke2_longhorn_replica_count               | no       |
 | rke2_monitoring_endpoint                  |                                    | string | Remote ingestor URL; setting it enables monitoring                                                               | no       |
 | rke2_monitoring_cluster_id                |            {{ rke2_cluster_name }} | string | Cluster label stamped on every metric and log record                                                             | no       |
 | rke2_monitoring_tls_enabled               |                              false | bool   | Use mTLS to reach the remote ingestor                                                                            | no       |
