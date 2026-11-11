@@ -9,7 +9,7 @@
       ansible.builtin.assert:
         that:
           - _cpu_fact | int >= _cpu_min | int
-          - _mem_fact | int >= _mem_min | int * 1024 * 0.9) | int
+          - _mem_fact | int >= _mem_min | int
         fail_msg: "cpu/mem = {{ _cpu_fact }}CPU/{{ _mem_fact }}GB below min values of {{ _cpu_min }}CPU/{{ _mem_min }}GB"
         quiet: true
       vars:
