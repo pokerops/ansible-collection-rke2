@@ -59,6 +59,27 @@
         mode: "u=rw,go=r"
       become: true
 
+- name: Configure RKE2 image pruning
+  hosts: "{{ rke2_server_group }}:{{ rke2_agent_group }}"
+  any_errors_fatal: true
+  vars_files:
+    - main.yml
+  tasks:
+    - name: Schedule unused container image pruning
+      ansible.builtin.cron:
+        name: rke2-image-prune
+        cron_file: rke2-image-prune
+        user: root
+        minute: "0"
+        hour: "3"
+        job: >-
+          /usr/bin/flock -n /run/rke2-image-prune.lock
+          {{ _rke2_bin_path }}/crictl
+          --runtime-endpoint unix:///run/k3s/containerd/containerd.sock
+          --timeout 10m rmi --prune 2>&1 | /usr/bin/logger -t rke2-image-prune
+        state: "{{ _rke2_image_prune_enabled | ternary('present', 'absent') }}"
+      become: true
+
 - name: Configure RKE2 node roles and taints
   hosts: "{{ rke2_server_group }}"
   any_errors_fatal: true
