@@ -8,14 +8,15 @@
     - name: Check node hardware
       ansible.builtin.assert:
         that:
-          - ansible_facts.processor_vcpus | int >= _rke2_min_vcpus | int
-          - ansible_facts.memtotal_mb | int >= (_rke2_min_memory_gb | int * 1024 * 0.9) | int
-        fail_msg: "cpus/mem = {{ _cpus }}/{{ _mem}} below min values of {{ _mins }}"
+          - _cpu_fact | int >= _cpu_min | int
+          - _mem_fact | int >= _mem_min | int * 1024 * 0.9) | int
+        fail_msg: "cpu/mem = {{ _cpu_fact }}CPU/{{ _mem_fact }}GB below min values of {{ _cpu_min }}CPU/{{ _mem_min }}GB"
         quiet: true
       vars:
-        _cpus: "{{ ansible_facts.processor_vcpus }}"
-        _mem: "{{ ansible_facts.memtotal_mb }}MB"
-        _mins: "{{ _rke2_min_vcpus }}/{{ (_rke2_min_memory_gb | int * 1024 * 0.9) | int }}MB"
+        _cpu_fact: "{{ ansible_facts.processor_vcpus }}"
+        _cpu_min: "{{ _rke2_min_vcpus }}"
+        _mem_fact: "{{ ansible_facts.memtotal_mb }}"
+        _mem_min: "{{ (_rke2_min_memory_gb | int * 1024 * 0.9) | int }}"
 
     - name: Install deb package requirements
       ansible.builtin.package:
