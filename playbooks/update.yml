@@ -226,6 +226,29 @@
         - name: Upgrade cluster member
           become: true
           block:
+            - name: Update apt package cache
+              when: ansible_pkg_mgr == "apt"
+              block:
+                # Download the packages before upgrade to ensure upgrade
+                # retries, so the role's upgrade finds them in the apt cache.
+                - name: Update package cache (apt)
+                  ansible.builtin.apt:
+                    update_cache: true
+                  register: _update_apt_cache
+                  retries: "{{ _rke2_retry_num }}"
+                  delay: "{{ _rke2_retry_delay }}"
+                  until: _update_apt_cache is succeeded
+
+                - name: Download package updates (apt)
+                  ansible.builtin.command: apt-get --yes dist-upgrade --download-only # noqa command-instead-of-module
+                  register: _update_apt_download
+                  retries: "{{ _rke2_retry_num }}"
+                  delay: "{{ _rke2_retry_delay }}"
+                  until: _update_apt_download is succeeded
+                  changed_when: false
+                  environment:
+                    DEBIAN_FRONTEND: noninteractive
+
             - name: Upgrade cluster node
               ansible.builtin.include_role:
                 name: pokerops.rke2.update

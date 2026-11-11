@@ -13,7 +13,7 @@ concurrency:
 jobs:
   zalando:
     name: zalando
-    runs-on: libvirt
+    runs-on: noble-64
     strategy:
       matrix:
         scenario:

@@ -13,7 +13,7 @@ concurrency:
 jobs:
   mariadb:
     name: mariadb
-    runs-on: libvirt
+    runs-on: noble-64
     strategy:
       matrix:
         scenario:
