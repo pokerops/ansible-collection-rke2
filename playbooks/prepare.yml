@@ -5,6 +5,19 @@
   vars_files:
     - main.yml
   tasks:
+    - name: Check node hardware
+      ansible.builtin.assert:
+        that:
+          - _cpu_fact | int >= _cpu_min | int
+          - _mem_fact | int >= _mem_min | int
+        fail_msg: "cpu/mem = {{ _cpu_fact }}CPU/{{ _mem_fact }}GB below min values of {{ _cpu_min }}CPU/{{ _mem_min }}GB"
+        quiet: true
+      vars:
+        _cpu_fact: "{{ ansible_facts.processor_vcpus }}"
+        _cpu_min: "{{ _rke2_min_vcpus }}"
+        _mem_fact: "{{ ansible_facts.memtotal_mb }}"
+        _mem_min: "{{ (_rke2_min_memory_gb | int * 1024 * 0.9) | int }}"
+
     - name: Install deb package requirements
       ansible.builtin.package:
         name:
@@ -77,11 +90,14 @@
         limit_item: nofile
         value: "{{ _rke2_limits_nofile }}"
 
+    # systemd-sysctl no longer reads /etc/sysctl.conf (Ubuntu 26.04), so
+    # persist these under sysctl.d or they revert to the kernel defaults on boot
     - name: Set fs.inotify.max_user_instances
       ansible.posix.sysctl:
         name: fs.inotify.max_user_instances
         value: "{{ _rke2_sysctl_inotify_max_user_instances }}"
         state: present
+        sysctl_file: /etc/sysctl.d/99-rke2.conf
         sysctl_set: true
         reload: true
 
@@ -89,6 +105,7 @@
       ansible.posix.sysctl:
         name: fs.inotify.max_user_watches
         value: "{{ _rke2_sysctl_inotify_max_user_watches }}"
+        sysctl_file: /etc/sysctl.d/99-rke2.conf
         sysctl_set: true
         state: present
         reload: true
@@ -97,6 +114,7 @@
       ansible.posix.sysctl:
         name: fs.inotify.max_queued_events
         value: "{{ _rke2_sysctl_inotify_max_queued_events }}"
+        sysctl_file: /etc/sysctl.d/99-rke2.conf
         sysctl_set: true
         state: present
         reload: true

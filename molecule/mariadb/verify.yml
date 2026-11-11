@@ -164,8 +164,9 @@
                   storageClassName: "{{ mariadb_storage_class }}"
                 service:
                   type: LoadBalancer
-                  annotations:
-                    metallb.universe.tf/address-pool: metallb-private
+                  metadata:
+                    annotations:
+                      metallb.universe.tf/address-pool: metallb-private
                 replicas: 1
                 # The operator deploys a mysqld-exporter and creates the
                 # ServiceMonitor itself, so nothing here declares a monitor.

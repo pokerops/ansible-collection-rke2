@@ -42,6 +42,8 @@ Cluster wide parameters
 | rke2_config_hostnames                     |                               true | bool   | Toggle flag for cluster hostfile entry configuration                                                             | no       |
 | rke2_retry_num                            |                                 10 | bool   | Max number of task retries                                                                                       | no       |
 | rke2_retry_delay                          |                                 30 | bool   | Task delay on retries                                                                                            | no       |
+| rke2_min_vcpus                            |                                  4 | int    | Minimum vcpus per node, checked before install                                                                   | no       |
+| rke2_min_memory_gb                        |                                  8 | int    | Minimum memory (GB) per node, 90% of it must be available                                                        | no       |
 | rke2_logging_format                       |                               json | string | Log format of the Kubernetes components and metrics-server; "" for their default                                 | no       |
 | rke2_logging_endpoint                     |                                    | string | Optional remote log destination (host:port); logs always go to the local store too                               | no       |
 | rke2_logging_buffer_size                  |                         1073741824 | int    | Per-node disk buffer (bytes) for unsent remote logs; survives agent restarts                                     | no       |

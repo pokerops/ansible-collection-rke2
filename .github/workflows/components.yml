@@ -13,12 +13,14 @@ concurrency:
 jobs:
   components:
     name: components
-    runs-on: libvirt
+    runs-on: noble-64
     strategy:
       matrix:
         scenario:
           - components
         image:
+          - name: resolute
+            url: https://cloud-images.ubuntu.com/resolute/current/resolute-server-cloudimg-amd64.img
           - name: noble
             url: https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img
     env:
