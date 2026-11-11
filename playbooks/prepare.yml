@@ -11,11 +11,11 @@
           - ansible_facts.processor_vcpus | int >= _rke2_min_vcpus | int
           - ansible_facts.memtotal_mb | int >= (_rke2_min_memory_gb | int * 1024 * 0.9) | int
         fail_msg: "cpus/mem = {{ _cpus }}/{{ _mem}} below min values of {{ _mins }}"
-        vars:
-          _cpus: "{{ ansible_facts.processor_vcpus }}"
-          _mem: "{{ ansible_facts.memtotal_mb }}MB"
-          _mins: "{{ _rke2_min_vcpus }}/{{ (_rke2_min_memory_gb | int * 1024 * 0.9) | int }}MB"
         quiet: true
+      vars:
+        _cpus: "{{ ansible_facts.processor_vcpus }}"
+        _mem: "{{ ansible_facts.memtotal_mb }}MB"
+        _mins: "{{ _rke2_min_vcpus }}/{{ (_rke2_min_memory_gb | int * 1024 * 0.9) | int }}MB"
 
     - name: Install deb package requirements
       ansible.builtin.package:
