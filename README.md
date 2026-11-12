@@ -56,8 +56,8 @@ Cluster wide parameters
 | rke2_ippool_private                       |                                n/a | string | Private IP pool CIDR                                                                                             | yes      |
 | rke2_ippool_public                        |                                n/a | string | Public IP pool CIDR                                                                                              | no       |
 | rke2_certmanager_issuer_name              |                     cluster-issuer | string | Name of the cert-manager cluster issuer                                                                          | no       |
-| rke2_certmanager_acme_secret              |                                n/a | string | Secret name for ACME challenge                                                                                   | no       |
-| rke2_certmanager_acme_email               |                                n/a | string | Email for ACME challenge                                                                                         | no [1]   |
+| rke2_certmanager_acme_secret [1]          |                                n/a | string | Secret name for ACME challenge                                                                                   | no       |
+| rke2_certmanager_acme_email [1]           |                                n/a | string | Email for ACME challenge                                                                                         | no [1]   |
 | rke2_argocd_hostname                      |   "argocd.{{ rke2_cluster_name }}" | string | ArgoCD hostname                                                                                                  | no       |
 | rke2_argocd_values                        |                         object [2] | dict   | Helm chart values for ArgoCD chart                                                                               | no       |
 | rke2_argocd_apps_deploy                   |                               true | dict   | Toggle flag for ArgoCD Applications chart deployment                                                             | no       |
@@ -87,12 +87,6 @@ Cluster wide parameters
 
 [1] rke2_certmanager_acme_email is required whenever rke2_certmanager_acme_secret is set
 [2] rke2_argocd_values default is as follows:
-
-Velero S3 backup parameters
-
-| Parameter         | Default | Type   | Description                            | Required |
-| :---------------- | ------: | :----- | :------------------------------------- | :------- |
-| rke2_cluster_name |     n/a | string | Cluster name, immutable after creation | yes      |
 
 ```yaml
 redis-ha:
