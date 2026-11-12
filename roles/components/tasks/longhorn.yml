@@ -50,7 +50,22 @@
           helm:
             valuesObject: "{{ rke2_longhorn_values }}"
 
-- name: Query node info # Wait until every host to disable has registered its longhorn node
+- name: Wait for longhorn application # Its CRDs and nodes only exist once argocd has synced the chart
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ rke2_config_path }}"
+    api_version: argoproj.io/v1alpha1
+    kind: Application
+    name: longhorn
+    namespace: argocd
+  register: _longhorn_application
+  retries: "{{ _rke2_retry_num }}"
+  delay: "{{ _rke2_retry_delay }}"
+  until:
+    - _longhorn_application.resources | default([]) | length > 0
+    - _longhorn_application.resources[0].status.sync.status | default('') == 'Synced'
+    - _longhorn_application.resources[0].status.health.status | default('') == 'Healthy'
+
+- name: Query node info # Every host to disable must have registered its longhorn node
   kubernetes.core.k8s_info:
     kubeconfig: "{{ rke2_config_path }}"
     api_version: longhorn.io/v1beta2
@@ -59,11 +74,9 @@
   register: _longhorn_nodes
   retries: "{{ _rke2_retry_num }}"
   delay: "{{ _rke2_retry_delay }}"
-  failed_when: false
-  until: >-
-    _longhorn_disabled_hosts
-    | difference(_longhorn_nodes.resources | default([]) | map(attribute='metadata.name') | list)
-    | length == 0
+  until: _longhorn_disabled_hosts | difference(_longhorn_node_names) | length == 0
+  vars:
+    _longhorn_node_names: "{{ _longhorn_nodes.resources | default([]) | map(attribute='metadata.name') | list }}"
 
 - name: Set longhorn node scheduling changes
   ansible.builtin.set_fact:
