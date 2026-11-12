@@ -62,8 +62,9 @@
   delay: "{{ _rke2_retry_delay }}"
   until:
     - _longhorn_application.resources | default([]) | length > 0
+    # Not waiting for Healthy: the ingress only becomes healthy once the ingress
+    # controllers, deployed after longhorn, are up
     - _longhorn_application.resources[0].status.sync.status | default('') == 'Synced'
-    - _longhorn_application.resources[0].status.health.status | default('') == 'Healthy'
 
 - name: Query node info # Every host to disable must have registered its longhorn node
   kubernetes.core.k8s_info:
