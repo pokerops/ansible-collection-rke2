@@ -235,6 +235,22 @@
               section "events"; $K get events -A --sort-by=.lastTimestamp 2>&1 | tail -n 300
               section "persistent volume claims"; $K get pvc -A 2>&1
               section "longhorn volumes"; $K get volumes.longhorn.io -n longhorn-system 2>&1
+              # Log shipping state: what each agent read, sent, dropped, and what reached the store
+              M="{{ rke2_monitoring_scraper_namespace | default('monitoring') }}"
+              section "local log store events per node, last 30m"
+              vl_query='_time%3A30m%20%7C%20stats%20by%20(node)%20count()%20events'
+              $K get --raw "/api/v1/namespaces/$M/services/victoria-logs:9428/proxy/select/logsql/query?query=$vl_query" 2>&1
+              $K get pods -n "$M" -o name 2>/dev/null | sed -n 's|^pod/\(vector-agent-.*\)|\1|p' | while read -r pod; do
+                node=$($K get pod -n "$M" "$pod" -o jsonpath='{.spec.nodeName}' 2>/dev/null)
+                port=$($K get pod -n "$M" "$pod" \
+                  -o jsonpath='{.spec.containers[0].ports[?(@.name=="prom-exporter")].containerPort}' 2>/dev/null)
+                section "metrics $M/$pod ($node)"
+                metrics='component_(received|sent|discarded)_events_total|component_errors_total'
+                metrics="$metrics|buffer_(events|discarded_events_total)|files_|checkpoints_total"
+                $K get --raw "/api/v1/namespaces/$M/pods/$pod:${port:-9598}/proxy/metrics" 2>&1 \
+                  | grep -E "^vector_($metrics)" || true
+                section "logs $M/$pod ($node)"; $K logs -n "$M" "$pod" --tail=300 2>&1
+              done
               # Pods that are not Ready, are not finished jobs, or have restarted
               $K get pods -A --no-headers 2>/dev/null | awk '
                 { split($3, r, "/") }

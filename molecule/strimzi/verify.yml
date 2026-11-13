@@ -778,7 +778,7 @@
                     includedNamespaces:
                       - "{{ kafka_namespace }}"
                     volumeSnapshotLocations: []
-                    includeClusterResources: true
+                    includeClusterResources: false
                     defaultVolumesToFsBackup: false
                     excludedResources: []
                     snapshotMoveData: true
@@ -969,7 +969,7 @@
                     includedNamespaces:
                       - "{{ kafka_namespace }}"
                     restorePVs: true
-                    includeClusterResources: true
+                    includeClusterResources: false
                     includedResources:
                       - "*"
                     restoreStatus:
