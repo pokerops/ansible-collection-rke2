@@ -239,14 +239,16 @@
               M="{{ rke2_monitoring_scraper_namespace | default('monitoring') }}"
               section "local log store events per node, last 30m"
               vl_query='_time%3A30m%20%7C%20stats%20by%20(node)%20count()%20events'
-              $K get --raw "/api/v1/namespaces/$M/services/victoria-logs:9428/proxy/select/logsql/query?query=$vl_query" 2>&1
+              # Pod proxy: the service proxy timed out where the agents' pod proxy answered
+              $K --request-timeout=120s get --raw \
+                "/api/v1/namespaces/$M/pods/victoria-logs-0:9428/proxy/select/logsql/query?query=$vl_query" 2>&1
               $K get pods -n "$M" -o name 2>/dev/null | sed -n 's|^pod/\(vector-agent-.*\)|\1|p' | while read -r pod; do
                 node=$($K get pod -n "$M" "$pod" -o jsonpath='{.spec.nodeName}' 2>/dev/null)
                 port=$($K get pod -n "$M" "$pod" \
                   -o jsonpath='{.spec.containers[0].ports[?(@.name=="prom-exporter")].containerPort}' 2>/dev/null)
                 section "metrics $M/$pod ($node)"
                 metrics='component_(received|sent|discarded)_events_total|component_errors_total'
-                metrics="$metrics|buffer_(events|discarded_events_total)|files_|checkpoints_total"
+                metrics="$metrics|buffer_|files_|checkpoints_total"
                 $K get --raw "/api/v1/namespaces/$M/pods/$pod:${port:-9598}/proxy/metrics" 2>&1 \
                   | grep -E "^vector_($metrics)" || true
                 section "logs $M/$pod ($node)"; $K logs -n "$M" "$pod" --tail=300 2>&1

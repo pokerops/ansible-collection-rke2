@@ -570,7 +570,7 @@
                     includedNamespaces:
                       - "{{ mariadb_namespace }}"
                     volumeSnapshotLocations: []
-                    includeClusterResources: false
+                    includeClusterResources: true
                     defaultVolumesToFsBackup: false
                     excludedResources: []
                     snapshotMoveData: true

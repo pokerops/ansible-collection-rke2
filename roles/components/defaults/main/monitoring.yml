@@ -80,6 +80,7 @@ rke2_logging_storage_class: ""
 
 # Disk buffer for logs bound for rke2_logging_endpoint, per node, in bytes
 # (Vector's minimum is 256 MiB). Unsent events wait here across agent
-# restarts while the remote is unreachable; when it fills, reading stops
-# until the remote catches up. 1 GiB is roughly an hour of a busy node.
+# restarts while the remote is unreachable. 1 GiB is roughly an hour of a
+# busy node.
 rke2_logging_buffer_size: 1073741824
+rke2_logging_buffer_when_full: drop_newest

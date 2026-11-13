@@ -675,7 +675,7 @@
                     includedNamespaces:
                       - "{{ postgres_namespace }}"
                     volumeSnapshotLocations: []
-                    includeClusterResources: false
+                    includeClusterResources: true
                     defaultVolumesToFsBackup: false
                     excludedResources: []
                     snapshotMoveData: true

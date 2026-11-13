@@ -446,11 +446,12 @@ spec:
       # (node logs) hold their position until events are in that buffer;
       # kubernetes_logs can't acknowledge in 0.48 (can_acknowledge is
       # false), so pod logs keep a sub-second window between read and
-      # buffer write.
+      # buffer write. Once full, block stalls every sink, the local store
+      # included; drop_newest drops for this sink only.
       buffer:
         type: disk
         max_size: {{ rke2_logging_buffer_size }}
-        when_full: block
+        when_full: {{ rke2_logging_buffer_when_full }}
       acknowledgements:
         enabled: true
       {% if rke2_monitoring_tls_enabled | bool %}
