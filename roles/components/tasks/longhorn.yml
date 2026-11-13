@@ -5,7 +5,7 @@
     _longhorn_scheduling: "{{ dict(_hosts_cluster | zip(_hosts_values)) | dict2items }}"
   vars:
     _scheduling: "rke2_longhorn_allow_scheduling"
-    _hosts_cluster: "{{ groups[rke2_cluster_group] | default([]) }}"
+    _hosts_cluster: "{{ groups[rke2_server_group] | default([]) | union(groups[rke2_agent_group] | default([])) }}"
     _hosts_scheduling: "{{ _hosts_cluster | map('extract', hostvars, _scheduling) | map('default', true) }}"
     _hosts_values: "{{ _hosts_scheduling | map('string') | map('lower') }}"
 
