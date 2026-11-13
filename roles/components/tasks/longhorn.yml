@@ -108,6 +108,10 @@
   loop: "{{ _longhorn_scheduling_changes | dict2items }}"
   loop_control:
     label: "{{ item.key }}: allowScheduling={{ item.value }}"
+  register: _longhorn_scheduling_patch
+  retries: "{{ _rke2_retry_num }}"
+  delay: "{{ _rke2_retry_delay }}"
+  until: _longhorn_scheduling_patch is succeeded
 
 - name: Deploy longhorn snapshotclass
   kubernetes.core.k8s:
