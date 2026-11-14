@@ -255,7 +255,7 @@
           register: _frr_diagnostics
           changed_when: false
           failed_when: false
-          when: ansible_failed_task is defined
+          when: _bgp_summary_query is failed
 
         - name: Debug FRR diagnostics
           ansible.builtin.debug:

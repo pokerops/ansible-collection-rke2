@@ -675,6 +675,62 @@
               ansible.builtin.debug:
                 msg: "{{ _argocd_app_diagnostics.stdout_lines | default([]) }}"
 
+            # A container that can't signal its own process is a security
+            # layer (AppArmor, seccomp, capabilities) refusing it, which the
+            # container's logs can't show: compare the process labels and
+            # credentials, and look for the node's denials
+            - name: Query security context of unready pods
+              ansible.builtin.shell:
+                cmd: |
+                  K=/var/lib/rancher/rke2/bin/kubectl
+                  for ns in {{ _app_namespaces | join(' ') }}; do
+                    pod=$($K get pods -n "$ns" --no-headers | awk '{split($2, r, "/"); if (r[1] != r[2]) {print $1; exit}}')
+                    [ -z "$pod" ] && continue
+                    echo "=== $ns/$pod"
+                    $K get pod -n "$ns" "$pod" -o jsonpath='{.spec.securityContext}{"\n"}{.spec.containers[0].securityContext}{"\n"}'
+                    $K get pod -n "$ns" "$pod" -o jsonpath='{.metadata.annotations}{"\n"}'
+                    $K exec -n "$ns" "$pod" -- sh -c '
+                      echo "self: $(id) label=$(cat /proc/self/attr/current 2>&1)"
+                      for p in $(ls /proc | grep -E "^[0-9]+$"); do
+                        echo "$p $(tr "\0" " " < /proc/$p/cmdline | cut -c1-60) | label=$(cat /proc/$p/attr/current 2>&1)"
+                        grep -E "^(Uid|Gid|CapEff|CapBnd|NoNewPrivs|Seccomp):" /proc/$p/status | tr "\n" " "; echo
+                      done' 2>&1 | head -60
+                  done
+              register: _argocd_app_security
+              changed_when: false
+              failed_when: false
+              vars:
+                _app_data: "{{ _argocd_app_data.stdout | from_json }}"
+                _app_ok: >-
+                  {{ _app_data | selectattr('status', 'defined')
+                     | selectattr('status.health.status', 'equalto', 'Healthy')
+                     | selectattr('status.sync.status', 'equalto', 'Synced')
+                     | map(attribute='metadata.name') | list }}
+                _app_failed: "{{ _app_data | rejectattr('metadata.name', 'in', _app_ok) | list }}"
+                _app_namespaces: "{{ _app_failed | map(attribute='spec.destination.namespace') | unique | list }}"
+
+            - name: Debug security context of unready pods
+              ansible.builtin.debug:
+                msg: "{{ _argocd_app_security.stdout_lines | default([]) }}"
+
+            - name: Query node kernel and AppArmor denials
+              ansible.builtin.shell:
+                cmd: |
+                  echo "=== $(hostname): $(uname -r), $(. /etc/os-release; echo $PRETTY_NAME)"
+                  echo "apparmor: $(cat /sys/module/apparmor/parameters/enabled 2>&1) $(cat /sys/kernel/security/lsm 2>&1)"
+                  dmesg 2>&1 | grep -iE 'apparmor|audit.*(DENIED|signal)' | tail -15
+                  journalctl -k --no-pager 2>/dev/null | grep -iE 'apparmor="DENIED"' | tail -10
+              become: true
+              delegate_to: "{{ item }}"
+              loop: "{{ groups['rke2_agent'] | default(groups['rke2_server']) }}"
+              register: _argocd_node_security
+              changed_when: false
+              failed_when: false
+
+            - name: Debug node kernel and AppArmor denials
+              ansible.builtin.debug:
+                msg: "{{ _argocd_node_security.results | default([]) | map(attribute='stdout_lines') | list }}"
+
             - name: Debug failed applications
               ansible.builtin.fail:
                 msg: >-
