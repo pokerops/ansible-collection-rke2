@@ -240,6 +240,28 @@
           changed_when: false
 
       always:
+        # An empty summary says FRR has no BGP config or no peers, not why
+        - name: Collect FRR diagnostics
+          ansible.builtin.shell:
+            cmd: |
+              echo "=== frr.conf as rendered"; cat /var/lib/rke2-frr/frr.conf
+              echo "=== container"; docker ps -a --filter name=frr
+              echo "=== container logs"; docker logs --tail 80 frr 2>&1
+              echo "=== running-config"; docker exec frr vtysh -c 'show running-config' 2>&1 | head -60
+              echo "=== bgp summary"; docker exec frr vtysh -c 'show bgp summary' 2>&1 | head -20
+              echo "=== bgp listeners"; ss -ltn | grep -E ':179\b' || echo "nothing listening on 179"
+              echo "=== addresses"; ip -br addr
+              echo "=== metallb pods"; kubectl --kubeconfig "{{ molecule_local_kubeconfig }}" get pods -n metallb-system -o wide 2>&1
+          register: _frr_diagnostics
+          changed_when: false
+          failed_when: false
+          when: ansible_failed_task is defined
+
+        - name: Debug FRR diagnostics
+          ansible.builtin.debug:
+            msg: "{{ _frr_diagnostics.stdout_lines | default([]) }}"
+          when: _frr_diagnostics.stdout_lines is defined
+
         - name: Query BGP summary
           ansible.builtin.shell:
             cmd: "docker exec frr vtysh -c 'show bgp summary json'"

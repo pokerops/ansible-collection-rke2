@@ -649,6 +649,12 @@
                     /var/lib/rancher/rke2/bin/kubectl describe pods -n "$ns" \
                       | grep -E '^(Name:|Node:|Status:|    State:|    Last State:|      Reason:|      Message:|  Warning )' \
                       | grep -B1 -A3 -E 'Waiting|Terminated|Error|Warning' | head -60
+                    echo "=== $ns: container logs"
+                    for pod in $(/var/lib/rancher/rke2/bin/kubectl get pods -n "$ns" --no-headers | awk '{split($2, r, "/"); if (r[1] != r[2]) print $1}'); do
+                      echo "--- $pod"
+                      /var/lib/rancher/rke2/bin/kubectl logs -n "$ns" "$pod" --all-containers --tail=25 2>&1
+                      /var/lib/rancher/rke2/bin/kubectl logs -n "$ns" "$pod" --all-containers --previous --tail=25 2>&1
+                    done
                     echo "=== $ns: recent events"
                     /var/lib/rancher/rke2/bin/kubectl get events -n "$ns" --sort-by=.lastTimestamp | tail -25
                   done
