@@ -639,6 +639,36 @@
                 _app_success: "{{ _app_sync | map(attribute='metadata.name') | unique }}"
 
           rescue:
+            - name: Query failed application namespaces
+              ansible.builtin.shell:
+                cmd: |
+                  for ns in {{ _app_namespaces | join(' ') }}; do
+                    echo "=== $ns: workloads and pods"
+                    /var/lib/rancher/rke2/bin/kubectl get daemonsets,deployments,statefulsets,pods -n "$ns" -o wide
+                    echo "=== $ns: pods not ready"
+                    /var/lib/rancher/rke2/bin/kubectl describe pods -n "$ns" \
+                      | grep -E '^(Name:|Node:|Status:|    State:|    Last State:|      Reason:|      Message:|  Warning )' \
+                      | grep -B1 -A3 -E 'Waiting|Terminated|Error|Warning' | head -60
+                    echo "=== $ns: recent events"
+                    /var/lib/rancher/rke2/bin/kubectl get events -n "$ns" --sort-by=.lastTimestamp | tail -25
+                  done
+              register: _argocd_app_diagnostics
+              changed_when: false
+              failed_when: false
+              vars:
+                _app_data: "{{ _argocd_app_data.stdout | from_json }}"
+                _app_ok: >-
+                  {{ _app_data | selectattr('status', 'defined')
+                     | selectattr('status.health.status', 'equalto', 'Healthy')
+                     | selectattr('status.sync.status', 'equalto', 'Synced')
+                     | map(attribute='metadata.name') | list }}
+                _app_failed: "{{ _app_data | rejectattr('metadata.name', 'in', _app_ok) | list }}"
+                _app_namespaces: "{{ _app_failed | map(attribute='spec.destination.namespace') | unique | list }}"
+
+            - name: Debug failed application namespaces
+              ansible.builtin.debug:
+                msg: "{{ _argocd_app_diagnostics.stdout_lines | default([]) }}"
+
             - name: Debug failed applications
               ansible.builtin.fail:
                 msg: >-
