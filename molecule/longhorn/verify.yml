@@ -1,0 +1,116 @@
+---
+- name: Import cluster verification playbook
+  ansible.builtin.import_playbook: ../common/verify/cluster.yml
+
+- name: Verify longhorn node scheduling
+  hosts: localhost
+  gather_facts: false
+  vars:
+    _retries: 20
+    _delay: 30
+    _agents: "{{ groups['rke2_agent'] | default([]) }}"
+  tasks:
+    - name: Verify longhorn node scheduling
+      block:
+        - name: Query longhorn nodes
+          kubernetes.core.k8s_info:
+            api_version: longhorn.io/v1beta2
+            kind: Node
+            namespace: longhorn-system
+            kubeconfig: "{{ molecule_local_kubeconfig }}"
+          register: _longhorn_node_query
+          retries: "{{ _retries }}"
+          delay: "{{ _delay }}"
+          until: (_longhorn_node_query.resources | default([]) | length) >= (_agents | length)
+
+        - name: Check longhorn node scheduling matches inventory
+          ansible.builtin.assert:
+            that:
+              - _nodes | length == _agents | length
+              - _expected | length > 0
+              - _mismatched | length == 0
+            fail_msg: "longhorn nodes disagree with rke2_longhorn_allow_scheduling: {{ _mismatched | join(', ') }}"
+            quiet: true
+          vars:
+            _nodes: "{{ _longhorn_node_query.resources | selectattr('metadata.name', 'in', _agents) | list }}"
+            _flags: "{{ _agents | map('extract', hostvars, 'rke2_longhorn_allow_scheduling') | map('default', true) | map('string') | map('lower') | list }}"
+            _expected: "{{ dict(_agents | zip(_flags)) | dict2items | selectattr('value', 'equalto', 'false') | map(attribute='key') | list }}"
+            _actual: "{{ _nodes | selectattr('spec.allowScheduling', 'equalto', false) | map(attribute='metadata.name') | list }}"
+            _mismatched: "{{ _expected | symmetric_difference(_actual) }}"
+      rescue:
+        - name: Debug longhorn nodes
+          ansible.builtin.debug:
+            var: _longhorn_node_query
+
+        - name: Fail longhorn node scheduling check
+          ansible.builtin.fail:
+
+- name: Verify longhorn node scheduling rejects invalid inventories
+  hosts: localhost
+  gather_facts: false
+  vars:
+    _replicas_error: schedulable host count must not be lower than default replica count
+    _invalid_error: "rke2_longhorn_allow_scheduling must be true or false, invalid on: "
+    _cases:
+      - name: invalid_agent_value
+        replicas: 1
+        error: "{{ _invalid_error }}longhorn-invalid_agent_value-agent-02"
+        hosts:
+          - { name: server-01, group: server }
+          - { name: agent-01, group: agent }
+          - { name: agent-02, group: agent, allow: maybe }
+      - name: invalid_server_value # Validated even when only agents hold storage
+        replicas: 1
+        error: "{{ _invalid_error }}longhorn-invalid_server_value-server-01"
+        hosts:
+          - { name: server-01, group: server, allow: 0 }
+          - { name: agent-01, group: agent }
+      - name: replicas_over_hosts
+        replicas: 3
+        error: "{{ _replicas_error }}"
+        hosts:
+          - { name: server-01, group: server }
+          - { name: agent-01, group: agent }
+          - { name: agent-02, group: agent }
+      - name: replicas_over_allowed
+        replicas: 2
+        error: "{{ _replicas_error }}"
+        hosts:
+          - { name: server-01, group: server }
+          - { name: agent-01, group: agent }
+          - { name: agent-02, group: agent, allow: false }
+          - { name: agent-03, group: agent, allow: "False" }
+      - name: servers_not_counted # Servers hold no storage when agents exist
+        replicas: 2
+        error: "{{ _replicas_error }}"
+        hosts:
+          - { name: server-01, group: server }
+          - { name: server-02, group: server }
+          - { name: agent-01, group: agent }
+          - { name: agent-02, group: agent, allow: false }
+      - name: servers_only
+        replicas: 2
+        error: "{{ _replicas_error }}"
+        hosts:
+          - { name: server-01, group: server }
+          - { name: server-02, group: server, allow: false }
+  tasks:
+    - name: Add test case hosts
+      ansible.builtin.add_host:
+        name: "longhorn-{{ item.0.name }}-{{ item.1.name }}"
+        groups:
+          - "_longhorn_{{ item.0.name }}_cluster"
+          - "_longhorn_{{ item.0.name }}_{{ item.1.group }}"
+        rke2_longhorn_allow_scheduling: "{{ item.1.allow | default(omit) }}"
+      loop: "{{ _cases | subelements('hosts') }}"
+      loop_control:
+        label: "longhorn-{{ item.0.name }}-{{ item.1.name }}"
+
+    - name: Verify invalid inventories are rejected
+      ansible.builtin.include_tasks: tasks/scheduling.yml
+      vars:
+        _group: "_longhorn_{{ _case.name }}"
+      loop: "{{ _cases }}"
+      loop_control:
+        loop_var: _case
+        label: "{{ _case.name }}"

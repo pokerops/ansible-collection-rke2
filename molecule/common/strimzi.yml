@@ -6,3 +6,68 @@
 
 - name: Deploy test ingestor
   ansible.builtin.import_playbook: ingestor.yml
+
+# Diagnostic: agents started before the ingestor have been seen never to
+# connect to it. Records each agent's delivery before and after a restart.
+- name: Probe agent delivery to the test ingestor
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    probe_namespace: monitoring
+    probe_sink: logging-ingestor
+    probe_script: |
+      K="kubectl --kubeconfig {{ molecule_local_kubeconfig }}"
+      M={{ probe_namespace }}
+      $K get pods -n "$M" --field-selector=status.phase=Running -o name \
+        | sed -n 's|^pod/\(vector-agent-.*\)|\1|p' | while read -r pod; do
+        port=$($K get pod -n "$M" "$pod" \
+          -o jsonpath='{.spec.containers[0].ports[?(@.name=="prom-exporter")].containerPort}')
+        m=$($K get --raw "/api/v1/namespaces/$M/pods/$pod:${port:-9598}/proxy/metrics" 2>/dev/null)
+        sent=$(echo "$m" | awk -v c='component_id="{{ probe_sink }}"' \
+          '/^vector_component_sent_events_total\{/ && index($0, c) {s += $NF} END {printf "%d", s}')
+        errors=$(echo "$m" | awk -v c='component_id="{{ probe_sink }}"' \
+          '/^vector_component_errors_total\{/ && index($0, c) {s += $NF} END {printf "%d", s}')
+        echo "$pod sent=$sent errors=$errors"
+      done
+  tasks:
+    # Longer than the sink's retry backoff, so a working agent has reconnected
+    - name: Give the agents time to reach the ingestor
+      ansible.builtin.pause:
+        seconds: 90
+
+    - name: Record agent delivery before the restart
+      ansible.builtin.shell: "{{ probe_script }}"
+      args:
+        executable: /bin/bash
+      register: _probe_before
+      changed_when: false
+
+    - name: Restart the agents
+      ansible.builtin.shell: >-
+        set -o pipefail;
+        kubectl --kubeconfig {{ molecule_local_kubeconfig }} get pods -n {{ probe_namespace }} -o name
+        | grep '^pod/vector-agent-'
+        | xargs kubectl --kubeconfig {{ molecule_local_kubeconfig }} delete -n {{ probe_namespace }} --wait=true
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    - name: Wait for every restarted agent to deliver to the ingestor
+      ansible.builtin.shell: "{{ probe_script }}"
+      args:
+        executable: /bin/bash
+      register: _probe_after
+      changed_when: false
+      retries: 20
+      delay: 15
+      until:
+        - _probe_after.stdout_lines | length > 0
+        - _probe_after.stdout_lines | select('search', ' sent=0 ') | list | length == 0
+      ignore_errors: true
+
+    - name: Show agent delivery before and after the restart
+      ansible.builtin.debug:
+        msg:
+          before: "{{ _probe_before.stdout_lines }}"
+          after: "{{ _probe_after.stdout_lines }}"

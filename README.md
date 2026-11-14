@@ -47,6 +47,7 @@ Cluster wide parameters
 | rke2_logging_format                       |                               json | string | Log format of the Kubernetes components and metrics-server; "" for their default                                 | no       |
 | rke2_logging_endpoint                     |                                    | string | Optional remote log destination (host:port); logs always go to the local store too                               | no       |
 | rke2_logging_buffer_size                  |                         1073741824 | int    | Per-node disk buffer (bytes) for unsent remote logs; survives agent restarts                                     | no       |
+| rke2_logging_buffer_when_full             |                        drop_newest | string | When the remote log buffer is full: drop_newest drops remote events; block also stalls the local store           | no       |
 | rke2_logging_retention_days               |                                  3 | int    | Days the local log store (VictoriaLogs) keeps logs; the oldest go first past 85% disk use                        | no       |
 | rke2_logging_volume_size                  |                               50Gi | string | Local log store volume size                                                                                      | no       |
 | rke2_logging_storage_class                |                                    | string | Local log store storage class; empty uses the cluster default                                                    | no       |
@@ -56,8 +57,8 @@ Cluster wide parameters
 | rke2_ippool_private                       |                                n/a | string | Private IP pool CIDR                                                                                             | yes      |
 | rke2_ippool_public                        |                                n/a | string | Public IP pool CIDR                                                                                              | no       |
 | rke2_certmanager_issuer_name              |                     cluster-issuer | string | Name of the cert-manager cluster issuer                                                                          | no       |
-| rke2_certmanager_acme_secret              |                                n/a | string | Secret name for ACME challenge                                                                                   | no       |
-| rke2_certmanager_acme_email               |                                n/a | string | Email for ACME challenge                                                                                         | no [1]   |
+| rke2_certmanager_acme_secret [1]          |                                n/a | string | Secret name for ACME challenge                                                                                   | no       |
+| rke2_certmanager_acme_email [1]           |                                n/a | string | Email for ACME challenge                                                                                         | no [1]   |
 | rke2_argocd_hostname                      |   "argocd.{{ rke2_cluster_name }}" | string | ArgoCD hostname                                                                                                  | no       |
 | rke2_argocd_values                        |                         object [2] | dict   | Helm chart values for ArgoCD chart                                                                               | no       |
 | rke2_argocd_apps_deploy                   |                               true | dict   | Toggle flag for ArgoCD Applications chart deployment                                                             | no       |
@@ -72,6 +73,8 @@ Cluster wide parameters
 | rke2_argocd_applicationset_replicas       |                                  2 | int    | ArgoCD applicationset replicas, override for default ArgoCD chart values                                         | no       |
 | rke2_argocd_apps_pokerops_revision        |                               HEAD | string | PokerOps ArgoCD revision, used to deploy base cluster assets                                                     | no       |
 | rke2_longhorn_hostname                    | "longhorn.{{ rke2_cluster_name }}" | string | Longhorn UI hostname                                                                                             | no       |
+| rke2_longhorn_replica_count               |                                  3 | int    | Default Longhorn volume replica count; needs at least this many hosts with scheduling allowed                    | no       |
+| rke2_longhorn_allow_scheduling            |                               true | bool   | Per-host: false keeps Longhorn replicas off this host; checked against rke2_longhorn_replica_count               | no       |
 | rke2_monitoring_endpoint                  |                                    | string | Remote ingestor URL; setting it enables monitoring                                                               | no       |
 | rke2_monitoring_cluster_id                |            {{ rke2_cluster_name }} | string | Cluster label stamped on every metric and log record                                                             | no       |
 | rke2_monitoring_tls_enabled               |                              false | bool   | Use mTLS to reach the remote ingestor                                                                            | no       |
@@ -85,12 +88,6 @@ Cluster wide parameters
 
 [1] rke2_certmanager_acme_email is required whenever rke2_certmanager_acme_secret is set
 [2] rke2_argocd_values default is as follows:
-
-Velero S3 backup parameters
-
-| Parameter         | Default | Type   | Description                            | Required |
-| :---------------- | ------: | :----- | :------------------------------------- | :------- |
-| rke2_cluster_name |     n/a | string | Cluster name, immutable after creation | yes      |
 
 ```yaml
 redis-ha:

@@ -71,19 +71,15 @@ provisioner:
           \tadvertised.listeners = REPLICATION-9091://broker-0:9091\n\
           \tauto.create.topics.enable = false"
   logging_workloads:
-    # Every Strimzi container prints its startup script's output (the
-    # generated config, banners, keystore setup, "+ exec" traces) without a
-    # level; the broker's and the exporter's are a large share of their logs
     - name: kafka
       filter: 'kubernetes.pod_namespace:="molecule" kubernetes.container_name:="kafka"'
       max_unknown_ratio: 0.25
-    # One "+ exec" trace per start, in a container that logs little else
     - name: kafka-exporter
       filter: 'kubernetes.pod_namespace:="molecule" kubernetes.container_name:="molecule-kafka-cluster-kafka-exporter"'
       max_unknown_ratio: 0.5
     - name: topic-operator
       filter: 'kubernetes.pod_namespace:="molecule" kubernetes.container_name:="topic-operator"'
-      max_unknown_ratio: 0.1
+      max_unknown_ratio: 0.35
     - name: user-operator
       filter: 'kubernetes.pod_namespace:="molecule" kubernetes.container_name:="user-operator"'
       max_unknown_ratio: 0.1

@@ -228,17 +228,40 @@
             cmd: "docker exec frr vtysh -c 'show bgp summary json'"
           vars:
             _bgp_summary: "{{ (_bgp_summary_query.stdout | from_json) }}"
-            _neighbors: "{{ _bgp_summary.ipv4Unicast.peers.values() | map(attribute='hostname') }}"
-            _neighbors_names: "{{ _neighbors | map(attribute='hostname') }}"
+            # FRR returns an empty summary until its first peer is configured
+            _bgp_afi: "{{ _bgp_summary.ipv4Unicast | default({}) }}"
+            _neighbors: "{{ (_bgp_afi.peers | default({})).values() | map(attribute='hostname') | list }}"
           until:
             - _neighbors | symmetric_difference(bgp_peer_names) | length == 0
-            - _bgp_summary.ipv4Unicast.failedPeers == 0
+            - _bgp_afi.failedPeers | default(-1) == 0
           retries: "{{ _retries }}"
           delay: "{{ _delay }}"
           register: _bgp_summary_query
           changed_when: false
 
       always:
+        # An empty summary says FRR has no BGP config or no peers, not why
+        - name: Collect FRR diagnostics
+          ansible.builtin.shell:
+            cmd: |
+              echo "=== frr.conf as rendered"; cat /var/lib/rke2-frr/frr.conf
+              echo "=== container"; docker ps -a --filter name=frr
+              echo "=== container logs"; docker logs --tail 80 frr 2>&1
+              echo "=== running-config"; docker exec frr vtysh -c 'show running-config' 2>&1 | head -60
+              echo "=== bgp summary"; docker exec frr vtysh -c 'show bgp summary' 2>&1 | head -20
+              echo "=== bgp listeners"; ss -ltn | grep -E ':179\b' || echo "nothing listening on 179"
+              echo "=== addresses"; ip -br addr
+              echo "=== metallb pods"; kubectl --kubeconfig "{{ molecule_local_kubeconfig }}" get pods -n metallb-system -o wide 2>&1
+          register: _frr_diagnostics
+          changed_when: false
+          failed_when: false
+          when: _bgp_summary_query is failed
+
+        - name: Debug FRR diagnostics
+          ansible.builtin.debug:
+            msg: "{{ _frr_diagnostics.stdout_lines | default([]) }}"
+          when: _frr_diagnostics.stdout_lines is defined
+
         - name: Query BGP summary
           ansible.builtin.shell:
             cmd: "docker exec frr vtysh -c 'show bgp summary json'"
@@ -247,9 +270,10 @@
 
         - name: Parse BGP neighbor data
           ansible.builtin.set_fact:
-            _neighbors: "{{ _bgp_data.ipv4Unicast.peers.values() }}"
+            _neighbors: "{{ (_bgp_afi.peers | default({})).values() | list }}"
           vars:
             _bgp_data: "{{ _bgp_summary_query.stdout | from_json }}"
+            _bgp_afi: "{{ _bgp_data.ipv4Unicast | default({}) }}"
 
         - name: Debug neighbor mismatches
           ansible.builtin.debug:
