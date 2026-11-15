@@ -205,6 +205,30 @@
               delay: 20
 
           rescue:
+            # StatefulSetNotReady doesn't say whether the pod, its volume or
+            # the image is what is stuck
+            - name: Collect MariaDB pod diagnostics
+              ansible.builtin.shell:
+                cmd: |
+                  K="kubectl --kubeconfig {{ kubeconfig_path }} -n {{ mariadb_namespace }}"
+                  echo "=== pods"; $K get pods -o wide
+                  echo "=== pvc"; $K get pvc
+                  echo "=== pod conditions and state"
+                  PATTERN='^(Name:|Node:|Status:|  Type|  Ready|  Initialized|  PodScheduled'
+                  PATTERN="$PATTERN|    State:|    Last State:|      Reason:|      Message:|      Exit Code:)"
+                  $K describe pods | grep -E "$PATTERN"
+                  echo "=== events"; $K get events --sort-by=.lastTimestamp | tail -30
+                  echo "=== mariadb logs"; $K logs -l app.kubernetes.io/name=mariadb --all-containers --tail=40 2>&1
+                  echo "=== longhorn volumes"
+                  kubectl --kubeconfig {{ kubeconfig_path }} -n longhorn-system get volumes.longhorn.io 2>&1
+              register: _mariadb_diagnostics
+              changed_when: false
+              failed_when: false
+
+            - name: Debug MariaDB pod diagnostics
+              ansible.builtin.debug:
+                msg: "{{ _mariadb_diagnostics.stdout_lines | default([]) }}"
+
             - name: Debug MariaDB cluster startup failure
               ansible.builtin.debug:
                 var: _mariadb_query

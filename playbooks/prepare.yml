@@ -90,8 +90,6 @@
         limit_item: nofile
         value: "{{ _rke2_limits_nofile }}"
 
-    # systemd-sysctl no longer reads /etc/sysctl.conf (Ubuntu 26.04), so
-    # persist these under sysctl.d or they revert to the kernel defaults on boot
     - name: Set fs.inotify.max_user_instances
       ansible.posix.sysctl:
         name: fs.inotify.max_user_instances
@@ -118,3 +116,18 @@
         sysctl_set: true
         state: present
         reload: true
+
+    - name: Query AppArmor unconfined restriction sysctl
+      ansible.builtin.stat:
+        path: /proc/sys/kernel/apparmor_restrict_unprivileged_unconfined
+      register: _rke2_apparmor_restrict_unconfined
+
+    - name: Set kernel.apparmor_restrict_unprivileged_unconfined
+      ansible.posix.sysctl:
+        name: kernel.apparmor_restrict_unprivileged_unconfined
+        value: "{{ _rke2_sysctl_apparmor_restrict_unconfined }}"
+        sysctl_file: /etc/sysctl.d/99-rke2.conf
+        sysctl_set: true
+        state: present
+        reload: true
+      when: _rke2_apparmor_restrict_unconfined.stat.exists

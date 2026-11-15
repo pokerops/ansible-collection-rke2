@@ -1,4 +1,11 @@
 ---
+- name: Verify logging buffer configuration
+  ansible.builtin.assert:
+    that: rke2_logging_buffer_when_full in _modes
+    fail_msg: "rke2_logging_buffer_when_full must be one of {{ _modes }}"
+  vars:
+    _modes: ["drop_newest", "block"]
+
 - name: Deploy vector operator application
   kubernetes.core.k8s:
     state: present

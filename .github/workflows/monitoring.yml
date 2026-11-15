@@ -15,11 +15,9 @@ jobs:
     name: monitoring
     runs-on: noble-64
     strategy:
-      max-parallel: 1
       matrix:
         scenario:
-          - full
-          - converged
+          - monitoring
         image:
           - name: resolute
             url: https://cloud-images.ubuntu.com/resolute/current/resolute-server-cloudimg-amd64.img
@@ -28,8 +26,8 @@ jobs:
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
       MOLECULE_OUTPUT_DIR: /tmp/logs
+      GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
     steps:
       - name: Run devbox tests
         uses: pokerops/ansible-utils@master
@@ -44,7 +42,7 @@ jobs:
       - name: Upload install logs
         uses: actions/upload-artifact@v7
         with:
-          name: install-${{ matrix.scenario }}-${{ matrix.image.name }}.log
+          name: monitoring-${{ matrix.scenario }}-${{ matrix.image.name }}.log
           path: |
             /tmp/logs/*
           if-no-files-found: ignore

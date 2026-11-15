@@ -1,0 +1,26 @@
+---
+- name: Run longhorn tasks against {{ _case.name }}
+  block:
+    - name: Include longhorn tasks for {{ _case.name }}
+      ansible.builtin.include_role:
+        name: pokerops.rke2.components
+        tasks_from: longhorn
+      vars:
+        rke2_cluster_group: "{{ _group }}_cluster"
+        rke2_server_group: "{{ _group }}_server"
+        rke2_agent_group: "{{ _group }}_agent"
+        rke2_longhorn_replica_count: "{{ _case.replicas }}"
+        rke2_config_path: /nonexistent/kubeconfig # Fails any task that gets past the checks
+        _rke2_retry_num: 1
+        _rke2_retry_delay: 1
+
+    - name: Fail on accepted inventory
+      ansible.builtin.fail:
+        msg: longhorn tasks accepted the inventory
+
+  rescue:
+    - name: Check {{ _case.name }} was rejected by the scheduling checks
+      ansible.builtin.assert:
+        that: ansible_failed_result.msg | default('') == _case.error
+        fail_msg: "expected '{{ _case.error }}', got '{{ ansible_failed_result.msg | default('') }}'"
+        quiet: true
