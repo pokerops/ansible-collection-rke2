@@ -120,6 +120,23 @@
         _value: "{{ _inotify_max_queued_events.stdout.split()[-1] }}"
         _expected: "1048576"
 
+    - name: Query AppArmor unconfined restriction
+      ansible.builtin.command:
+        cmd: "sysctl -n kernel.apparmor_restrict_unprivileged_unconfined"
+      register: _apparmor_restrict_unconfined
+      become: true
+      changed_when: false
+      failed_when: false
+
+    - name: Verify AppArmor unconfined restriction
+      ansible.builtin.assert:
+        that: (_apparmor_restrict_unconfined.stdout | int) == 0
+        fail_msg: >-
+          kernel.apparmor_restrict_unprivileged_unconfined is
+          {{ _apparmor_restrict_unconfined.stdout }}, which stacks container
+          AppArmor labels and blocks signals between their processes
+      when: _apparmor_restrict_unconfined.rc == 0
+
 - name: Verify RKE2 install
   hosts: rke2_server
   any_errors_fatal: true

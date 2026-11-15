@@ -54,6 +54,7 @@ Cluster wide parameters
 | rke2_kubevip_address                      |                                 "" | string | Control plane floating IP held by kube-vip (L2/ARP); "" disables kube-vip                                        | no       |
 | rke2_evict_timeout                        |                                300 | bool   | Node drain eviction timeout in seconds                                                                           | no       |
 | rke2_image_prune_enabled                  |                               true | bool   | Daily 03:00 cron that removes unused container images on every node; false removes the cron                      | no       |
+| rke2_sysctl_apparmor_restrict_unconfined  |                                  0 | int    | AppArmor unconfined-restriction sysctl on nodes; 0 avoids stacked container labels on Ubuntu 26.04               | no       |
 | rke2_ippool_private                       |                                n/a | string | Private IP pool CIDR                                                                                             | yes      |
 | rke2_ippool_public                        |                                n/a | string | Public IP pool CIDR                                                                                              | no       |
 | rke2_certmanager_issuer_name              |                     cluster-issuer | string | Name of the cert-manager cluster issuer                                                                          | no       |

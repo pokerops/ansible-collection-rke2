@@ -7,6 +7,11 @@ MOLECULE_SCENARIO_DEFAULT := 'components'
 MOLECULE_REVISION := env('MOLECULE_REVISION', MOLECULE_REVISION_DEFAULT)
 MOLECULE_SCENARIO := env('MOLECULE_SCENARIO', MOLECULE_SCENARIO_DEFAULT)
 
+# Local runs use resolute (Ubuntu 26.04, kernel 7.0) by default: it is the image
+# the CI failures show up on, and noble passes either way. UBUNTU_RELEASE=noble
+# (or MOLECULE_KVM_IMAGE) selects another; CI sets MOLECULE_KVM_IMAGE explicitly.
+UBUNTU_RELEASE := env('UBUNTU_RELEASE', 'resolute')
+
 CLOUDFLARE_IPS_URL := 'https://api.cloudflare.com/client/v4/ips'
 CLOUDFLARE_IPS_FILE := 'roles/components/defaults/main/cloudflare.yml'
 
