@@ -23,6 +23,7 @@ rke2_monitoring_metrics_volume_size: 2Gi
 # has no journalctl for the journald source (rke2 and host-unit logs); the
 # debian variant ships it. Pin only, bumped by rke2 update.
 rke2_monitoring_vector_image: "timberio/vector:0.61.0-debian"
+rke2_monitoring_vector_memory: 1Gi
 
 # Cardinality control, applied by Alloy as metric_relabel_configs. Measured
 # against real scrapes, not inherited: together these cut ~45% of active series.
@@ -77,6 +78,8 @@ rke2_logging_endpoint: ""
 rke2_logging_retention_days: 3
 rke2_logging_volume_size: 5Gi
 rke2_logging_storage_class: ""
+# Raise on busy clusters: ingest bursts and stats queries OOM at 512Mi.
+rke2_logging_memory: 512Mi
 
 # Disk buffer for logs bound for rke2_logging_endpoint, per node, in bytes
 # (Vector's minimum is 256 MiB). Unsent events wait here across agent
