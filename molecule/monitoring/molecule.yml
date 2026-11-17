@@ -191,6 +191,8 @@ provisioner:
       filter: 'kubernetes.container_name:="cert-manager-controller"'
     - name: vector-agent
       filter: 'kubernetes.container_name:="vector-agent"'
+    - name: victoria-metrics
+      filter: 'kubernetes.pod_namespace:="monitoring" kubernetes.container_name:="vmsingle" log_format:="json"'
     - name: reflector
       filter: 'kubernetes.pod_namespace:="kube-system" kubernetes.container_name:="reflector"'
     # its startup script's image map and "+ exec" trace

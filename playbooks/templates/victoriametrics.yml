@@ -1,0 +1,70 @@
+---
+# Cluster-local metrics store: every series Alloy collects, after its
+# cardinality drops, kept for rke2_monitoring_store_retention_days and
+# queryable with PromQL/MetricsQL, for troubleshooting when the remote
+# endpoint is unreachable or not set. Reached only through kubectl
+# port-forward: a headless ClusterIP Service, no Ingress, and a NetworkPolicy
+# admitting only Alloy (remote_write and its scrape). Not a record of
+# evidence - anyone with cluster-admin can alter it; the remote endpoint is that.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: victoria-metrics
+  namespace: argocd
+spec:
+  project: default
+  source:
+    chart: victoria-metrics-single
+    repoURL: https://victoriametrics.github.io/helm-charts/
+    targetRevision: "0.51.0"
+    helm:
+      valuesObject:
+        server:
+          fullnameOverride: victoria-metrics
+          # Logs JSON already (extraArgs loggerFormat: json, the chart's
+          # default), so its events need no remap (CLAUDE.md).
+          retentionPeriod: "{{ rke2_monitoring_store_retention_days }}d"
+          # Unlike VictoriaLogs there is no size-based retention: past
+          # -storage.minFreeDiskSpaceBytes (100MB) free, the store turns
+          # read-only and Alloy's samples for it are dropped. Size the volume
+          # for the retention period.
+          persistentVolume:
+            enabled: true
+            size: "{{ rke2_monitoring_store_volume_size }}"
+            storageClassName: "{{ rke2_monitoring_store_storage_class }}"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: "{{ rke2_monitoring_store_memory }}"
+          serviceMonitor:
+            enabled: true
+        networkPolicy:
+          enabled: true
+          ingress:
+            - from:
+                - podSelector:
+                    matchLabels:
+                      app.kubernetes.io/name: alloy
+              ports:
+                - port: 8428
+                  protocol: TCP
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: "{{ rke2_monitoring_scraper_namespace }}"
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    # Argo's built-in retry for automated syncs (5 attempts, about 2.5m)
+    # gives up on a repo-server restart, and an automated sync never
+    # retries a failed revision.
+    retry:
+      limit: 10
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m
+    syncOptions:
+      - CreateNamespace=true

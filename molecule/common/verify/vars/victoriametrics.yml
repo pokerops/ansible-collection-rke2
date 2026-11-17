@@ -1,0 +1,19 @@
+---
+# Reaching the cluster-local VictoriaMetrics store from the verify playbooks
+# (monitoring.yml), loaded with vars_files.
+_vm_namespace: monitoring
+_vm_name: victoria-metrics
+_vm_port: 18428
+_vm_settle_retries: 30
+_vm_settle_delay: 10
+_vm_probe_image: "curlimages/curl:8.11.1"
+_kubectl: "kubectl --kubeconfig {{ molecule_local_kubeconfig }}"
+# Runs one instant PromQL query through a port-forward and prints the JSON
+# response; append the query as a quoted 'query=...' argument.
+_vm_query: >-
+  {{ _kubectl }} -n {{ _vm_namespace }} port-forward svc/{{ _vm_name }}
+  {{ _vm_port }}:8428 >/dev/null 2>&1 & pf=$!; trap 'kill $pf' EXIT;
+  for i in $(seq 1 40); do
+  curl -sf http://127.0.0.1:{{ _vm_port }}/health >/dev/null && break; sleep 0.25;
+  done;
+  curl -sf http://127.0.0.1:{{ _vm_port }}/api/v1/query --data-urlencode
