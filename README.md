@@ -87,6 +87,7 @@ Cluster wide parameters
 | rke2_coredns_autoscaler_cores_per_replica |                                128 | int    | Cluster cores per CoreDNS replica, override for default rke2-coredns autoscaler                                  | no       |
 | rke2_coredns_autoscaler_nodes_per_replica |                                  8 | int    | Cluster nodes per CoreDNS replica, override for default rke2-coredns autoscaler                                  | no       |
 | rke2_coredns_autoscaler_min_replicas      |                                  2 | int    | Minimum CoreDNS replicas, override for default rke2-coredns autoscaler                                           | no       |
+| rke2_nginx_http2_enabled                  |                               true | bool   | ingress nginx http2 enable                                                                                       | no       |
 
 [1] rke2_certmanager_acme_email is required whenever rke2_certmanager_acme_secret is set
 [2] rke2_argocd_values default is as follows:
