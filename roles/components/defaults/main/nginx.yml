@@ -1,2 +1,3 @@
 ---
 rke2_nginx_controller_deploy: true
+rke2_nginx_http2_enabled: false
