@@ -51,20 +51,32 @@
             valuesObject: "{{ rke2_longhorn_values }}"
 
 - name: Wait for longhorn application # Its CRDs and nodes only exist once argocd has synced the chart
-  kubernetes.core.k8s_info:
-    kubeconfig: "{{ rke2_config_path }}"
-    api_version: argoproj.io/v1alpha1
-    kind: Application
-    name: longhorn
-    namespace: argocd
-  register: _longhorn_application
-  retries: "{{ _rke2_retry_num }}"
-  delay: "{{ _rke2_retry_delay }}"
-  until:
-    - _longhorn_application.resources | default([]) | length > 0
-    # Not waiting for Healthy: the ingress only becomes healthy once the ingress
-    # controllers, deployed after longhorn, are up
-    - _longhorn_application.resources[0].status.sync.status | default('') == 'Synced'
+  block:
+    - name: Query longhorn application
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ rke2_config_path }}"
+        api_version: argoproj.io/v1alpha1
+        kind: Application
+        name: longhorn
+        namespace: argocd
+      register: _longhorn_application
+      retries: "{{ _rke2_retry_num }}"
+      delay: "{{ _rke2_retry_delay }}"
+      until:
+        - _longhorn_application.resources | default([]) | length > 0
+        - _longhorn_application.resources[0].status.sync.status | default('') == 'Synced'
+  rescue:
+    - name: Report longhorn application state
+      ansible.builtin.fail:
+        msg:
+          summary: Longhorn application not synced within the retry budget
+          sync: "{{ _status.sync.status | default('unknown') }}"
+          health: "{{ _status.health.status | default('unknown') }}"
+          operation: "{{ _status.operationState.phase | default('none') }}"
+          operation_message: "{{ _status.operationState.message | default('') }}"
+          out_of_sync: "{{ _status.resources | default([]) | rejectattr('status', 'equalto', 'Synced') | map(attribute='name') | list }}"
+      vars:
+        _status: "{{ (_longhorn_application.resources | default([]) | first | default({})).status | default({}) }}"
 
 - name: Query node info # Every host to disable must have registered its longhorn node
   kubernetes.core.k8s_info:
