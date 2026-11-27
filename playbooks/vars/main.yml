@@ -2,8 +2,26 @@
 # Defaults
 rke2_defaults_version: v1.33.9+rke2r1
 rke2_defaults_api_url: "https://api.{{ rke2_cluster_name }}"
+# Written to /etc/rancher/rke2/registries.yaml. "*" lets the embedded
+# registry share every image between nodes, so each one is pulled upstream
+# once per cluster rather than once per node. Docker Hub and ECR Public
+# throttle anonymous pulls per source IP, so their pulls go to Google's
+# Docker Hub mirror first; containerd falls back to the registry itself for
+# anything the mirror lacks. Only ECR Public's copies of Docker Hub's
+# official images (docker/library/*) exist there.
 rke2_defaults_registry_mirrors:
   - name: "*"
+  - name: docker.io
+    endpoint:
+      - https://mirror.gcr.io
+  - name: ecr-public.aws.com
+    endpoint:
+      - https://mirror.gcr.io
+    rewrite: '"^docker/library/(.*)": "library/$1"'
+  - name: public.ecr.aws
+    endpoint:
+      - https://mirror.gcr.io
+    rewrite: '"^docker/library/(.*)": "library/$1"'
 rke2_defaults_server_options:
   - "embedded-registry: {{ rke2_registry_enable | default('true') }}"
   # etcd serves metrics on 2381 but does not expose them unless asked.

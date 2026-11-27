@@ -140,3 +140,4 @@
         rke2_cluster_group_name: "{{ rke2_cluster_group }}"
         rke2_servers_group_name: "{{ rke2_server_group }}"
         rke2_agents_group_name: "{{ rke2_agent_group }}"
+        rke2_custom_registry_mirrors: "{{ rke2_registry_mirrors }}"
