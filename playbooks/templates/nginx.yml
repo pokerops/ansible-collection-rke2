@@ -23,6 +23,7 @@ spec:
             # under Traefik's request_<Header> names, and headers carrying
             # credentials (Authorization, Cookie, ...) are left out. Numbers
             # are unquoted; upstream fields can be "-" or lists.
+            use-http2: "{{ rke2_nginx_http2_enabled }}"
             log-format-escape-json: "true"
             log-format-upstream: >-
               {"time": "$time_iso8601",
