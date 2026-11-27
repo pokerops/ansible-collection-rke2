@@ -465,6 +465,129 @@
           enforces it.
         success_msg: "The NetworkPolicy blocks other pods ({{ _vl_probe.stdout | default('no response', true) }})"
 
+# The cluster-local metrics store (VictoriaMetrics), written to by Alloy
+# alongside the remote endpoint. Queried only through kubectl port-forward,
+# like the log store: its NetworkPolicy admits only Alloy.
+- name: Verify the local metrics store
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - vars/victoriametrics.yml
+  vars:
+    _cluster_id: "{{ rke2_monitoring_cluster_id | default(rke2_cluster_name) }}"
+  tasks:
+    - name: Wait for VictoriaMetrics to become ready
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        api_version: apps/v1
+        kind: StatefulSet
+        name: "{{ _vm_name }}"
+        namespace: "{{ _vm_namespace }}"
+      register: _vm_sts
+      retries: "{{ _vm_settle_retries }}"
+      delay: "{{ _vm_settle_delay }}"
+      until:
+        - _vm_sts.resources | length > 0
+        - (_vm_sts.resources[0].status.readyReplicas | default(0)) == 1
+
+    # Alloy's remote_write: series carrying the cluster's external label.
+    - name: Wait for series from Alloy to reach the local store
+      ansible.builtin.shell:
+        cmd: >-
+          {{ _vm_query }}
+          'query=count({cluster="{{ _cluster_id }}"})'
+      register: _vm_series
+      changed_when: false
+      failed_when: false
+      retries: "{{ _vm_settle_retries }}"
+      delay: "{{ _vm_settle_delay }}"
+      until:
+        - _vm_series.rc == 0
+        - (_vm_series.stdout | from_json).data.result | length > 0
+
+    - name: Verify Alloy writes to the local store
+      ansible.builtin.assert:
+        that:
+          - _vm_series.rc == 0
+          - (_vm_series.stdout | from_json).data.result | length > 0
+        fail_msg: >-
+          No series labelled cluster={{ _cluster_id }} in VictoriaMetrics
+          (rc={{ _vm_series.rc }}, {{ _vm_series.stdout | default('') }}).
+          Check Alloy's "local" remote_write endpoint and VictoriaMetrics'
+          NetworkPolicy.
+        success_msg: >-
+          Local store holds {{ (_vm_series.stdout | from_json).data.result[0].value[1] }}
+          series from {{ _cluster_id }}
+
+    # The store's own ServiceMonitor, scraped by Alloy through the
+    # NetworkPolicy and written back to it.
+    - name: Query the store's own metrics
+      ansible.builtin.shell:
+        cmd: >-
+          {{ _vm_query }}
+          'query=vm_rows_inserted_total{cluster="{{ _cluster_id }}"}'
+      register: _vm_self
+      changed_when: false
+      failed_when: false
+      retries: "{{ _vm_settle_retries }}"
+      delay: "{{ _vm_settle_delay }}"
+      until:
+        - _vm_self.rc == 0
+        - (_vm_self.stdout | from_json).data.result | length > 0
+
+    - name: Verify the store's ServiceMonitor is scraped
+      ansible.builtin.assert:
+        that:
+          - _vm_self.rc == 0
+          - (_vm_self.stdout | from_json).data.result | length > 0
+        fail_msg: >-
+          vm_rows_inserted_total never reached the store (rc={{ _vm_self.rc }}).
+          Check the chart's ServiceMonitor and that the NetworkPolicy admits
+          Alloy's scrape.
+        success_msg: "VictoriaMetrics' own metrics are scraped"
+
+    - name: Query VictoriaMetrics container args
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ molecule_local_kubeconfig }}"
+        api_version: apps/v1
+        kind: StatefulSet
+        name: "{{ _vm_name }}"
+        namespace: "{{ _vm_namespace }}"
+      register: _vm_sts_spec
+
+    - name: Set VictoriaMetrics container args fact
+      ansible.builtin.set_fact:
+        _vm_args: "{{ _vm_sts_spec.resources[0].spec.template.spec.containers[0].args }}"
+
+    - name: Verify VictoriaMetrics retention and log format flags
+      ansible.builtin.assert:
+        that:
+          - "'--retentionPeriod=' ~ (rke2_monitoring_store_retention_days | default(3)) ~ 'd' in _vm_args"
+          - "'--loggerFormat=json' in _vm_args"
+        fail_msg: "VictoriaMetrics runs with {{ _vm_args }}"
+        success_msg: "VictoriaMetrics retention and log format flags are applied"
+
+    - name: Probe VictoriaMetrics from a pod the NetworkPolicy doesn't admit
+      ansible.builtin.command:
+        cmd: >-
+          {{ _kubectl }} -n {{ _vm_namespace }} run victoria-metrics-probe
+          --image={{ _vm_probe_image }} --restart=Never --rm -i --quiet
+          --command -- curl -s -m 5 -o /dev/null -w '%{http_code}'
+          http://{{ _vm_name }}.{{ _vm_namespace }}.svc:8428/health
+      register: _vm_probe
+      changed_when: false
+      failed_when: false
+
+    - name: Verify the NetworkPolicy blocks other pods
+      ansible.builtin.assert:
+        that: _vm_probe.stdout is not search('200')
+        fail_msg: >-
+          A pod outside the NetworkPolicy's allowed set reached VictoriaMetrics
+          (HTTP {{ _vm_probe.stdout }}). Check the policy and that Cilium
+          enforces it.
+        success_msg: "The NetworkPolicy blocks other pods ({{ _vm_probe.stdout | default('no response', true) }})"
+
 - name: Verify log parsing in the local store
   ansible.builtin.import_playbook: logging.yml
 

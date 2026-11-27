@@ -14,6 +14,7 @@ An opinionated [ansible collection](https://galaxy.ansible.com/ui/repo/published
 - [KSM](https://github.com/kubernetes/kube-state-metrics)
 - [Vector](https://vector.dev/)
 - [VictoriaLogs](https://github.com/VictoriaMetrics/VictoriaLogs)
+- [VictoriaMetrics](https://github.com/VictoriaMetrics/VictoriaMetrics)
 
 Default installation uses [ArgoCD Applications](https://argo-cd.readthedocs.io/en/stable/user-guide/auto_sync/) to deploy and manage the following components:
 
@@ -77,7 +78,11 @@ Cluster wide parameters
 | rke2_longhorn_hostname                    | "longhorn.{{ rke2_cluster_name }}" | string | Longhorn UI hostname                                                                                             | no       |
 | rke2_longhorn_replica_count               |                                  3 | int    | Default Longhorn volume replica count; needs at least this many hosts with scheduling allowed                    | no       |
 | rke2_longhorn_allow_scheduling            |                               true | bool   | Per-host: false keeps Longhorn replicas off this host; checked against rke2_longhorn_replica_count               | no       |
-| rke2_monitoring_endpoint                  |                                    | string | Remote ingestor URL; setting it enables monitoring                                                               | no       |
+| rke2_monitoring_endpoint                  |                                    | string | Optional remote metrics destination (remote_write URL); metrics always go to the local store too                 | no       |
+| rke2_monitoring_store_retention_days      |                                  3 | int    | Days the local metrics store (VictoriaMetrics) keeps metrics; by age only, a full volume turns it read-only      | no       |
+| rke2_monitoring_store_volume_size         |                                5Gi | string | Local metrics store volume size                                                                                  | no       |
+| rke2_monitoring_store_storage_class       |                                    | string | Local metrics store storage class; empty uses the cluster default                                                | no       |
+| rke2_monitoring_store_memory              |                              512Mi | string | Memory limit for the cluster-local VictoriaMetrics store                                                         | no       |
 | rke2_monitoring_cluster_id                |            {{ rke2_cluster_name }} | string | Cluster label stamped on every metric and log record                                                             | no       |
 | rke2_monitoring_tls_enabled               |                              false | bool   | Use mTLS to reach the remote ingestor                                                                            | no       |
 | rke2_monitoring_vector_memory             |                                1Gi | string | Memory limit for Vector.dev                                                                                      | no       |
@@ -165,6 +170,36 @@ curl -sN localhost:9428/select/logsql/tail \
 Fields are the pipeline's normalized ones (`node`, `unit`, `level`, `msg`,
 `log.*`, `kubernetes.*`). Anyone with cluster-admin can alter this store; it is
 for speed, not a record of evidence.
+
+## Local metrics
+
+Alloy also writes every metric it collects, after its cardinality drops, to a
+cluster-local VictoriaMetrics store in the `monitoring` namespace, kept for
+`rke2_monitoring_store_retention_days`. It runs on every cluster that deploys
+the argocd apps (`rke2_argocd_apps_deploy`, which bring the Alloy operator and
+the Prometheus CRDs), with or without `rke2_monitoring_endpoint`. Like the log
+store it has no Ingress, and its NetworkPolicy admits only Alloy; reach it
+through a port-forward:
+
+```sh
+kubectl -n monitoring port-forward svc/victoria-metrics 8428:8428
+```
+
+Then open <http://localhost:8428/vmui/> for the web UI (`just metrics` does
+both), or query it with PromQL/MetricsQL:
+
+```sh
+# Pods restarting in the last hour
+curl -s localhost:8428/api/v1/query \
+  --data-urlencode 'query=increase(kube_pod_container_status_restarts_total[1h]) > 0'
+# Every scrape target and whether it is up
+curl -s localhost:8428/api/v1/query --data-urlencode 'query=up'
+```
+
+Retention is by age only: unlike VictoriaLogs, the store doesn't drop old data
+when its volume fills, it stops accepting writes, so size
+`rke2_monitoring_store_volume_size` for the retention period. Anyone with
+cluster-admin can alter this store; it is for speed, not a record of evidence.
 
 ## FRR test router
 

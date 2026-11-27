@@ -71,4 +71,8 @@ rke2_agent_options: "{{ _rke2_agent_options }}"
 
 # Test specific values
 _rke2_skip_deploy: "{{ rke2_skip_deploy | default(false) }}"
-_rke2_monitoring_deploy: "{{ rke2_monitoring_endpoint | default('') | length > 0 }}"
+# Metrics collection (Alloy, the local VictoriaMetrics store, every chart's
+# ServiceMonitors) needs the Alloy operator and the Prometheus CRDs, which
+# the argocd apps bring. The remote endpoint only adds a destination.
+_rke2_monitoring_deploy: "{{ rke2_argocd_apps_deploy | bool }}"
+_rke2_monitoring_remote: "{{ rke2_monitoring_endpoint | default('') | length > 0 }}"

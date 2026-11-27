@@ -13,8 +13,18 @@ rke2_monitoring_tls_enabled: false
 rke2_monitoring_tls_secret: ""
 rke2_monitoring_tls_ca_secret: ""
 
-# Remote ingestor to ship metrics to. Empty disables monitoring entirely.
+# Remote ingestor to ship metrics to, besides the cluster-local
+# VictoriaMetrics store Alloy always writes to. Optional.
 rke2_monitoring_endpoint: ""
+
+# Cluster-local metrics store (VictoriaMetrics,
+# playbooks/templates/victoriametrics.yml). Retention is by age only: a full
+# volume turns the store read-only, so size it for the retention period.
+# An empty storage class uses the cluster default.
+rke2_monitoring_store_retention_days: 3
+rke2_monitoring_store_volume_size: 5Gi
+rke2_monitoring_store_storage_class: ""
+rke2_monitoring_store_memory: 512Mi
 
 # Alloy's WAL volume; metrics in it are time-bound by the WAL itself.
 rke2_monitoring_metrics_volume_size: 2Gi

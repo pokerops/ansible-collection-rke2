@@ -7,9 +7,6 @@ MOLECULE_SCENARIO_DEFAULT := 'components'
 MOLECULE_REVISION := env('MOLECULE_REVISION', MOLECULE_REVISION_DEFAULT)
 MOLECULE_SCENARIO := env('MOLECULE_SCENARIO', MOLECULE_SCENARIO_DEFAULT)
 
-# Local runs use resolute (Ubuntu 26.04, kernel 7.0) by default: it is the image
-# the CI failures show up on, and noble passes either way. UBUNTU_RELEASE=noble
-# (or MOLECULE_KVM_IMAGE) selects another; CI sets MOLECULE_KVM_IMAGE explicitly.
 UBUNTU_RELEASE := env('UBUNTU_RELEASE', 'resolute')
 
 CLOUDFLARE_IPS_URL := 'https://api.cloudflare.com/client/v4/ips'
@@ -30,24 +27,30 @@ pytest *args:
   ${UV_RUN} pytest {{ args }}
 
 # Forward the cluster-local VictoriaLogs store and open its web UI (Ctrl-C stops)
-logs port="9428":
+logs port="9428": (_ui "VictoriaLogs" "victoria-logs" "9428" port "/select/vmui/")
+
+# Forward the cluster-local VictoriaMetrics store and open its web UI (Ctrl-C stops)
+metrics port="8428": (_ui "VictoriaMetrics" "victoria-metrics" "8428" port "/vmui/")
+
+# Port-forward a monitoring-namespace service and open its web UI
+[private]
+_ui name service remote port path:
   #!/usr/bin/env bash
   set -euo pipefail
-  # $KUBECONFIG, else the molecule scenario's .kubeconfig, else kubectl's default
   if ! [ -f .kubeconfig ]; then
     echo "Could not find project kubeconfig"
     exit 1
   fi
-  _url="http://localhost:{{ port }}/select/vmui/"
-  KUBECONFIG=.kubeconfig kubectl -n monitoring port-forward svc/victoria-logs '{{ port }}:9428' &
+  _url="http://localhost:{{ port }}{{ path }}"
+  KUBECONFIG=.kubeconfig kubectl -n monitoring port-forward 'svc/{{ service }}' '{{ port }}:{{ remote }}' &
   _forward=$!
   trap 'kill "$_forward" 2>/dev/null || true' EXIT INT TERM
   for _ in $(seq 1 40); do
     curl -fsS --max-time 1 "http://localhost:{{ port }}/health" >/dev/null 2>&1 && break
-    kill -0 "$_forward" 2>/dev/null || { echo "port-forward to victoria-logs failed" >&2; exit 1; }
+    kill -0 "$_forward" 2>/dev/null || { echo "port-forward to {{ service }} failed" >&2; exit 1; }
     sleep 0.25
   done
-  echo "VictoriaLogs at $_url (Ctrl-C to stop)"
+  echo "{{ name }} at $_url (Ctrl-C to stop)"
   if command -v xdg-open >/dev/null; then
     xdg-open "$_url" >/dev/null 2>&1 || true
   elif command -v open >/dev/null; then

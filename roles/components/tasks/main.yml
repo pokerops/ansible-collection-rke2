@@ -1,4 +1,12 @@
 ---
+- name: Verify monitoring prerequisites
+  ansible.builtin.assert:
+    that: _rke2_monitoring_deploy | bool or not (_rke2_monitoring_remote | bool)
+    fail_msg: >-
+      rke2_monitoring_endpoint is set but rke2_argocd_apps_deploy is false;
+      metrics collection needs the Alloy operator and Prometheus CRDs from
+      the argocd apps.
+
 - name: Include rke2 bundled chart tasks
   ansible.builtin.include_tasks: rke2.yml
 

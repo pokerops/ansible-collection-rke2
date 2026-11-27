@@ -140,13 +140,23 @@ spec:
           }
         }
 
+        // One WAL, one queue per endpoint: an unreachable remote doesn't
+        // hold back the local store, and vice versa.
         prometheus.remote_write "ingestor" {
           external_labels = {
             cluster = "{{ rke2_monitoring_cluster_id }}",
           }
 
+          // Cluster-local store (templates/victoriametrics.yml).
           endpoint {
-            url = "{{ rke2_monitoring_endpoint }}"
+            name = "local"
+            url  = "http://victoria-metrics.{{ rke2_monitoring_scraper_namespace }}.svc:8428/api/v1/write"
+          }
+          {% if _rke2_monitoring_remote | bool %}
+
+          endpoint {
+            name = "remote"
+            url  = "{{ rke2_monitoring_endpoint }}"
             {% if rke2_monitoring_tls_enabled | bool %}
             tls_config {
               ca_file   = "/etc/alloy/tls/ca.crt"
@@ -155,4 +165,5 @@ spec:
             }
             {% endif %}
           }
+          {% endif %}
         }

@@ -1,4 +1,11 @@
 ---
+- name: Deploy VictoriaMetrics application
+  kubernetes.core.k8s:
+    state: present
+    apply: true
+    kubeconfig: "{{ rke2_config_path }}"
+    resource_definition: "{{ lookup('ansible.builtin.template', 'templates/victoriametrics.yml') | from_yaml }}"
+
 - name: Deploy alloy collector
   kubernetes.core.k8s:
     state: present
