@@ -16,7 +16,7 @@ spec:
   source:
     chart: victoria-logs-single
     repoURL: https://victoriametrics.github.io/helm-charts/
-    targetRevision: "0.13.11"
+    targetRevision: "0.13.14"
     helm:
       valuesObject:
         server:
