@@ -11,7 +11,7 @@ spec:
   source:
     chart: velero
     repoURL: https://vmware-tanzu.github.io/helm-charts
-    targetRevision: "12.2.3"
+    targetRevision: "12.2.5"
     helm:
       valuesObject:
         deployNodeAgent: true
@@ -30,7 +30,7 @@ spec:
           features: EnableCSI
         initContainers:
           - name: velero-plugin-for-aws
-            image: velero/velero-plugin-for-aws:v1.14.4
+            image: velero/velero-plugin-for-aws:v1.15.0
             imagePullPolicy: IfNotPresent
             volumeMounts:
               - mountPath: /target
